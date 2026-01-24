@@ -2,7 +2,7 @@ import duckdb
 import pandas as pd
 from pathlib import Path
 from typing import Optional, Union, List
-from lib.utils.logger import setup_logger
+from statarb.infra.observability.logger import setup_logger
 
 logger = setup_logger(__name__)
 

@@ -1,26 +1,49 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
-name = "quant_strategy"
+name = "statarb"
 version = "0.1.0"
-description = "High-frequency Bitcoin trading strategy"
-authors = [{name = "Lucas Tkacz", email = "your_email@example.com"}]
-dependencies = [
-    "pandas",
-    "numpy",
-    "ccxt",
-    "tqdm",
-    "statsmodels",
-    "matplotlib",
-    "jupyter",
-    "scipy",
-    "duckdb",
-    "aiohttp"
-]
+description = "Professional-grade crypto statistical arbitrage system"
+readme = "README.md"
 requires-python = ">=3.9"
+dependencies = [
+    "ccxt>=4.0.0",
+    "duckdb>=0.9.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "polars>=0.19.0",
+    "pyarrow>=14.0.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.0.0",
+    "pyyaml>=6.0",
+    "structlog>=23.0.0",
+    "click>=8.0.0",
+]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["lib*"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/statarb"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --strict-markers"
+markers = [
+    "unit: fast unit tests",
+    "integration: tests requiring external services or IO",
+    "slow: slow running tests",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true

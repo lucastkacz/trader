@@ -1,0 +1,23 @@
+environment: "local"
+
+paths:
+  data_dir: "data"
+  lake_dir: "data/lake"
+  db_path: "data/duckdb/market.db"
+  logs_dir: "data/artifacts/logs"
+
+market_data:
+  exchanges:
+    - "binance"
+    - "bybit"
+  timeframes:
+    - "1h"
+    - "15m"
+
+risk:
+  max_drawdown_pct: 0.10
+  allowed_leverage: 1.0
+
+execution:
+  mode: "backtest" # strict safety default
+  paper_balance: 10000
