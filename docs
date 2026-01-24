@@ -1,0 +1,536 @@
+Yep — the **layered / modular-monolith approach** you and Gemini converged on is the right direction for “solo-dev but professional-tier” *as long as* you treat it as an **audit + safety system** first, and a strategy second. The biggest failures in real-money trading bots almost never come from “bad z-score math”; they come from **data gaps/duplicates, hidden lookahead, wrong fees/filters, order-state bugs, and no kill-switch/observability**. Your proposed structure can absolutely support real-money trading — but only once the *safety/observability/backtest realism* work is first-class and *done before* live execution.
+
+Below is a **book of work** (exhaustive checklist + sequencing) with **clear “complete when…” definitions** for every step, plus how to develop components **in isolation**.
+
+---
+
+## 1) The structure I’d trust with real money (and why)
+
+Your direction (infra / domain / services / research separation, Parquet lakehouse + DuckDB querying, CCXT abstraction) is solid.
+
+What I would *add* to make it “I’d actually risk money on this”:
+
+* **Contracts-first core**: shared types, event schemas, and interfaces so everything plugs together without hidden coupling.
+* **Data correctness gates**: gap/dup detection, timezone normalization, idempotent writes, and reproducible “as-of” queries (point-in-time).
+* **Backtest realism**: fees, funding (if perps), slippage model, order constraints (min notional / step size), latency assumptions, and *no lookahead* enforced.
+* **Order-state machine**: explicit lifecycle (created → submitted → partially filled → filled/cancelled/rejected) and reconciliation with exchange.
+* **Observability + kill-switches**: structured logs, metrics, alerts, “stop trading now” switch, and automatic circuit breakers.
+
+If those are in place, the architecture is the *kind* I’d be comfortable deploying — but I still wouldn’t go live until paper trading + invariants pass (more on that in the plan).
+
+---
+
+## 2) “Professional + expandable” repo layout (with plots/charts placement)
+
+This is a **modular monolith** with strict boundaries. It’s expandable without turning into a god-folder.
+
+```
+trading_system/
+├─ pyproject.toml
+├─ README.md
+├─ .env.example
+├─ config/
+│  ├─ environments/          # local.yaml, paper.yaml, live.yaml
+│  ├─ universes/             # universe definitions, symbol lists, filters
+│  ├─ strategies/            # strategy configs & parameter sets
+│  └─ execution/             # fees, slippage presets, venue rules
+├─ data/
+│  ├─ lake/                  # hive-partitioned parquet (bronze/silver/gold)
+│  ├─ duckdb/                # optional local db files (views/cache)
+│  └─ artifacts/             # generated datasets, feature snapshots
+├─ reports/                  # generated outputs (HTML, images, CSV summaries)
+│  ├─ backtests/
+│  ├─ walk_forward/
+│  ├─ diagnostics/
+│  └─ live/
+├─ notebooks/                # research notebooks (optional, not core)
+├─ src/
+│  └─ statarb/
+│     ├─ core/               # NO IO. types, time utils, errors, events
+│     ├─ domain/             # NO IO. models + math + risk rules
+│     │  ├─ models/
+│     │  ├─ analytics/       # zscore, spread, coint tests, kalman, etc
+│     │  ├─ risk/
+│     │  └─ costs/           # fee & slippage models (pure functions)
+│     ├─ infra/              # IO only. ccxt, duckdb, parquet, secrets, clock
+│     │  ├─ market_data/
+│     │  ├─ lakehouse/
+│     │  ├─ execution_venue/
+│     │  └─ observability/
+│     ├─ services/           # orchestration. pipelines and workflows
+│     │  ├─ ingestion/
+│     │  ├─ feature_build/
+│     │  ├─ signal_generation/
+│     │  ├─ portfolio/
+│     │  └─ execution/
+│     ├─ research/           # backtesting + validation + optimization
+│     │  ├─ backtesting/
+│     │  ├─ validation/
+│     │  ├─ optimization/
+│     │  └─ reporting/       # research plots live here
+│     └─ apps/               # entrypoints
+│        ├─ cli/
+│        ├─ live_trader/
+│        ├─ paper_trader/
+│        └─ dashboard/       # live charts/UI live here (separate process)
+├─ tests/
+│  ├─ unit/
+│  ├─ integration/
+│  ├─ property/              # invariants (no lookahead, idempotency, etc)
+│  └─ e2e/
+└─ scripts/                   # one-off utilities (data repair, migrations)
+```
+
+### Where do charts/plots go?
+
+You want **two buckets** so plotting never crashes execution:
+
+* **Research plots** (backtests, CV heatmaps, diagnostics):
+  `src/statarb/research/reporting/` outputs into `reports/backtests/` etc.
+* **Live monitoring** (health, open positions, z-scores now):
+  `src/statarb/apps/dashboard/` (separate process) reading from data/artifacts/logs.
+
+---
+
+## 3) Can you build in isolation? Yes — here’s the dependency order
+
+You can develop most modules independently if you define **interfaces + schemas** first.
+
+**Minimal dependency chain (recommended):**
+
+1. `core` (types/events/errors/time)
+2. `domain` (models + analytics + risk rules)
+3. `infra.lakehouse` (parquet writer + duckdb reader)
+4. `infra.market_data` (ccxt fetch)
+5. `services.ingestion` (glue fetch → write)
+6. `research.backtesting` (consume lakehouse → simulate)
+7. `research.validation/optimization` (walk-forward, CV)
+8. `infra.execution_venue` + `services.execution` (paper trading first)
+9. `apps.live_trader` (real money last)
+
+You *can* start with infra database first, but it’ll go faster if `core/domain` exists so the lakehouse has a contract to write.
+
+---
+
+## 4) Book of Work (exhaustive) with “Complete when…” criteria
+
+### Phase 0 — Engineering foundation (non-negotiable)
+
+**0.1 Project scaffolding**
+
+* Repo structure, `pyproject.toml`, environment configs, `.env.example`
+* Code quality: formatter/linter/type-checker, test runner, pre-commit hooks
+  **Complete when:** `make test` (or equivalent) runs clean on a fresh machine; a “hello pipeline” script runs from `apps/cli`.
+
+**0.2 Config system**
+
+* Config loading with environment layering (local/paper/live)
+* Strict validation (bad config fails fast)
+  **Complete when:** invalid config produces a clear error; configs are versioned and reproducible.
+
+---
+
+### Phase 1 — Data Lakehouse (Parquet Hive + DuckDB) as the source of truth
+
+**1.1 Define canonical market-data schema**
+
+* Candle schema: timestamps, timezone normalization, symbol normalization, numeric types
+* Venue metadata: exchange, market type (spot/perp), contract specs
+  **Complete when:** you can serialize/deserialize a candle deterministically; schema rejects malformed rows.
+
+**1.2 Parquet writer (Hive partitioning + file sizing strategy)**
+
+* Partition keys: `exchange=…/timeframe=…/symbol=…/`
+* Decide file granularity: e.g. `date=YYYY-MM-DD/part-*.parquet` to avoid “huge files”
+* Atomic writes (tmp → move), idempotent appends (no duplicates)
+  **Complete when:** repeated writes of the same candles do not change row counts; crash mid-write never corrupts partitions.
+
+**1.3 DuckDB reader + views**
+
+* External scanning with `read_parquet(..., hive_partitioning=1)`
+* Partition pruning verified (queries only touch relevant partitions)
+* “As-of” querying helpers for backtests
+  **Complete when:** you can query last N candles for (exchange, symbol, timeframe) quickly; query results match exactly what’s stored in Parquet.
+
+**1.4 Data quality gates**
+
+* Gap detection (missing intervals)
+* Duplicate detection
+* Outlier sanity checks (negative price/volume, impossible OHLC)
+* Audit table/report for anomalies
+  **Complete when:** a data-quality report is generated per ingest run, and the pipeline can be configured to “fail closed” on severe issues.
+
+---
+
+### Phase 2 — Market data ingestion (CCXT) without strategy
+
+**2.1 CCXT client abstraction**
+
+* Unified fetch interface: historical backfill + incremental updates
+* Robust retries, rate-limit handling, deterministic symbol mapping
+  **Complete when:** you can backfill N days for a symbol/timeframe with consistent counts and no gaps (or gaps are explicitly reported).
+
+**2.2 Ingestion service**
+
+* Orchestrates: fetch → normalize → validate → write → QC report
+* Supports “universe” configs (list of symbols/timeframes)
+* Scheduling: simple loop or task runner
+  **Complete when:** one command ingests a full day for a universe and produces: (a) parquet files, (b) QC summary, (c) logs.
+
+---
+
+### Phase 3 — Feature/Signal data pipeline (still no trading)
+
+**3.1 Feature definitions (domain)**
+
+* Spread construction (A − βB), z-score computation, rolling stats
+* Cointegration tests (where applicable), stationarity checks
+  **Complete when:** feature functions are pure, unit-tested, and deterministic for a fixed input dataset.
+
+**3.2 Feature store (“silver/gold” layers)**
+
+* Build features from raw and store to parquet (separate path, e.g. `data/lake/gold/...`)
+* Point-in-time correctness (no leakage)
+  **Complete when:** you can rebuild features for a period and reproduce identical outputs; features contain enough metadata to audit.
+
+**3.3 Diagnostics plots (research reporting)**
+
+* Z-score time series, spread chart, entry/exit markers (even before executing)
+* Data coverage charts (missing candles)
+  **Complete when:** a report can be generated for any (pair, period) from stored data alone into `reports/diagnostics/`.
+
+---
+
+### Phase 4 — Backtesting engine (vectorized first, then event-driven verification)
+
+**4.1 Trade simulation primitives**
+
+* Position model, fills, fees, slippage, funding (if perps), leverage constraints
+  **Complete when:** a single trade’s PnL matches hand-calculated examples.
+
+**4.2 Vectorized backtester (fast research)**
+
+* Uses feature store outputs
+* Produces equity curve, trade list, performance metrics
+  **Complete when:** backtest run is deterministic, produces a full artifact bundle (metrics + trades + plots), and passes “no lookahead” tests.
+
+**4.3 Event-driven backtester (realism check)**
+
+* Candle-by-candle execution simulation, order delay model
+* Validates vectorized results on a subset
+  **Complete when:** event-driven and vectorized results are directionally consistent; discrepancies are explainable via modeled assumptions.
+
+**4.4 Metrics & reporting**
+
+* Sharpe/Sortino, max drawdown, turnover, exposure, hit rate, tail metrics
+* Parameter stability visuals
+  **Complete when:** every backtest outputs a standardized report into `reports/backtests/<run_id>/`.
+
+---
+
+### Phase 5 — Cross-validation / Walk-forward / Overfitting defenses
+
+**5.1 Walk-forward split generator**
+
+* Train/validation/test windows, rolling or expanding
+* Purge/embargo logic if needed (to avoid leakage from overlapping windows)
+  **Complete when:** splits are reproducible, logged, and saved as artifacts.
+
+**5.2 Parameter search + stability analysis**
+
+* Grid search (start), later Bayesian
+* “Parameter robustness” score (how stable across folds)
+  **Complete when:** you can select parameters by a rule that prioritizes stability (not best single-period Sharpe), and reproduce the selection.
+
+**5.3 Model risk checks**
+
+* Sensitivity to fees/slippage
+* Stress scenarios (spread blowouts, volatility regimes)
+  **Complete when:** a strategy configuration is only “eligible” if it passes a preset battery of robustness tests.
+
+---
+
+### Phase 6 — Execution architecture (paper trading first)
+
+**6.1 Order intent → order lifecycle state machine**
+
+* Intent (target position) vs orders (how to get there)
+* Reconciliation with exchange state
+  **Complete when:** the system can recover from restart and reconstruct open orders/positions safely.
+
+**6.2 Risk controller (circuit breakers)**
+
+* Max daily loss, max leverage, max correlated exposure, max open positions
+* Fat-finger guards, min-notional checks
+  **Complete when:** risk rules are unit-tested and every blocked trade produces an auditable reason.
+
+**6.3 Paper trading venue**
+
+* “Simulated exchange” adapter that uses real market data + realistic fills
+* Same interface as live CCXT execution
+  **Complete when:** switching between paper and live is purely config; paper run produces the same logs/artifacts as live would.
+
+---
+
+### Phase 7 — Observability, dashboards, and ops
+
+**7.1 Structured logging**
+
+* Event log for every: ingest, signal, risk decision, order action, fill, error
+* Correlation IDs per “decision cycle”
+  **Complete when:** you can answer “why did it trade here?” from logs alone.
+
+**7.2 Metrics + alerts**
+
+* Heartbeats, lag (last candle time), error rates, drawdown alarms
+* Notifications (Telegram/Discord/email)
+  **Complete when:** you can unplug internet / break CCXT and you get alerted; the bot fails closed.
+
+**7.3 Live dashboard**
+
+* Current positions, z-scores, PnL, health status
+* Read-only; separate process
+  **Complete when:** dashboard can run independently and never impacts trading execution.
+
+---
+
+### Phase 8 — Live trading rollout (real money last)
+
+**8.1 Small-capital canary**
+
+* One pair, smallest order sizes, tight risk limits
+  **Complete when:** 2–4 weeks of clean ops (no unexplained behavior), and live performance aligns with paper within modeled slippage bounds.
+
+**8.2 Scale-out**
+
+* Expand universe, add more pairs, add portfolio risk overlays
+  **Complete when:** scaling does not degrade data quality, latency, or observability.
+
+---
+
+## 5) Answering your question directly: do I agree with the approach?
+
+Yes: **DuckDB + Hive-partitioned Parquet** is a strong “solo-dev lakehouse” choice; **infra/domain/services/research separation** is how you avoid god-files and tech debt.
+
+The only “disagree” is this: **do not treat execution as just another module**. Execution must be treated like a safety-critical system with stricter testing, invariants, and failure modes than your research code.
+
+---
+
+## 6) What you should start working on first (highest leverage)
+
+If you want the most “professional” start that keeps everything flexible:
+
+1. **Phase 0 + Phase 1** (contracts + lakehouse + QC)
+2. Then **Phase 4 (backtesting)** *using only stored data*
+3. Only after that: **execution + paper trading**
+
+That ordering prevents the classic trap: “I can place orders but I can’t trust my data or my backtests.”
+
+---
+
+If you want, paste your *current* repo (even just the folder tree you created so far), and I’ll map it onto the structure above and produce a **concrete punch-list** of the next commits you should make (still with “complete when…” for each).
+
+
+
+
+
+
+
+
+
+You are a senior quant-trading systems engineer + staff-level Python architect acting as an autonomous coding agent with local filesystem access.
+
+GOAL
+Build the foundational repository + an exhaustive TASKS.md roadmap for a professional-grade crypto statistical arbitrage system in Python, designed as a modular monolith with strict boundaries (core/domain/infra/services/research/apps), using:
+- DuckDB + Hive-partitioned Parquet “lakehouse” storage
+- CCXT for exchange connectivity
+- Research backtesting + walk-forward validation before any live trading
+- Safety-first execution and observability (fail-closed, kill-switch, auditability)
+
+CRITICAL INPUT
+You MUST first read and faithfully follow the engineering plan contained in this file:
+- PLAN_FILE_PATH = "<PUT_THE_PATH_TO_THE_SAVED_TXT_FILE_HERE>"
+This plan defines phases, boundaries, “complete when” criteria, and folder structure. Treat it as the source of truth.
+
+OUTPUTS REQUIRED (DO ALL OF THESE)
+A) Create a root-level markdown task file:
+   - Preferred name: TASKS.md
+   - If user already has task.md, update it; otherwise create TASKS.md.
+   - This file must be extremely detailed, actionable, ordered by dependencies, and include “Definition of Done” for each task.
+
+B) Lay the repository foundation:
+   - Create the full directory tree (src layout) described in the plan.
+   - Create stub Python modules with docstrings and minimal placeholder classes/functions (NO full implementations yet).
+   - Create config scaffolding, tooling, and basic CI/dev scripts.
+   - Add a README and architecture docs referencing the plan.
+
+C) Ensure the project is safe-by-default:
+   - Live trading must be disabled by default.
+   - Paper trading / backtest mode is default.
+   - Config must explicitly opt-in to anything “live”.
+
+D) Provide a short terminal-style summary at the end:
+   - What files were created/updated
+   - How to run tests/lint
+   - How to run “ingestion (dry run)” placeholder
+   - How to generate a “diagnostic report” placeholder
+
+IMPORTANT CONSTRAINTS
+1) Do not implement strategy logic or real trading. Only scaffolding + interfaces + placeholder stubs.
+2) Keep boundaries strict:
+   - core/ and domain/ must have NO IO (no duckdb, no ccxt, no filesystem).
+   - infra/ is IO only.
+   - services/ orchestrates domain + infra.
+   - research/ contains backtesting/validation/optimization/reporting.
+   - apps/ contains entrypoints and dashboard (separate process).
+3) Everything must be typed and testable.
+4) Prefer minimal dependencies initially; add only what is required for the foundation.
+5) Use Python >= 3.11.
+6) Use ruff for linting/formatting; pytest for tests; mypy for type-checking.
+7) Use pydantic for schemas (v2).
+8) Keep file and module names consistent with the plan.
+
+STEP-BY-STEP EXECUTION INSTRUCTIONS FOR YOU (THE AGENT)
+STEP 1 — Parse the plan file
+- Read PLAN_FILE_PATH fully.
+- Extract:
+  - the target folder structure
+  - phases and “complete when” criteria
+  - the separation of plot/report locations
+  - safety/observability requirements
+- Do NOT contradict the plan; if you must choose between alternatives, choose the most “professional / audit-ready / safety-first”.
+
+STEP 2 — Decide minimal initial tech choices (write them down in README and TASKS)
+- Dependency management: choose ONE approach and implement it:
+  - Option A: Poetry
+  - Option B: uv + pyproject (PEP 621)
+  - Option C: plain pip + requirements (not preferred)
+Choose A or B. Use pyproject.toml either way.
+- Logging: choose either standard logging with JSON formatting OR structlog (prefer standard logging first for minimal deps).
+- Data libs: duckdb + pyarrow are required for lakehouse scaffolding. pandas optional; prefer polars only if necessary.
+
+STEP 3 — Create the repo structure exactly as described in the plan
+- Use a src/ layout:
+  src/statarb/...
+- Create ALL folders from the plan, including reports/, docs/, config/, data/ placeholders, tests/, scripts/.
+- Add __init__.py where appropriate.
+
+STEP 4 — Create scaffolding files (must exist even if stubbed)
+At minimum create these files with meaningful placeholder content:
+
+Root:
+- pyproject.toml  (with tool config for ruff, mypy, pytest)
+- README.md       (how to set up, run lint/test, project principles)
+- .env.example    (document variables; no secrets)
+- .gitignore
+- Makefile or just a scripts/commands.md (choose one; Makefile preferred)
+- docs/ARCHITECTURE.md (mirror plan structure, boundaries, data flow)
+- docs/DECISIONS.md (record key decisions: lakehouse, partitioning, safe defaults)
+
+Config:
+- config/environments/local.yaml
+- config/environments/paper.yaml
+- config/environments/live.yaml (must be locked down; “live_enabled: false” default)
+- config/universes/default.yaml
+- config/strategies/pairs_zscore_v1.yaml (placeholder parameters)
+- config/execution/default_costs.yaml (fees/slippage placeholder)
+
+Python package scaffolding (stubs only):
+- src/statarb/core/  (types, time utils, event IDs, exceptions)
+  - core/types.py
+  - core/time.py
+  - core/errors.py
+  - core/events.py
+- src/statarb/domain/
+  - domain/models/ (pydantic schemas: Candle, Signal, OrderIntent, Fill, Position, PortfolioSnapshot)
+  - domain/analytics/ (function stubs: compute_spread, compute_zscore, cointegration_test placeholder)
+  - domain/risk/ (risk rules placeholders: max_dd, fat_finger, exposure limits)
+  - domain/costs/ (fee/slippage model stubs)
+- src/statarb/infra/
+  - infra/lakehouse/ (parquet writer stub, duckdb reader stub, QC report stub)
+  - infra/market_data/ (ccxt client stub, symbol normalization stub)
+  - infra/execution_venue/ (paper venue stub + live venue stub disabled)
+  - infra/observability/ (structured logger + metrics placeholders)
+- src/statarb/services/
+  - services/ingestion/ (orchestrator stub: fetch->normalize->validate->write)
+  - services/feature_build/ (build features from raw -> store)
+  - services/signal_generation/ (reads features -> emits Signal)
+  - services/portfolio/ (state mgmt placeholder)
+  - services/execution/ (order lifecycle placeholder; NO real trading)
+- src/statarb/research/
+  - research/backtesting/ (vectorized backtester stub)
+  - research/validation/ (walk-forward splitter stub)
+  - research/optimization/ (grid search placeholder)
+  - research/reporting/ (plot/report generators placeholders -> write to reports/)
+- src/statarb/apps/
+  - apps/cli/ (click/argparse stub commands)
+  - apps/paper_trader/ (main stub)
+  - apps/live_trader/ (main stub that refuses to run unless live_enabled=true AND explicit flag)
+  - apps/dashboard/ (placeholder; separate process note)
+
+Tests scaffolding:
+- tests/unit/test_smoke.py (verifies imports + basic invariants)
+- tests/unit/test_config_load.py
+- tests/property/test_no_io_in_domain.py (basic enforcement via import checks / dependency boundaries)
+
+STEP 5 — Create TASKS.md (THIS IS THE MAIN DELIVERABLE)
+TASKS.md must include:
+
+1) “How to use this file”
+- conventions, how to mark complete, task IDs, dependency notation
+
+2) “Project principles”
+- strict boundaries, fail-closed, auditability, determinism, no lookahead
+
+3) “Phase roadmap” aligned to the plan
+- Phases (0..8 or as in plan)
+- Each phase includes:
+  - goal
+  - deliverables
+  - exhaustive tasks (with checkboxes)
+  - dependencies (explicit)
+  - definition of done (from plan, restated as acceptance tests)
+  - verification commands (pytest, ruff, mypy, sample CLI runs)
+
+4) “Task format” (every task must have)
+- ID (e.g., P1.2.3)
+- Description
+- Files/modules touched
+- Dependencies
+- Definition of Done
+- Verification steps
+
+5) “Immediate next commits”
+- Provide 5–10 suggested small commits with commit messages, each mapping to a subset of tasks.
+- Keep commits atomic (scaffolding, then config loader, then logger, etc.)
+
+STEP 6 — Enforce safe-by-default behavior
+- In live trader entrypoint: refuse to run unless:
+  - config live_enabled == true
+  - user passes explicit CLI flag like --i-understand-this-is-live
+- Default environments must not contain real API keys.
+- CCXT live methods should raise “LiveTradingDisabledError” unless enabled.
+
+STEP 7 — Final summary output
+After file creation, print:
+- Tree summary (high-level)
+- Key commands:
+  - install
+  - ruff format / lint
+  - mypy
+  - pytest
+  - run CLI help
+- Where reports go
+- How to proceed (which TASKS.md section to start)
+
+QUALITY BAR
+- Be explicit and systematic. No vague “implement X”.
+- Make it easy for another agent to follow tasks without ambiguity.
+- Keep stubs minimal but meaningful (docstrings + types + TODOs).
+- Mirror the plan’s “Complete when…” criteria and incorporate them into DoD/verification steps.
+
+NOW DO THE WORK
+1) Read PLAN_FILE_PATH.
+2) Create/update files as specified.
+3) Generate TASKS.md and the repo scaffold.
+4) Provide the final summary.
