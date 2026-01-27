@@ -83,6 +83,33 @@ def render_data_page():
             fetch_btn = st.button("Fetch Data", type="primary", use_container_width=True)
 
         if fetch_btn:
+            # Estimation Logic
+            start_dt = datetime.combine(start_date, datetime.min.time())
+            end_dt = datetime.combine(end_date, datetime.max.time())
+            
+            # Rough map of timeframe to seconds
+            tf_seconds = {
+                "1m": 60, "5m": 300, "15m": 900, 
+                "1h": 3600, "4h": 14400, "1d": 86400
+            }
+            seconds = tf_seconds.get(timeframe, 3600)
+            total_duration = (end_dt - start_dt).total_seconds()
+            est_candles = total_duration / seconds
+            
+            # Threshold: Warn if > 200,000 candles (e.g. ~140 days of 1m data)
+            if est_candles > 50_000 and "confirmed_fetch" not in st.session_state:
+                st.warning(f"⚠️ High Volume Warning: You are about to download estimated {int(est_candles):,} rows.")
+                st.info("This might take a while and consume significant disk space.")
+                if st.button("✅ Confirm Download"):
+                    st.session_state["confirmed_fetch"] = True
+                    st.rerun()
+                else:
+                    st.stop()
+            
+            # Clear confirmation if we proceed (so next time it checks again)
+            if "confirmed_fetch" in st.session_state:
+                del st.session_state["confirmed_fetch"]
+
             progress_bar = st.progress(0)
             status_text = st.empty()
             
