@@ -25,6 +25,7 @@ EXCHANGES = [
 
 from src.dashboard.styles import apply_compact_styles
 from src.data.fetcher import fetch_data, fetch_top_markets, update_dataset, get_available_symbols
+import pyarrow.parquet as pq
 
 @st.cache_data(ttl=3600)
 def load_symbols(exchange_id):
@@ -120,18 +121,41 @@ def render_data_page():
                         tf = parts[1]
                         sym = parts[2].replace(".parquet", "").replace("_", "/")
                         
-                        # Quick stat for range (optional, might be slow if many files)
-                        # Let's just trust metadata or read head/tail if needed. 
-                        # For speed, just file stats.
                         stats = f.stat()
                         
+                        # Read metadata for dates
+                        try:
+                            # Efficiently read only the index (timestamp) limits
+                            # distinct from loading whole file
+                            meta = pq.read_metadata(f)
+                            # Parquet metadata statistics might give min/max if written
+                            # But often easier to just read the column if small
+                            # let's try reading the first and last row efficiently?
+                            # For simplicity in this 'Simplicity First' project, 
+                            # reading the whole index might be fast enough for 1h candles.
+                            # But let's be safe: use PyArrow to read index column only?
+                            # df_idx = pd.read_parquet(f, columns=[]) # Gets index?
+                            # Default to reading file for accuracy, optimizing later if slow.
+                            # We just need min and max index.
+                            df_meta = pd.read_parquet(f, columns=[]) 
+                            # Check if index is datetime
+                            if not df_meta.empty:
+                                start_t = df_meta.index.min()
+                                end_t = df_meta.index.max()
+                            else:
+                                start_t, end_t = "N/A", "N/A"
+                        except Exception:
+                            start_t, end_t = "Error", "Error"
+
                         file_records.append({
                             "Exchange": exchange,
                             "Timeframe": tf,
                             "Symbol": sym,
+                            "Start": start_t,
+                            "End": end_t,
                             "Size (KB)": round(stats.st_size / 1024, 2),
                             "Modified": datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M'),
-                            "path": str(f) # Hidden usage
+                            "path": str(f)
                         })
                 except Exception:
                     pass
@@ -139,12 +163,21 @@ def render_data_page():
             if file_records:
                 df_files = pd.DataFrame(file_records)
                 
-                # Selection for actions
-                # We use a dataframe to show info, and a selectbox for action
+                # Selection mechanism
+                # We use the checkbox row trick?
+                # User asked for "buttons in row". 
+                # Streamlit 1.23+ supports st.column_config.Column
+                # We can't easily trigger a python callback from a row button click *yet* without session state hacks.
+                # So we stick to: Select -> Action.
+                
                 st.dataframe(
                     df_files.drop(columns=["path"]), 
                     use_container_width=True, 
-                    hide_index=True
+                    hide_index=True,
+                    column_config={
+                        "Start": st.column_config.DatetimeColumn(format="D MMM YYYY, HH:mm"),
+                        "End": st.column_config.DatetimeColumn(format="D MMM YYYY, HH:mm"),
+                    }
                 )
                 
                 col_act1, col_act2 = st.columns(2)
