@@ -101,17 +101,105 @@ def fetch_data(
         mask &= (df['timestamp'] <= end_date)
     df = df[mask]
     
-    # Save to Parquet with descriptive name
-    # Format: exchange_symbol_timeframe_start_end.parquet
-    start_str = start_date.strftime('%Y%m%d')
-    end_str = end_date.strftime('%Y%m%d') if end_date else datetime.now().strftime('%Y%m%d')
+    # Sort and set index
+    df = df.sort_values('timestamp').set_index('timestamp')
     
-    filename = DATA_DIR / f"{exchange_id}_{safe_symbol}_{timeframe}_{start_str}_{end_str}.parquet"
-    df.to_parquet(filename)
+    # Check for missing data at the start (gap between requested start and actual first candle)
+    # We use a threshold (e.g., 2 periods) to avoid noise from slight misalignments
+    actual_start = df.index.min()
+    warning_msg = ""
+    if actual_start > start_date:
+        gap = actual_start - start_date
+        # If gap is substantial (e.g. > 24h), warn the user
+        if gap.total_seconds() > 86400: # 1 day
+            warning_msg = f"Warning: Data started at {actual_start} (requested {start_date}). Prior data unavailable."
+            print(warning_msg)
+
+    # Save Logic
+    safe_symbol = symbol.replace('/', '_')
+    save_dir = DATA_DIR / exchange_id / timeframe
+    save_dir.mkdir(parents=True, exist_ok=True)
+    file_path = save_dir / f"{safe_symbol}.parquet"
+    
+    if file_path.exists():
+        # If exists, we might want to merge or overwrite. 
+        # For this function, let's assume if it returns data, we allow the caller to handle, 
+        # BUT if called from UI as "Fetch", we usually imply "Get this specific range".
+        # However, to keep it simple: "Fetch" = Overwrite/Create New for that range? 
+        # User wants "Complete Data" as a separate option.
+        # Let's read existing, merge, and save to keep data contiguous.
+        try:
+            existing_df = pd.read_parquet(file_path)
+            # Combine and drop duplicates on index
+            df = pd.concat([existing_df, df])
+            df = df[~df.index.duplicated(keep='last')]
+            df = df.sort_index()
+        except Exception as e:
+            print(f"Error reading existing file {file_path}: {e}")
+            
+    df.to_parquet(file_path)
     
     if progress_callback:
-        progress_callback(1.0, f"Completed! Saved {len(df)} rows to {filename.name}")
-    print(f"Saved {len(df)} rows to {filename}")
+        final_msg = f"Completed! Saved {len(df)} rows."
+        if warning_msg:
+            final_msg += f" \n[{warning_msg}]"
+        progress_callback(1.0, final_msg)
+    print(f"Saved {len(df)} rows to {file_path}")
+    
+    return df
+
+def get_available_symbols(exchange_id: str) -> list[str]:
+    """
+    Fetches all available symbols from the exchange.
+    """
+    try:
+        exchange_class = getattr(ccxt, exchange_id)
+        exchange = exchange_class()
+        exchange.load_markets()
+        return sorted(exchange.symbols)
+    except Exception as e:
+        print(f"Error fetching symbols: {e}")
+        return []
+
+def update_dataset(exchange_id: str, symbol: str, timeframe: str, progress_callback: Optional[Callable[[int, str], None]] = None):
+    """
+    Fetches missing data from the last available timestamp to now.
+    """
+    safe_symbol = symbol.replace('/', '_')
+    file_path = DATA_DIR / exchange_id / timeframe / f"{safe_symbol}.parquet"
+    
+    if not file_path.exists():
+        if progress_callback: progress_callback(0, "File not found. Fetching full history.")
+        # If file doesn't exist, fetch from a default start date (e.g., 2023-01-01)
+        # The fetch_data function already handles start_date=None
+        return fetch_data(exchange_id, symbol, timeframe, start_date=None, end_date=datetime.now(), progress_callback=progress_callback)
+
+    try:
+        existing_df = pd.read_parquet(file_path)
+        last_ts = existing_df.index.max()
+        
+        # Start from last_ts (exclusive, so add a small delta if needed, but CCXT handles 'since' well)
+        # Convert last_ts (pandas Timestamp) to datetime
+        start_date = last_ts.to_pydatetime()
+        end_date = datetime.now()
+        
+        # If the last timestamp is very recent, no need to update
+        if (end_date - start_date).total_seconds() < 60: # e.g., less than 1 minute difference
+            if progress_callback: progress_callback(1.0, "Data is already up to date.")
+            print("Data is already up to date.")
+            return existing_df
+        
+        if progress_callback: progress_callback(0.1, f"Fetching update from {start_date}...")
+        
+        # Reuse fetch_data which now handles the merge/save logic
+        # fetch_data will return the merged DataFrame
+        updated_df = fetch_data(exchange_id, symbol, timeframe, start_date=start_date, end_date=end_date, progress_callback=progress_callback)
+        return updated_df
+        
+    except Exception as e:
+        if progress_callback: progress_callback(0, f"Error updating: {e}")
+        print(f"Error updating: {e}")
+        return None
 
 def fetch_top_markets(exchange_id: str = 'binance', limit: int = 50) -> pd.DataFrame:
     """

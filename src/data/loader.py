@@ -6,25 +6,37 @@ DATA_DIR = Path("data")
 def load_data(symbols: list[str], timeframe: str = '1h') -> dict[str, pd.DataFrame]:
     """
     Loads Parquet data for multiple symbols.
-    Returns a dictionary of {symbol: dataframe}.
-    Ensures all dataframes have datetime index.
+    Searches recursively in data/ for matching symbol files.
     """
     data = {}
     for symbol in symbols:
         safe_symbol = symbol.replace('/', '_')
-        filename = DATA_DIR / f"{safe_symbol}_{timeframe}.parquet"
         
-        if not filename.exists():
-            print(f"Warning: File not found for {symbol} at {filename}")
+        # Search anywhere in data/ for {safe_symbol}.parquet
+        # We assume timeframe matches if we had it in filename, but now it's in folder name
+        # We should filter by timeframe folder too ideally.
+        
+        # Matches: data/binance/1h/BTC_USDT.parquet
+        found_files = list(DATA_DIR.rglob(f"*/{timeframe}/{safe_symbol}.parquet"))
+        
+        if not found_files:
+            # Fallback for old flat structure if any
+            found_files = list(DATA_DIR.glob(f"*{safe_symbol}*{timeframe}.parquet"))
+            
+        if not found_files:
+            print(f"Warning: File not found for {symbol} (tf={timeframe})")
             continue
             
+        # Pick the first match
+        filename = found_files[0]
+        
         df = pd.read_parquet(filename)
         # Ensure timestamp is index
         if 'timestamp' in df.columns:
             df.set_index('timestamp', inplace=True)
             
         data[symbol] = df.sort_index()
-        print(f"Loaded {symbol}: {len(df)} rows")
+        print(f"Loaded {symbol} from {filename}: {len(df)} rows")
         
     return data
 

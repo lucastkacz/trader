@@ -9,7 +9,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
 # Lazy import to avoid circular dependency issues if any
-from src.data.fetcher import fetch_data, fetch_top_markets
+from src.data.fetcher import fetch_data, fetch_top_markets, update_dataset
+import shutil
 
 # List of exchanges provided by user
 EXCHANGES = [
@@ -17,25 +18,17 @@ EXCHANGES = [
     {"id": "binanceusdm", "name": "Binance USDⓈ-M"},
     {"id": "binancecoinm", "name": "Binance COIN-M"},
     {"id": "bybit", "name": "Bybit"},
-    {"id": "okx", "name": "OKX"},
-    {"id": "gate", "name": "Gate"},
     {"id": "kucoin", "name": "KuCoin"},
     {"id": "kucoinfutures", "name": "KuCoin Futures"},
-    {"id": "bitget", "name": "Bitget"},
-    {"id": "hyperliquid", "name": "Hyperliquid"},
     {"id": "bitmex", "name": "BitMEX"},
-    {"id": "bingx", "name": "BingX"},
-    {"id": "htx", "name": "HTX"},
-    {"id": "mexc", "name": "MEXC Global"},
-    {"id": "bitmart", "name": "BitMart"},
-    {"id": "cryptocom", "name": "Crypto.com"},
-    {"id": "coinex", "name": "CoinEx"},
-    {"id": "hashkey", "name": "HashKey Global"},
-    {"id": "woo", "name": "WOO X"},
-    {"id": "woofipro", "name": "WOOFI PRO"},
 ]
 
 from src.dashboard.styles import apply_compact_styles
+from src.data.fetcher import fetch_data, fetch_top_markets, update_dataset, get_available_symbols
+
+@st.cache_data(ttl=3600)
+def load_symbols(exchange_id):
+    return get_available_symbols(exchange_id)
 
 def render_data_page():
     # Apply shared styles
@@ -55,8 +48,25 @@ def render_data_page():
             exchange_options = {e['name']: e['id'] for e in EXCHANGES}
             selected_exchange_name = st.selectbox("Exchange", list(exchange_options.keys()))
             selected_exchange_id = exchange_options[selected_exchange_name]
+        
         with col_sym:
-            symbol = st.text_input("Symbol", value="BTC/USDT")
+            # Dynamic Symbol Loading
+            with st.spinner("Loading markets..."):
+                available_symbols = load_symbols(selected_exchange_id)
+            
+            if available_symbols:
+                # Try to set reasonable default
+                default_idx = 0
+                if "BTC/USDT" in available_symbols:
+                    default_idx = available_symbols.index("BTC/USDT")
+                elif "BTC/USD" in available_symbols:
+                    default_idx = available_symbols.index("BTC/USD")
+                    
+                symbol = st.selectbox("Symbol", available_symbols, index=default_idx)
+            else:
+                # Fallback if API fails
+                symbol = st.text_input("Symbol", value="BTC/USDT")
+                
         with col_tf:
             timeframe = st.selectbox("Timeframe", ["1m", "5m", "15m", "1h", "4h", "1d"], index=3)
 
@@ -89,24 +99,101 @@ def render_data_page():
             except Exception as e:
                 st.error(f"Failed: {str(e)}")
 
-        # 5. Existing Data View
-        st.markdown("---")
-        st.subheader("Local Files")
-        data_dir = Path("data")
-        if data_dir.exists():
-            files = list(data_dir.glob("*.parquet"))
-            if files:
-                file_data = []
-                for f in files:
-                    stats = f.stat()
-                    file_data.append({
-                        "Filename": f.name,
-                        "Size (KB)": round(stats.st_size / 1024, 2),
-                        "Date": datetime.fromtimestamp(stats.st_ctime).strftime('%Y-%m-%d %H:%M')
-                    })
-                st.dataframe(pd.DataFrame(file_data), use_container_width=True, height=200)
+    # 5. Local Data Management
+    st.markdown("---")
+    st.subheader("🗄️ Local Data Management")
+    
+    data_dir = Path("data")
+    if data_dir.exists():
+        # Recursive find
+        files = list(data_dir.rglob("*.parquet"))
+        
+        if files:
+            file_records = []
+            for f in files:
+                # Structure: data/exchange/timeframe/symbol.parquet
+                try:
+                    # relative_to data/: exchange/timeframe/symbol.parquet
+                    parts = f.relative_to(data_dir).parts
+                    if len(parts) >= 3:
+                        exchange = parts[0]
+                        tf = parts[1]
+                        sym = parts[2].replace(".parquet", "").replace("_", "/")
+                        
+                        # Quick stat for range (optional, might be slow if many files)
+                        # Let's just trust metadata or read head/tail if needed. 
+                        # For speed, just file stats.
+                        stats = f.stat()
+                        
+                        file_records.append({
+                            "Exchange": exchange,
+                            "Timeframe": tf,
+                            "Symbol": sym,
+                            "Size (KB)": round(stats.st_size / 1024, 2),
+                            "Modified": datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M'),
+                            "path": str(f) # Hidden usage
+                        })
+                except Exception:
+                    pass
+            
+            if file_records:
+                df_files = pd.DataFrame(file_records)
+                
+                # Selection for actions
+                # We use a dataframe to show info, and a selectbox for action
+                st.dataframe(
+                    df_files.drop(columns=["path"]), 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+                
+                col_act1, col_act2 = st.columns(2)
+                
+                with col_act1:
+                    st.write("##### Actions")
+                    selected_idx = st.selectbox(
+                        "Select Dataset to Manage", 
+                        range(len(file_records)), 
+                        format_func=lambda i: f"{file_records[i]['Exchange']} - {file_records[i]['Symbol']} ({file_records[i]['Timeframe']})"
+                    )
+                    
+                    target_file = file_records[selected_idx]
+                    
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("🔄 Complete / Update Data"):
+                            status = st.empty()
+                            prog = st.progress(0)
+                            
+                            def update_prog(p, m): 
+                                prog.progress(max(min(p, 1.0), 0.0))
+                                status.text(m)
+                                
+                            try:
+                                update_dataset(
+                                    target_file['Exchange'],
+                                    target_file['Symbol'],
+                                    target_file['Timeframe'],
+                                    progress_callback=update_prog
+                                )
+                                st.success(f"Updated {target_file['Symbol']}!")
+                            except Exception as e:
+                                st.error(f"Error: {e}")
+
+                    with c2:
+                        if st.button("🗑️ Delete File", type="primary"):
+                            try:
+                                Path(target_file['path']).unlink()
+                                st.success("Deleted file.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Could not delete: {e}")
             else:
-                st.info("No files.")
+                st.info("Found parquet files but structure didn't match 'data/exchange/timeframe/symbol.parquet'")
+        else:
+            st.info("No data files found.")
+    else:
+        st.info("Data directory does not exist.")
 
     # --- TAB 2: MARKET SCANNER (New Feature) ---
     with tab_scan:
