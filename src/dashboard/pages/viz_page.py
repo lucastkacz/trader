@@ -11,8 +11,10 @@ from src.data.loader import get_aligned_close_prices
 from src.dashboard.charts.prices import render_price_history, render_normalized_prices
 from src.dashboard.charts.zscore import render_zscore
 from src.dashboard.utils import calculate_zscore 
+from src.dashboard.styles import apply_compact_styles
 
 def render_viz_page():
+    apply_compact_styles()
     st.title("Visualizer")
     
     # Sidebar local to this page effectively
