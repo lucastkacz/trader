@@ -137,11 +137,8 @@ def fetch_data(
             df = pd.concat([existing_df, df])
             df = df[~df.index.duplicated(keep='last')]
             df = df.sort_index()
-import pyarrow as pa
-import pyarrow.parquet as pq
-import json
-
-# ...
+        except Exception as e:
+            print(f"Error reading existing file {file_path}: {e}")
 
     # Final DataFrame is ready (df) - merged and sorted.
     
