@@ -1,28 +1,4 @@
-# Python
+.venv/
 __pycache__/
 *.pyc
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-dist/
-build/
-*.egg-info/
-.venv/
-env/
-
-# Data
-market_data/
-data/lake/
-data/duckdb/
-data/artifacts/
-reports/
-
-# Configuration
-.env
-config/environments/live.yaml
-!config/environments/.gitkeep
-
-# IDE
-.vscode/
-.idea/
 .DS_Store
