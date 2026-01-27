@@ -4,6 +4,9 @@ import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Callable
+import pyarrow as pa
+import pyarrow.parquet as pq
+import json
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -134,10 +137,40 @@ def fetch_data(
             df = pd.concat([existing_df, df])
             df = df[~df.index.duplicated(keep='last')]
             df = df.sort_index()
-        except Exception as e:
-            print(f"Error reading existing file {file_path}: {e}")
-            
-    df.to_parquet(file_path)
+import pyarrow as pa
+import pyarrow.parquet as pq
+import json
+
+# ...
+
+    # Final DataFrame is ready (df) - merged and sorted.
+    
+    # Calculate Metadata
+    meta_start = df.index.min().strftime('%Y-%m-%d %H:%M:%S')
+    meta_end = df.index.max().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Convert to PyArrow Table
+    table = pa.Table.from_pandas(df)
+    
+    # Prepare Custom Metadata
+    custom_meta = {
+        'start_date': meta_start,
+        'end_date': meta_end,
+        'rows': str(len(df)),
+        'symbol': symbol,
+        'exchange': exchange_id
+    }
+    
+    # Merge with existing PyArrow metadata (which contains pandas schema info)
+    existing_meta = table.schema.metadata or {}
+    # Parquet metadata keys must be bytes
+    for k, v in custom_meta.items():
+        existing_meta[k.encode('utf-8')] = v.encode('utf-8')
+        
+    table = table.replace_schema_metadata(existing_meta)
+    
+    # Write with pyarrow directly
+    pq.write_table(table, file_path, write_statistics=True)
     
     if progress_callback:
         final_msg = f"Completed! Saved {len(df)} rows."

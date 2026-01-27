@@ -125,26 +125,41 @@ def render_data_page():
                         
                         # Read metadata for dates
                         try:
-                            # Efficiently read only the index (timestamp) limits
-                            # distinct from loading whole file
+                            # Use PyArrow metadata which is instant
                             meta = pq.read_metadata(f)
-                            # Parquet metadata statistics might give min/max if written
-                            # But often easier to just read the column if small
-                            # let's try reading the first and last row efficiently?
-                            # For simplicity in this 'Simplicity First' project, 
-                            # reading the whole index might be fast enough for 1h candles.
-                            # But let's be safe: use PyArrow to read index column only?
-                            # df_idx = pd.read_parquet(f, columns=[]) # Gets index?
-                            # Default to reading file for accuracy, optimizing later if slow.
-                            # We just need min and max index.
-                            df_meta = pd.read_parquet(f, columns=[]) 
-                            # Check if index is datetime
-                            if not df_meta.empty:
-                                start_t = df_meta.index.min()
-                                end_t = df_meta.index.max()
+                            metadata_dict = meta.metadata or {}
+                            
+                            # 1. Try Custom Metadata (Injected)
+                            # Keys are bytes in Parquet
+                            if b'start_date' in metadata_dict and b'end_date' in metadata_dict:
+                                start_t = metadata_dict[b'start_date'].decode('utf-8')
+                                end_t = metadata_dict[b'end_date'].decode('utf-8')
+                                
+                                # Optional: parse back to datetime object slightly for consistency if needed
+                                # but string is fine for display
+                                # Let's keep it robust for the dataframe sorting
+                                start_t = datetime.strptime(start_t, '%Y-%m-%d %H:%M:%S')
+                                end_t = datetime.strptime(end_t, '%Y-%m-%d %H:%M:%S')
+                                
                             else:
-                                start_t, end_t = "N/A", "N/A"
-                        except Exception:
+                                # 2. Fallback: Heuristic Scan of Statistics
+                                if meta.num_row_groups > 0:
+                                    ts_col_idx = -1
+                                    for i in range(meta.schema.num_columns):
+                                        if meta.schema.column(i).name == 'timestamp':
+                                            ts_col_idx = i
+                                            break
+                                            
+                                    if ts_col_idx != -1:
+                                        start_t = meta.row_group(0).column(ts_col_idx).statistics.min
+                                        end_t = meta.row_group(meta.num_row_groups - 1).column(ts_col_idx).statistics.max
+                                    else:
+                                        start_t, end_t = "N/A", "N/A"
+                                else:
+                                    start_t, end_t = "Empty", "Empty"
+
+                        except Exception as e:
+                            # print(f"Metadata read error: {e}")
                             start_t, end_t = "Error", "Error"
 
                         file_records.append({
