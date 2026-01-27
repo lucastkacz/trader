@@ -1,0 +1,164 @@
+import ccxt
+import pandas as pd
+import time
+from pathlib import Path
+from datetime import datetime
+from typing import Optional, Callable
+
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+
+def fetch_data(
+    exchange_id: str, 
+    symbol: str, 
+    timeframe: str = '1h', 
+    start_date: Optional[datetime] = None, 
+    end_date: Optional[datetime] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None
+):
+    """
+    Fetches historical OHLCV data from a specific exchange.
+    
+    Args:
+        exchange_id: CCXT exchange ID (e.g., 'binance', 'bybit')
+        symbol: Trading pair (e.g., 'BTC/USDT')
+        timeframe: Candle size (e.g., '1h', '1d', '15m')
+        start_date: Start datetime (UTC)
+        end_date: End datetime (UTC). Defaults to now.
+        progress_callback: Function(percentage, message) to report status.
+    """
+    try:
+        exchange_class = getattr(ccxt, exchange_id)
+        exchange = exchange_class()
+    except AttributeError:
+        raise ValueError(f"Exchange '{exchange_id}' not found in CCXT.")
+
+    if start_date is None:
+        start_date = datetime(2023, 1, 1)
+    
+    since = int(start_date.timestamp() * 1000)
+    end_ts = int(end_date.timestamp() * 1000) if end_date else int(time.time() * 1000)
+    
+    all_ohlcv = []
+    current_since = since
+    
+    limit = 1000
+    safe_symbol = symbol.replace('/', '_')
+    
+    # Estimate total candles for progress bar
+    # This is rough because we don't know exchange limits perfectly or gaps
+    # But good enough for UI feedback
+    total_duration_ms = end_ts - since
+    # Parse timeframe to ms (approximate for layout)
+    tf_seconds = exchange.parse_timeframe(timeframe)
+    expected_candles = total_duration_ms / (tf_seconds * 1000) if tf_seconds else 1000
+    
+    print(f"Fetching {symbol} from {exchange_id} ({timeframe})...")
+    
+    while True:
+        try:
+            # Respect rate limits
+            time.sleep(exchange.rateLimit / 1000)
+            
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=current_since, limit=limit)
+            if not ohlcv:
+                break
+            
+            # Filter matches only within range (ccxt sometimes returns before since, or we overshoot)
+            # Actually we just append and filter later usually, but let's check the last timestamp
+            last_ts = ohlcv[-1][0]
+            
+            all_ohlcv.extend(ohlcv)
+            current_since = last_ts + 1
+            
+            # Update Progress
+            fetched_duration = last_ts - since
+            progress = min(0.99, fetched_duration / total_duration_ms)
+            if progress_callback:
+                current_date_str = datetime.fromtimestamp(last_ts / 1000).strftime('%Y-%m-%d')
+                progress_callback(progress, f"Fetched up to {current_date_str}")
+            
+            if last_ts >= end_ts:
+                break
+                
+        except Exception as e:
+            print(f"Error fetching: {e}")
+            if progress_callback:
+                progress_callback(0, f"Error: {str(e)}")
+            return
+
+    if not all_ohlcv:
+        if progress_callback: progress_callback(1.0, "No data found.")
+        return
+
+    # Convert to DataFrame
+    df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+    
+    # Final filter for strict range
+    mask = (df['timestamp'] >= start_date)
+    if end_date:
+        mask &= (df['timestamp'] <= end_date)
+    df = df[mask]
+    
+    # Save to Parquet with descriptive name
+    # Format: exchange_symbol_timeframe_start_end.parquet
+    start_str = start_date.strftime('%Y%m%d')
+    end_str = end_date.strftime('%Y%m%d') if end_date else datetime.now().strftime('%Y%m%d')
+    
+    filename = DATA_DIR / f"{exchange_id}_{safe_symbol}_{timeframe}_{start_str}_{end_str}.parquet"
+    df.to_parquet(filename)
+    
+    if progress_callback:
+        progress_callback(1.0, f"Completed! Saved {len(df)} rows to {filename.name}")
+    print(f"Saved {len(df)} rows to {filename}")
+
+def fetch_top_markets(exchange_id: str = 'binance', limit: int = 50) -> pd.DataFrame:
+    """
+    Fetches 24h ticker data and returns top markets by Quote Volume.
+    Useful for screening liquid pairs.
+    """
+    try:
+        exchange_class = getattr(ccxt, exchange_id)
+        exchange = exchange_class()
+    except AttributeError:
+        return pd.DataFrame()
+
+    try:
+        # Some exchanges require load_markets before fetch_tickers
+        exchange.load_markets()
+        tickers = exchange.fetch_tickers()
+        
+        # specific to swap vs spot, let's filter for USDT pairs generally
+        # We try to keep it generic but usually we want USDT
+        data = []
+        for symbol, ticker in tickers.items():
+            if '/USDT' not in symbol:
+                continue
+            
+            quote_vol = ticker.get('quoteVolume')
+            if quote_vol is None:
+                continue
+                
+            data.append({
+                'Symbol': symbol,
+                'Price': ticker.get('last'),
+                '24h Vol (M)': quote_vol / 1_000_000,
+                '24h Change %': ticker.get('percentage'),
+            })
+            
+        df = pd.DataFrame(data)
+        if df.empty:
+            return df
+            
+        df = df.sort_values('24h Vol (M)', ascending=False).head(limit)
+        return df.reset_index(drop=True)
+        
+    except Exception as e:
+        print(f"Error fetching markets: {e}")
+        return pd.DataFrame()
+
+if __name__ == "__main__":
+    # Test
+    # fetch_data('binance', 'BTC/USDT', start_date=datetime(2024, 1, 1), end_date=datetime(2024, 1, 5))
+    print(fetch_top_markets().head())
