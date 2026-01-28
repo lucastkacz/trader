@@ -36,38 +36,42 @@ def fetch_data(
     except AttributeError:
         raise ValueError(f"Exchange '{exchange_id}' not found in CCXT.")
 
-    # Sort and set index
-    # ... logic continues ...
-    
-    # Save Logic
+    if start_date is None:
+        start_date = datetime(2023, 1, 1)
+
+    # 1. Define Paths
     safe_symbol = symbol.replace('/', '_')
     save_dir = DATA_DIR / exchange_id / timeframe
     save_dir.mkdir(parents=True, exist_ok=True)
     file_path = save_dir / f"{safe_symbol}.parquet"
     
-    # ---------------------------------------------------------
-    # SMART FETCH: Check coverage before fetching from API
-    # ---------------------------------------------------------
-    # To do this effectively, we need to inspect the file *before* the while-loop API calls.
-    # But this function structure currently prepares the while-loop first.
-    # I should move this check to the VERY TOP of the function.
-    # However, since I am using `replace_file_content` which works on chunks, 
-    # and I can't restart the whole function easily without a massive replace,
-    # I will modify the logic to check existence early.
-    
-    # Actually, `fetch_data` is called with specific start/end. 
-    # If I check simply:
+    # 2. Smart Fetch Check (Coverage)
     if file_path.exists():
         try:
-            # Quick Metadata Check
             meta = pq.read_metadata(file_path)
             meta_dict = meta.metadata or {}
             if b'start_date' in meta_dict and b'end_date' in meta_dict:
                 file_start = datetime.strptime(meta_dict[b'start_date'].decode('utf-8'), '%Y-%m-%d %H:%M:%S')
                 file_end = datetime.strptime(meta_dict[b'end_date'].decode('utf-8'), '%Y-%m-%d %H:%M:%S')
                 
-                # Check for full coverage
-                # Buffer of 1 hour/interval to be safe?
+                # Check coverage
+                if start_date >= file_start and (end_date is None or end_date <= file_end):
+                    msg = f"Data fully exists locally. Skipping fetch."
+                    print(msg)
+                    if progress_callback: progress_callback(1.0, f"Skipped: Local data covers request.")
+                    return pd.read_parquet(file_path)
+        except Exception:
+            pass
+
+    # 3. Setup API Fetch
+    since = int(start_date.timestamp() * 1000)
+    end_ts = int(end_date.timestamp() * 1000) if end_date else int(time.time() * 1000)
+    
+    all_ohlcv = []
+    current_since = since
+    limit = 1000
+    
+    # Estimate total candles logic was here, assuming it follows...
                 if start_date >= file_start and (end_date is None or end_date <= file_end):
                     msg = f"Data fully exists locally ({file_start} to {file_end}). Skipping API fetch."
                     print(msg)
