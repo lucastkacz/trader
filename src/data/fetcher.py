@@ -71,13 +71,8 @@ def fetch_data(
     current_since = since
     limit = 1000
     
-    # Estimate total candles logic was here, assuming it follows...
-                if start_date >= file_start and (end_date is None or end_date <= file_end):
-                    msg = f"Data fully exists locally ({file_start} to {file_end}). Skipping API fetch."
-                    print(msg)
-                    if progress_callback: progress_callback(1.0, f"Skipped: Local data covers request.")
-                    return pd.read_parquet(file_path)
-        except Exception:
+    
+    # Estimate total candles
             pass # Fallback to fetch if check fails
             
     # Estimate total candles... (original code follows)
