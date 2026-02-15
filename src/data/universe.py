@@ -1,0 +1,83 @@
+import json
+from pathlib import Path
+from datetime import datetime
+import pandas as pd
+from typing import List, Dict, Optional, Any
+
+UNIVERSE_DIR = Path("data/universes")
+UNIVERSE_DIR.mkdir(parents=True, exist_ok=True)
+
+class UniverseManager:
+    """
+    Manages Universe configuration files (JSON).
+    """
+
+    @staticmethod
+    def list_universes() -> List[Dict[str, Any]]:
+        """Returns metadata for all available universes."""
+        universes = []
+        if not UNIVERSE_DIR.exists():
+            return []
+            
+        for f in UNIVERSE_DIR.glob("*.json"):
+            try:
+                with open(f, "r") as json_file:
+                    data = json.load(json_file)
+                    # Add filename for reference
+                    data["filename"] = f.name
+                    # Basic validation
+                    if "name" in data and "symbols" in data:
+                        universes.append(data)
+            except Exception as e:
+                print(f"Error reading universe {f}: {e}")
+        return universes
+
+    @staticmethod
+    def save_universe(
+        name: str, 
+        symbols: List[str], 
+        timeframe: str, 
+        start_date: datetime, 
+        end_date: datetime, 
+        description: str = "",
+        exchange_id: str = "binance"
+    ) -> Path:
+        """Saves a new universe configuration."""
+        
+        # Sanitize name
+        safe_name = "".join([c if c.isalnum() else "_" for c in name])
+        
+        config = {
+            "name": name,
+            "description": description,
+            "timeframe": timeframe,
+            "data_source": exchange_id,
+            "range": {
+                "start": start_date.strftime("%Y-%m-%d %H:%M:%S"),
+                "end": end_date.strftime("%Y-%m-%d %H:%M:%S")
+            },
+            "symbols": symbols,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "alignment_check": "unchecked"  # Default
+        }
+        
+        filepath = UNIVERSE_DIR / f"{safe_name}.json"
+        
+        with open(filepath, "w") as f:
+            json.dump(config, f, indent=4)
+            
+        return filepath
+
+    @staticmethod
+    def delete_universe(filename: str):
+        path = UNIVERSE_DIR / filename
+        if path.exists():
+            path.unlink()
+
+    @staticmethod
+    def load_universe_config(filename: str) -> Optional[Dict]:
+        path = UNIVERSE_DIR / filename
+        if path.exists():
+            with open(path, "r") as f:
+                return json.load(f)
+        return None

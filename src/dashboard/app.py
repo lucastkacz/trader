@@ -1,5 +1,5 @@
 import streamlit as st
-from src.dashboard.pages.data_page import render_data_page
+from src.dashboard.pages.data.layout import render_data_page
 
 st.set_page_config(page_title="Quant Panel", layout="wide")
 
