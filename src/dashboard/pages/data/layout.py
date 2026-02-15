@@ -5,6 +5,7 @@ from src.dashboard.styles import apply_compact_styles
 from src.dashboard.pages.data.downloader import render_downloader_tab
 from src.dashboard.pages.data.scanner import render_scanner_tab
 from src.dashboard.pages.data.universe import render_universe_tab
+from src.dashboard.pages.data.manager import render_manager_tab
 
 def render_data_page():
     # Apply shared styles
@@ -12,7 +13,7 @@ def render_data_page():
 
     st.title("Data Management")
 
-    tab_download, tab_scan, tab_universe = st.tabs(["⬇️ Downloader", "🔍 Market Scanner", "🌌 Universes"])
+    tab_download, tab_scan, tab_manage, tab_universe = st.tabs(["⬇️ Downloader", "🔍 Market Scanner", "🗄️ File Manager", "🌌 Universes"])
 
     with tab_download:
         render_downloader_tab()
@@ -20,6 +21,9 @@ def render_data_page():
     with tab_scan:
         render_scanner_tab()
         
+    with tab_manage:
+        render_manager_tab()
+
     with tab_universe:
         render_universe_tab()
 
