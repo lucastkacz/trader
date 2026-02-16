@@ -1,8 +1,13 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from src.data.fetcher import fetch_data
+from src.data.fetcher import fetch_data, get_available_symbols
 from src.data.universe import UniverseManager
+
+@st.cache_data(ttl=3600)
+def load_symbols(exchange_id: str):
+    """Cached wrapper to fetch exchange symbols."""
+    return get_available_symbols(exchange_id)
 
 def render_downloader_tab():
     st.markdown("Fetch historical data.")
@@ -41,9 +46,26 @@ def render_downloader_tab():
         selected_exchange_id = exchange_options[selected_exchange_name]
     
     with col_sym:
-        # Dynamic Symbol Loading logic would go here
-        # Simplified for refactor
-        symbol = st.text_input("Symbol", value="BTC/USDT")
+        # Dynamic Symbol Loading
+        available_symbols = []
+        with st.spinner("Loading markets..."):
+            try:
+                available_symbols = load_symbols(selected_exchange_id)
+            except Exception:
+                pass
+        
+        if available_symbols:
+            # Smart Default
+            default_index = 0
+            if "BTC/USDT" in available_symbols:
+                default_index = available_symbols.index("BTC/USDT")
+            elif "BTC/USD" in available_symbols:
+                default_index = available_symbols.index("BTC/USD")
+            
+            symbol = st.selectbox("Symbol", available_symbols, index=default_index)
+        else:
+            # Fallback
+            symbol = st.text_input("Symbol", value="BTC/USDT")
             
     with col_tf:
         timeframe = st.selectbox("Timeframe", ["1m", "5m", "15m", "1h", "4h", "1d"], index=3)
