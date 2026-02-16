@@ -126,7 +126,8 @@ def render_scanner_tab():
                 "symbols": success_symbols,
                 "timeframe": batch_tf,
                 "start": batch_start,
-                "end": batch_end
+                "end": batch_end,
+                "exchange": selected_exchange_id
             }
 
         # Universe Creation Button (Appears after fetch)
@@ -145,7 +146,8 @@ def render_scanner_tab():
                         timeframe=batch_data['timeframe'],
                         start_date=batch_data['start'],
                         end_date=batch_data['end'],
-                        description=f"Created from Market Scanner batch fetch of {len(batch_data['symbols'])} assets."
+                        description=f"Created from Market Scanner batch fetch of {len(batch_data['symbols'])} assets.",
+                        exchange_id=batch_data.get('exchange', 'binance')
                     )
                     st.success(f"Universe saved to {path}!")
                 except Exception as e:
