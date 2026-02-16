@@ -4,6 +4,18 @@ from datetime import datetime
 from src.data.fetcher import fetch_data, fetch_top_markets
 from src.data.universe import UniverseManager
 import json
+from src.dashboard.pages.data import EXCHANGES
+
+# Assuming EXCHANGES is defined elsewhere, e.g., in a config or constants file
+# For the purpose of this edit, I'll add a placeholder if it's not in the original content.
+# If EXCHANGES is not defined, this code will cause an error.
+# Let's assume it's available globally or imported.
+# Example placeholder for EXCHANGES if it's not in the original file:
+# EXCHANGES = [
+#     {"id": "binance", "name": "Binance"},
+#     {"id": "bybit", "name": "Bybit"},
+#     {"id": "okx", "name": "OKX"},
+# ]
 
 def render_scanner_tab():
     st.subheader("Market Scanner & Batch Fetcher")
@@ -11,11 +23,31 @@ def render_scanner_tab():
     # Defaults
     selected_exchange_id = "binance" 
     
-    c1, c2 = st.columns([2, 1])
-    with c1:
-            st.markdown(f"**Exchange**: Binance (Default)")
+    # Determine default index from session state (shared with Downloader)
+    default_idx = 0
+    if 'selected_exchange_name' in st.session_state:
+        try:
+             # Find index of saved name in current list
+             names = [e['name'] for e in EXCHANGES]
+             if st.session_state['selected_exchange_name'] in names:
+                 default_idx = names.index(st.session_state['selected_exchange_name'])
+        except ValueError:
+            pass
+
+    col1, col2 = st.columns([1, 1])
     
-    with c2:
+    with col1:
+        # Construct options map
+        exchange_options = {e['name']: e['id'] for e in EXCHANGES}
+        selected_exchange_name = st.selectbox("Exchange", list(exchange_options.keys()), index=default_idx, key="scanner_exchange_select")
+        selected_exchange_id = exchange_options[selected_exchange_name]
+        
+        # Update session state if changed here too
+        if selected_exchange_name != st.session_state.get('selected_exchange_name'):
+             st.session_state['selected_exchange_name'] = selected_exchange_name
+             st.session_state['selected_exchange_id'] = selected_exchange_id
+    
+    with col2:
         limit_scan = st.slider("Scan Limit", 10, 100, 20)
         
     if st.button(f"🔍 Scan Top Markets"):

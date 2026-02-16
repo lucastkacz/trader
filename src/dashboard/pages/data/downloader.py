@@ -1,8 +1,6 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime
 from src.data.fetcher import fetch_data, get_available_symbols
 from src.data.universe import UniverseManager
+from src.dashboard.pages.data import EXCHANGES
 
 @st.cache_data(ttl=3600)
 def load_symbols(exchange_id: str):
@@ -12,38 +10,25 @@ def load_symbols(exchange_id: str):
 def render_downloader_tab():
     st.markdown("Fetch historical data.")
     
-    # Needs EXCHANGES list from main layout or re-import
-    # For now, let's redefine minimal or pass as args. 
-    # Better to import shared constant if possible, but let's keep it simple.
-    EXCHANGES = [
-        {"id": "binance", "name": "Binance"},
-        {"id": "binanceusdm", "name": "Binance USDⓈ-M"},
-        {"id": "binancecoinm", "name": "Binance COIN-M"},
-        {"id": "bybit", "name": "Bybit"},
-        {"id": "okx", "name": "OKX"},
-        {"id": "gate", "name": "Gate"},
-        {"id": "kucoin", "name": "KuCoin"},
-        {"id": "kucoinfutures", "name": "KuCoin Futures"},
-        {"id": "bitget", "name": "Bitget"},
-        {"id": "hyperliquid", "name": "Hyperliquid"},
-        {"id": "bitmex", "name": "BitMEX"},
-        {"id": "bingx", "name": "BingX"},
-        {"id": "htx", "name": "HTX"},
-        {"id": "mexc", "name": "MEXC Global"},
-        {"id": "bitmart", "name": "BitMart"},
-        {"id": "cryptocom", "name": "Crypto.com"},
-        {"id": "coinex", "name": "CoinEx"},
-        {"id": "hashkey", "name": "HashKey Global"},
-        {"id": "woo", "name": "WOO X"},
-        {"id": "woofipro", "name": "WOOFI PRO"},
-    ]
-    
     # 1. Exchange Selection
     col_ex, col_sym, col_tf = st.columns([1, 1, 1])
     with col_ex:
         exchange_options = {e['name']: e['id'] for e in EXCHANGES}
-        selected_exchange_name = st.selectbox("Exchange", list(exchange_options.keys()))
+        
+        # Determine default index from session state
+        default_idx = 0
+        if 'selected_exchange_name' in st.session_state:
+            try:
+                default_idx = list(exchange_options.keys()).index(st.session_state['selected_exchange_name'])
+            except ValueError:
+                pass
+                
+        selected_exchange_name = st.selectbox("Exchange", list(exchange_options.keys()), index=default_idx)
         selected_exchange_id = exchange_options[selected_exchange_name]
+        
+        # Persist selection
+        st.session_state['selected_exchange_name'] = selected_exchange_name
+        st.session_state['selected_exchange_id'] = selected_exchange_id
     
     with col_sym:
         # Dynamic Symbol Loading
