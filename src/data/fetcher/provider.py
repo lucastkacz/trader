@@ -26,18 +26,31 @@ def fetch_ohlcv_range(
     """
     all_ohlcv = []
     
-    # Timestamps in ms
-    since = int(start_date.timestamp() * 1000)
-    end_ts = int(end_date.timestamp() * 1000)
+    # Timestamps in ms - Force UTC
+    if start_date.tzinfo is None:
+        start_date_utc = start_date.replace(tzinfo=datetime.timezone.utc if hasattr(datetime, 'timezone') else None) # simple fallback
+        # actually, best to assume input is naive-as-UTC or use a library. 
+        # Standard: treat naive as local? No, crypto is UTC. 
+        # Let's assume input is intended as UTC.
+        # But start_date.timestamp() uses local timezone if naive!
+        # Fix:
+        since = int(start_date.replace(tzinfo=pd.Timestamp.min.tz).timestamp() * 1000) # Wait, this is getting complex.
+        
+        # Simpler: Use pd.Timestamp to handle tz conversions easily
+        since = int(pd.Timestamp(start_date).tz_localize('UTC').timestamp() * 1000)
+        end_ts = int(pd.Timestamp(end_date).tz_localize('UTC').timestamp() * 1000)
+
+    else:
+        since = int(start_date.timestamp() * 1000)
+        end_ts = int(end_date.timestamp() * 1000)
+
     limit = 1000
-    
     current_since = since
     
     total_duration = end_ts - since
     if total_duration <= 0:
         return []
 
-    print(f"  Fetching segment: {start_date} -> {end_date}")
 
     while True:
         try:
@@ -51,17 +64,23 @@ def fetch_ohlcv_range(
                 break
                 
             last_ts = ohlcv[-1][0]
-            all_ohlcv.extend(ohlcv)
+            
+            # Filter entries beyond end_ts
+            valid_ohlcv = [x for x in ohlcv if x[0] <= end_ts] # inclusive end to capture the exact end_date candle
+            # fetch_data calls usually use inclusive/exclusive depending on logic.
+            # safe to include end_ts? typically yes.
+            # But duplicate logic check: stored_end = Jan 31. Req: start > Jan 31.
+            # So we generally want up to end_ts.
+            
+            all_ohlcv.extend(valid_ohlcv)
+            
             current_since = last_ts + 1
             
             # Progress update (local to this segment)
             if progress_callback:
                 current_duration = last_ts - since
-                # We normalize this later in the main loop, but here is fine too
-                # For now, let's just log or let parent handle overall progress
-                pass
-
-            if last_ts >= end_ts:
+            
+            if last_ts >= end_ts or len(ohlcv) < limit:
                 break
                 
         except Exception as e:
