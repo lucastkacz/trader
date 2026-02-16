@@ -122,41 +122,62 @@ def render_qc_tab():
             df_res = pd.DataFrame(qc_results)
             st.dataframe(df_res, use_container_width=True)
             
-            # Simple Visuals
-            # Gantt chart of start/end?
-            if 'Start' in df_res.columns and 'End' in df_res.columns:
+            # Gantt chart for universe?
+            if result_mode == "Universe" and 'Start' in df_res.columns and 'End' in df_res.columns:
                 fig = px.timeline(df_res, x_start="Start", x_end="End", y="Symbol", title="Data Coverage Intervals")
                 fig.update_yaxes(autorange="reversed")
                 st.plotly_chart(fig, use_container_width=True)
+
+        # --- Single File Inspector ---
+        if result_mode == "Single File" and selected_files and st.session_state.qc_results:
+             st.divider()
+             st.write("### 🔬 Detailed Inspector")
+             
+             # We should have only one file in this mode
+             sym, f_path = selected_files[0]
+             
+             try:
+                 # Load data efficiently? 
+                 # Maybe just last 1000 candles for performance
+                 df_insp = pd.read_parquet(f_path)
+                 
+                 # Create Subplots: Candlestick + Funding
+                 from plotly.subplots import make_subplots
+                 
+                 has_funding = 'fundingRate' in df_insp.columns
+                 
+                 fig = make_subplots(
+                     rows=2 if has_funding else 1, 
+                     cols=1, 
+                     shared_xaxes=True, 
+                     vertical_spacing=0.05,
+                     row_heights=[0.7, 0.3] if has_funding else [1.0],
+                     subplot_titles=(f"{sym} Price Action", "Funding Rate") if has_funding else (f"{sym} Price Action",)
+                 )
+                 
+                 # Candlestick
+                 fig.add_trace(go.Candlestick(
+                     x=df_insp.index,
+                     open=df_insp['open'],
+                     high=df_insp['high'],
+                     low=df_insp['low'],
+                     close=df_insp['close'],
+                     name='OHLC'
+                 ), row=1, col=1)
+                 
+                 # Funding
+                 if has_funding:
+                     fig.add_trace(go.Bar(
+                         x=df_insp.index, 
+                         y=df_insp['fundingRate'], 
+                         name='Funding Rate', 
+                         marker_color='orange'
+                     ), row=2, col=1)
+                     
+                 fig.update_layout(height=600, xaxis_rangeslider_visible=False)
+                 st.plotly_chart(fig, use_container_width=True)
+                 
+             except Exception as e:
+                 st.error(f"Could not load chart: {e}")
             
-        # Drill Down Inspector
-        st.divider()
-        st.write("### 🔬 Inspector")
-        
-        insp_sym = st.selectbox("Inspect Symbol", [s[0] for s in selected_files])
-        target_path = next((f for s, f in selected_files if s == insp_sym), None)
-        
-        if target_path:
-            # Load tail
-            df_insp = pd.read_parquet(target_path)
-            st.write("#### Last 5 Rows")
-            st.dataframe(df_insp.tail())
-            
-            st.write("#### Chart")
-            # Dual axis: Close + Funding
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df_insp.index, y=df_insp['close'], name='Close', line=dict(color='blue')))
-            
-            if 'fundingRate' in df_insp.columns:
-                # Funding rate is often small, put on secondary axis
-                # Or just plot underneath?
-                # Secondary axis is better
-                fig.add_trace(go.Bar(x=df_insp.index, y=df_insp['fundingRate'], name='Funding Rate', marker_color='red', yaxis='y2'))
-                
-            fig.update_layout(
-                yaxis2=dict(overlaying='y', side='right', title='Funding Rate'),
-                height=500,
-                title=f"{insp_sym} Price & Funding"
-            )
-            st.plotly_chart(fig, use_container_width=True)
 
