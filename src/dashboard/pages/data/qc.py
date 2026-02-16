@@ -22,7 +22,7 @@ def render_qc_tab():
             return
             
         u_names = [u['name'] for u in universes]
-        sel_u = st.selectbox("Select Universe", u_names)
+        sel_u = st.selectbox("Select Universe", u_names, key="qc_universe_select")
         config = next((u for u in universes if u['name'] == sel_u), None)
         
         if config:
