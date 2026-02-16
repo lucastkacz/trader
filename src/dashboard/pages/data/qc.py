@@ -12,6 +12,7 @@ def render_qc_tab():
     
     # 1. Source Selection
     source_mode = st.radio("Select Source", ["Universe", "Single File"], horizontal=True)
+    result_mode = source_mode # Capture for later use
     
     selected_files = []
     
@@ -51,13 +52,16 @@ def render_qc_tab():
                 # Extract symbol name roughly or just use key
                 selected_files.append((sel_f_key, file_map[sel_f_key]))
 
-    if not selected_files:
-        return
+    st.session_state.qc_results = None
 
-    check_btn = st.button("Run QC Check")
-    
+    if selected_files:
+        check_btn = st.button("Run QC Check")
+    else:
+        st.warning("No files selected to check.")
+        check_btn = False
+
     if check_btn:
-        qc_results = []
+        st.session_state.qc_results = [] # Reset on new run
         
         progress = st.progress(0)
         
@@ -72,7 +76,7 @@ def render_qc_tab():
                 df = pd.read_parquet(f_path, columns=['close'])
                 
                 if df.empty:
-                    qc_results.append({
+                    st.session_state.qc_results.append({
                         "Symbol": sym, "Rows": 0, "Start": None, "End": None, "Continuity": 0.0
                     })
                     continue
@@ -95,7 +99,7 @@ def render_qc_tab():
                 except:
                     pass
 
-                qc_results.append({
+                st.session_state.qc_results.append({
                     "Symbol": sym,
                     "Rows": rows,
                     "Start": start,
@@ -108,8 +112,11 @@ def render_qc_tab():
                 
         progress.progress(1.0)
         
-        st.divider()
+        progress.progress(1.0)
+        
         st.write("### QC Report")
+        
+        qc_results = st.session_state.qc_results
         
         if qc_results:
             df_res = pd.DataFrame(qc_results)

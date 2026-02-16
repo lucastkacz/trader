@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Union
 
 UNIVERSE_DIR = Path("data/universes")
 UNIVERSE_DIR.mkdir(parents=True, exist_ok=True)
@@ -81,3 +81,29 @@ class UniverseManager:
             with open(path, "r") as f:
                 return json.load(f)
         return None
+
+    @staticmethod
+    def remove_symbols_from_universe(filename: str, symbols_to_remove: List[str]):
+        """
+        Removes a list of symbols from a universe file.
+        """
+        path = UNIVERSE_DIR / filename
+        if not path.exists():
+            return
+            
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+                
+            original_count = len(data.get("symbols", []))
+            # Filter out symbols
+            data["symbols"] = [s for s in data.get("symbols", []) if s not in symbols_to_remove]
+            new_count = len(data["symbols"])
+            
+            if original_count != new_count:
+                # Save back
+                with open(path, "w") as f:
+                    json.dump(data, f, indent=4)
+                    
+        except Exception as e:
+            print(f"Error updating universe {filename}: {e}")
