@@ -107,3 +107,34 @@ class UniverseManager:
                     
         except Exception as e:
             print(f"Error updating universe {filename}: {e}")
+
+    @staticmethod
+    def update_universe(filename: str, updates: Dict[str, Any]) -> bool:
+        """
+        Updates an existing universe configuration with the provided fields.
+        Preserves original fields not in `updates`.
+        """
+        path = UNIVERSE_DIR / filename
+        if not path.exists():
+            return False
+            
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+                
+            # Update fields
+            # Special handling for range to ensure structure
+            if "range" in updates and isinstance(updates["range"], dict):
+                data["range"].update(updates["range"])
+                del updates["range"] # Handled
+                
+            data.update(updates)
+            data["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            with open(path, "w") as f:
+                json.dump(data, f, indent=4)
+                
+            return True
+        except Exception as e:
+            print(f"Error updating universe {filename}: {e}")
+            return False
