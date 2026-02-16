@@ -1,3 +1,6 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime
 from src.data.fetcher import fetch_data, get_available_symbols
 from src.data.universe import UniverseManager
 from src.dashboard.pages.data import EXCHANGES
