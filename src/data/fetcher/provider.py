@@ -70,6 +70,50 @@ def fetch_ohlcv_range(
             
     return all_ohlcv
 
+def fetch_funding_rate_history(
+    exchange: ccxt.Exchange, 
+    symbol: str, 
+    start_date: datetime, 
+    end_date: datetime
+) -> List[Dict]:
+    """
+    Fetches funding rate history if supported.
+    """
+    if not exchange.has.get('fetchFundingRateHistory'):
+        return []
+
+    all_funding = []
+    since = int(start_date.timestamp() * 1000)
+    end_ts = int(end_date.timestamp() * 1000)
+    limit = 1000
+    
+    current_since = since
+    
+    # Simple pagination loop similar to OHLCV
+    while True:
+        try:
+            if exchange.rateLimit:
+                time.sleep(exchange.rateLimit / 1000)
+                
+            rates = exchange.fetch_funding_rate_history(symbol, since=current_since, limit=limit)
+            
+            if not rates:
+                break
+                
+            last_ts = rates[-1]['timestamp']
+            all_funding.extend(rates)
+            current_since = last_ts + 1
+            
+            if last_ts >= end_ts:
+                break
+                
+        except Exception as e:
+            # Depending on exchange, this might fail gracefully or not
+            print(f"Error fetching funding rates: {e}")
+            break
+            
+    return all_funding
+
 def get_market_tickers(exchange_id: str, limit: int = 50) -> pd.DataFrame:
     """
     Fetches top tickers by quote volume.

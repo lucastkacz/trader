@@ -6,6 +6,7 @@ from src.dashboard.pages.data.downloader import render_downloader_tab
 from src.dashboard.pages.data.scanner import render_scanner_tab
 from src.dashboard.pages.data.universe import render_universe_tab
 from src.dashboard.pages.data.manager import render_manager_tab
+from src.dashboard.pages.data.qc import render_qc_tab
 
 def render_data_page():
     # Apply shared styles
@@ -13,7 +14,9 @@ def render_data_page():
 
     st.title("Data Management")
 
-    tab_download, tab_scan, tab_manage, tab_universe = st.tabs(["⬇️ Downloader", "🔍 Market Scanner", "🗄️ File Manager", "🌌 Universes"])
+    tab_download, tab_scan, tab_manage, tab_universe, tab_qc = st.tabs([
+        "⬇️ Downloader", "🔍 Market Scanner", "🗄️ File Manager", "🌌 Universes", "🕵️ QC & Inspect"
+    ])
 
     with tab_download:
         render_downloader_tab()
@@ -26,4 +29,7 @@ def render_data_page():
 
     with tab_universe:
         render_universe_tab()
+        
+    with tab_qc:
+        render_qc_tab()
 

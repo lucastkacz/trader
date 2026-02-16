@@ -74,7 +74,7 @@ def fetch_data(
     total_segments = len(fetch_ranges)
     for i, (seg_start, seg_end) in enumerate(fetch_ranges):
         if progress_callback:
-            progress_callback(0.0, f"Fetching segment {i+1}/{total_segments}...")
+            progress_callback(0.0, f"Fetching segment {i+1}/{total_segments}: {seg_start} -> {seg_end}")
             
         raw_ohlcv = provider.fetch_ohlcv_range(
             exchange, symbol, timeframe, seg_start, seg_end, progress_callback
@@ -84,6 +84,32 @@ def fetch_data(
             df_seg = pd.DataFrame(raw_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df_seg['timestamp'] = pd.to_datetime(df_seg['timestamp'], unit='ms')
             df_seg = df_seg.set_index('timestamp').sort_index()
+
+            # --- Funding Rate Integration ---
+            try:
+                # Attempt to fetch funding rates for this same segment
+                funding_data = provider.fetch_funding_rate_history(exchange, symbol, seg_start, seg_end)
+                if funding_data:
+                    df_fund = pd.DataFrame(funding_data)
+                    # Keep timestamp and fundingRate
+                    if 'timestamp' in df_fund.columns and 'fundingRate' in df_fund.columns:
+                        df_fund['timestamp'] = pd.to_datetime(df_fund['timestamp'], unit='ms')
+                        df_fund = df_fund.set_index('timestamp')[['fundingRate']]
+                        
+                        # Merge: Left join on OHLCV timestamp
+                        # Note: Funding rates usually happen every 8h. OHLCV might be 1h.
+                        # We want the funding rate column to have values at the 8h mark? 
+                        # Or forward fill? Standard is usually point-in-time event.
+                        # MERGE with tolerance? Or just exact match?
+                        # Let's do a join. Most rows will be NaN.
+                        df_seg = df_seg.join(df_fund, how='left')
+            except Exception as e:
+                print(f"Funding fetch warning: {e}")
+                
+            # If fundingRate column missing (spot or failed), ensure it exists as NaN for schema consistency
+            if 'fundingRate' not in df_seg.columns:
+                 df_seg['fundingRate'] = float('nan')
+
             new_data_segments.append(df_seg)
             
     # 3. Merge & Save
@@ -98,10 +124,13 @@ def fetch_data(
         # Save (merges with existing)
         storage.save_data(new_df, file_path, exchange_id, symbol)
         
+        if progress_callback:
+            progress_callback(1.0, f"💾 Saved {len(new_df)} new rows to storage.")
+        
     else:
         print("Data fully cached. No API calls made.")
         if progress_callback:
-            progress_callback(1.0, "Data fully cached.")
+            progress_callback(1.0, "✨ Data fully cached. No API calls made.")
 
     # 4. Return Requested View
     # Reload fully to return the consistent requested range
