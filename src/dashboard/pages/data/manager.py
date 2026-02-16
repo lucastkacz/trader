@@ -13,6 +13,10 @@ def render_manager_tab():
         st.info("No data directory found.")
         return
 
+    # Refresh Button
+    if st.button("🔄 Refresh File List"):
+        st.rerun()
+
     # 1. Scan for Files
     # Structure: data/exchange/timeframe/symbol_slash_escaped.parquet
     files = list(data_dir.rglob("*.parquet"))

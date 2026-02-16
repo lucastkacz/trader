@@ -78,5 +78,6 @@ def render_downloader_tab():
             with st.spinner(f"Connecting to {selected_exchange_name}..."):
                 fetch_data(selected_exchange_id, symbol, timeframe, start_dt, end_dt, log_callback)
             st.success("Download Complete!")
+            st.rerun()
         except Exception as e:
             st.error(f"Failed: {str(e)}")
