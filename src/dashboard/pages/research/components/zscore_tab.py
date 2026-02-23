@@ -18,7 +18,10 @@ def render_zscore_tab(universe: dict):
     hedge_ratio = config['hedge_ratio']
     timeframe = universe.get('timeframe', '1h')
     
-    st.info(f"**Selected Pair:** {asset_a} & {asset_b}  |  **Hedge Ratio:** {hedge_ratio:.4f}")
+    if config.get('is_rolling', False):
+        st.info(f"**Selected Pair:** {asset_a} & {asset_b}  |  **Hedge Ratio:** Rolling ({config.get('hedge_window')} periods)")
+    else:
+        st.info(f"**Selected Pair:** {asset_a} & {asset_b}  |  **Hedge Ratio:** Static ({hedge_ratio:.4f})")
     
     # UI Controls
     col1, col2 = st.columns(2)
@@ -36,7 +39,15 @@ def render_zscore_tab(universe: dict):
                 df_clean = close_df.dropna()
                 
                 # Math
-                spread = calculate_spread(df_clean[asset_a], df_clean[asset_b], hedge_ratio)
+                is_rolling = config.get('is_rolling', False)
+                if is_rolling:
+                    hedge_window = config.get('hedge_window', 90)
+                    from src.stats.cointegration import calculate_rolling_spread
+                    spread, _ = calculate_rolling_spread(df_clean[asset_a], df_clean[asset_b], window=hedge_window)
+                    spread = spread.dropna() # Remove NaNs from rolling origin
+                else:
+                    spread = calculate_spread(df_clean[asset_a], df_clean[asset_b], hedge_ratio)
+                    
                 z_score = calculate_z_score(spread, window=window)
                 
                 # Plot Z-Score
