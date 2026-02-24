@@ -41,7 +41,7 @@ def render_strategy_page():
         # Display the pairs in an expander instead of sidebar
         with st.expander("View Basket Pairs"):
             if pairs:
-                pair_strs = [f"**{p['asset_a']}/{p['asset_b']}** (p={p['min_p_value']:.3f})" for p in pairs]
+                pair_strs = [f"**{p['asset_a']}/{p['asset_b']}** (p={p.get('p_value', p.get('latest_p_value', 0.0)):.4f})" for p in pairs]
                 st.markdown(" • ".join(pair_strs))
 
     st.divider()

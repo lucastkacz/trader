@@ -186,15 +186,16 @@ def render_research_page():
                                     'asset_a': asset_a,
                                     'asset_b': asset_b,
                                     'correlation': row['Correlation'],
-                                    'latest_p_value': latest_pval,
-                                    'min_p_value': valid_pvals.min(),
-                                    'latest_hedge_ratio': latest_beta
+                                    'p_value': latest_pval,
+                                    'hedge_ratio': latest_beta
                                 })
                                 
                         progress_bar.progress((idx + 1) / len(top_pairs_df))
                         
                     progress_bar.empty()
                     st.session_state.alpha_results = results_list
+                    st.session_state.alpha_start_date = str(close_df.index[0].date()) if not close_df.empty else ""
+                    st.session_state.alpha_end_date = str(close_df.index[-1].date()) if not close_df.empty else ""
                     
                 except Exception as e:
                     st.error(f"Cointegration testing failed: {str(e)}")
@@ -209,16 +210,16 @@ def render_research_page():
             results_df = pd.DataFrame(results_list)
             
             # Sort by tightest minimum p-value
-            results_df = results_df.sort_values('latest_p_value', ascending=True)
+            results_df = results_df.sort_values('p_value', ascending=True)
             
             st.success(f"Discovery Complete! {len(results_df)} Pairs share a proven statistical mean-reverting relationship.")
             
             st.write("### Alpha Discovery Results (Ranked by Current Cointegration Strength)")
             st.dataframe(
-                results_df[['asset_a', 'asset_b', 'correlation', 'latest_p_value', 'latest_hedge_ratio']].style.format({
+                results_df[['asset_a', 'asset_b', 'correlation', 'p_value', 'hedge_ratio']].style.format({
                     'correlation': "{:.2f}",
-                    'latest_p_value': "{:.4f}",
-                    'latest_hedge_ratio': "{:.4f}"
+                    'p_value': "{:.4f}",
+                    'hedge_ratio': "{:.4f}"
                 }),
                 use_container_width=True
             )
@@ -236,12 +237,15 @@ def render_research_page():
                 st.write("")
                 if st.button("💾 Save Basket", use_container_width=True):
                     if basket_name:
-                        timeframe = selected_universe.get('timeframe', '1h')
                         saved_path = BasketManager.save_basket(
                             name=basket_name,
                             pairs=results_list,
                             universe_name=selected_u_name,
-                            timeframe=timeframe
+                            timeframe=timeframe,
+                            corr_lookback=corr_lookback,
+                            coint_window=coint_window,
+                            start_date=st.session_state.get('alpha_start_date', ''),
+                            end_date=st.session_state.get('alpha_end_date', '')
                         )
                         st.success(f"Basket saved successfully! You can now use this in the Strategy Lab.")
                     else:

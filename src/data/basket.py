@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from typing import List, Dict, Any
 
 class BasketManager:
@@ -15,7 +16,8 @@ class BasketManager:
             os.makedirs(cls.BASKETS_DIR)
 
     @classmethod
-    def save_basket(cls, name: str, pairs: List[Dict[str, Any]], universe_name: str, timeframe: str) -> str:
+    def save_basket(cls, name: str, pairs: List[Dict[str, Any]], universe_name: str, timeframe: str, 
+                    corr_lookback: int = 0, coint_window: int = 0, start_date: str = "", end_date: str = "") -> str:
         """
         Saves a list of dictionaries containing asset pairs and their stats.
         Returns the path of the saved file.
@@ -26,8 +28,15 @@ class BasketManager:
 
         data = {
             "name": name,
+            "created_at": datetime.now().isoformat(),
             "universe_name": universe_name,
             "timeframe": timeframe,
+            "metadata": {
+                "correlation_lookback_periods": corr_lookback,
+                "cointegration_window_periods": coint_window,
+                "data_start_date": start_date,
+                "data_end_date": end_date
+            },
             "pairs": pairs
         }
 
@@ -65,3 +74,20 @@ class BasketManager:
             if b.get("name") == name:
                 return b
         return {}
+
+    @classmethod
+    def delete_basket(cls, name: str) -> bool:
+        """
+        Deletes a specific basket file by its exact name.
+        """
+        filename = f"{name.replace(' ', '_').lower()}.json"
+        filepath = os.path.join(cls.BASKETS_DIR, filename)
+        
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+                return True
+            except Exception as e:
+                print(f"Error deleting {filename}: {e}")
+                return False
+        return False
