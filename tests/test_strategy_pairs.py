@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from src.strategies.pairs import PairsTradingStrategy
+from src.strategies.pairs.logic import PairsTradingStrategy
 from src.engine.core.engine import VectorizedEngine
 
 def generate_mock_cointegrated_data(periods: int = 500) -> pd.DataFrame:
