@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from src.stats.cointegration import calculate_rolling_spread, test_rolling_cointegration
 
-def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, window: int):
+def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, window: int, coint_entry: float = 0.10, coint_cutoff: float = 0.40):
     """
     Renders Module 2: The Spread & Regime Filter.
     Calculates and visualizes the rolling spread along with the P-Value history 
@@ -51,16 +51,16 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
     smoothed_p_values = numeric_p_values.rolling(window=pval_smoothing_window).mean()
     
     # 2. P-Value Plot (Color Coded with Hysteresis Zones)
-    # Green: Safe Entry (<= 0.10)
-    # Yellow: Hold Zone (0.10 - 0.40)
-    # Red: Cut-off Broken (> 0.40)
+    # Green: Safe Entry (<= coint_entry)
+    # Yellow: Hold Zone (coint_entry - coint_cutoff)
+    # Red: Cut-off Broken (> coint_cutoff)
     colors = []
     for p in smoothed_p_values:
         if pd.isna(p):
             colors.append('#333333') # Gray out warm-up period
-        elif p <= 0.10:
+        elif p <= coint_entry:
             colors.append('#00E676') # Green
-        elif p <= 0.40:
+        elif p <= coint_cutoff:
             colors.append('#FFEB3B') # Yellow
         else:
             colors.append('#FF1744') # Red
@@ -76,22 +76,22 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
         row=2, col=1
     )
     
-    # Add the 0.10 Entry threshold line
+    # Add the Entry threshold line
     fig.add_hline(
-        y=0.10, 
+        y=coint_entry, 
         line_dash="dash", 
         line_color="#00E676", 
-        annotation_text="0.10 Entry Barrier", 
+        annotation_text=f"{coint_entry:.2f} Entry Barrier", 
         annotation_position="top left",
         row=2, col=1
     )
     
-    # Add the 0.40 Cut-off threshold line
+    # Add the Cut-off threshold line
     fig.add_hline(
-        y=0.40, 
+        y=coint_cutoff, 
         line_dash="dash", 
         line_color="#FF1744", 
-        annotation_text="0.40 Emergency Cut-Off", 
+        annotation_text=f"{coint_cutoff:.2f} Emergency Cut-Off", 
         annotation_position="top left",
         row=2, col=1
     )

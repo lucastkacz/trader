@@ -3,6 +3,7 @@ from typing import Dict, Tuple, Optional, Any
 from src.engine.data.loader import DataLoader
 from src.stats.cointegration import test_cointegration, calculate_rolling_spread, test_rolling_cointegration
 from src.stats.zscore import calculate_z_score, generate_signals
+import os
 from src.engine.core.engine import VectorizedEngine
 
 class PairsTradingStrategy:
@@ -19,7 +20,8 @@ class PairsTradingStrategy:
         self, 
         timeframe: str = '1h',
         cointegration_window: int = 90,
-        cointegration_p_value_threshold: float = 0.05,
+        cointegration_p_value_threshold: float = 0.10,
+        cointegration_cutoff_threshold: float = 0.40,
         zscore_window: int = 30,
         entry_threshold: float = 2.0,
         exit_threshold: float = 0.0,
@@ -30,6 +32,7 @@ class PairsTradingStrategy:
         self.timeframe = timeframe
         self.coint_window = cointegration_window
         self.coint_threshold = cointegration_p_value_threshold
+        self.coint_cutoff = cointegration_cutoff_threshold
         self.zscore_window = zscore_window
         self.entry_threshold = entry_threshold
         self.exit_threshold = exit_threshold
@@ -39,7 +42,7 @@ class PairsTradingStrategy:
         self.fee_rate = fee_rate
         self.slippage = slippage
         
-    def evaluate_pair(self, asset_a: str, asset_b: str, prices: pd.DataFrame) -> Dict[str, Any]:
+    def evaluate_pair(self, asset_a: str, asset_b: str, prices: pd.DataFrame, basket_name: str = "Unknown") -> Dict[str, Any]:
         """
         Runs the full pipeline for a single pair:
         Math -> Signals -> Weights -> Engine Backtest
@@ -80,9 +83,8 @@ class PairsTradingStrategy:
         aligned_pval = rolling_pval.reindex(positions.index).ffill()
         
         # Hysteresis Logic implementation without loops (using Pandas Vector tricks):
-        # 1. Coint Cut-Off (Emergency Exit): If p-value goes completely crazy (> 0.40), force exit.
-        coint_cutoff_threshold = 0.40
-        regime_broken_mask = aligned_pval > coint_cutoff_threshold
+        # 1. Coint Cut-Off (Emergency Exit): If p-value goes completely crazy, force exit.
+        regime_broken_mask = aligned_pval > self.coint_cutoff
         
         # 2. Coint Entry Barrier: If we are flat (0), we cannot enter unless p-value < coint_threshold (0.10).
         # We find where signals_df ATTEMPTED to enter a new position
@@ -112,7 +114,7 @@ class PairsTradingStrategy:
             pval = aligned_pval.loc[idx]
             
             # Emergency Cutoff overrides everything
-            if pval > coint_cutoff_threshold:
+            if pval > self.coint_cutoff:
                 current_pos = 0.0
                 positions_fixed.append(0.0)
                 continue
@@ -141,10 +143,14 @@ class PairsTradingStrategy:
         weights = pd.DataFrame(0.0, index=df_pair.index, columns=df_pair.columns)
         
         # Weight allocation logic:
-        # We allocate self.capital to the long leg, and short the other leg by beta
-        # So weights are effectively raw positions sizing in absolute dollars for the Engine
+        # We allocate self.capital to the long leg, and short the other leg by beta.
+        # To avoid continuous rebalancing of the hedge ratio and racking up fees block-by-block, 
+        # we freeze the beta exactly at the time the position is opened or flipped.
+        position_switches = positions != positions.shift(1).fillna(0)
+        frozen_beta = rolling_beta.where(position_switches).ffill()
+        
         weights[asset_a] = positions
-        weights[asset_b] = positions * (-rolling_beta)
+        weights[asset_b] = positions * (-frozen_beta)
         
         # Drop NAs
         weights = weights.fillna(0.0)
@@ -171,6 +177,61 @@ class PairsTradingStrategy:
         drawdown = (results['equity'] - roll_max) / roll_max
         max_dd = drawdown.min() * 100
         
+        # 7. Extract Detailed Trade History & Enrich with Indicators
+        trade_log = engine.get_trade_history()
+        
+        if not trade_log.empty:
+            # We enrich the raw trade log with our strategy-specific indicators 
+            # at the exact moment of execution
+            trade_dates = pd.to_datetime(trade_log['Date'])
+            
+            # Map values
+            trade_log['Z-Score'] = trade_dates.map(z_score).round(3)
+            trade_log['Hedge Ratio (Beta)'] = trade_dates.map(frozen_beta).round(3)
+            trade_log['P-Value'] = trade_dates.map(aligned_pval).round(4)
+            
+            # Ensure output directory exists for AI programmatic access logs
+            os.makedirs("src/data/cache", exist_ok=True)
+            
+            # --- GENERATE COMPREHENSIVE TEXT REPORT ---
+            report_lines = []
+            report_lines.append("="*60)
+            report_lines.append(f" DEEP STRATEGY REPORT: PAIRS TRADING ({asset_a} / {asset_b})")
+            report_lines.append("="*60)
+            report_lines.append("\n[1] GENERAL METADATA")
+            report_lines.append(f" - Basket Used:           {basket_name}")
+            report_lines.append(f" - Timeframe:             {self.timeframe}")
+            report_lines.append("\n[2] COINTEGRATION REGIME PARAMETERS")
+            report_lines.append(f" - Cointegration Window:  {self.coint_window} bars")
+            report_lines.append(f" - P-Value Entry Barrier: <= {self.coint_threshold:.2f} (Green Zone)")
+            report_lines.append(f" - P-Value Emerg. Cutoff: >  {self.coint_cutoff:.2f} (Red Zone)")
+            report_lines.append("\n[3] SIGNAL GENERATION PARAMETERS (Z-SCORE)")
+            report_lines.append(f" - Z-Score MA Window:     {self.zscore_window} bars")
+            report_lines.append(f" - Z-Score Entry Trigger: ±{self.entry_threshold:.2f}")
+            report_lines.append(f" - Z-Score Exit Trigger:  {self.exit_threshold:.2f}")
+            report_lines.append("\n[4] EXECUTION PARAMETERS")
+            report_lines.append(f" - Capital Allocated:     ${self.capital:,.2f}")
+            report_lines.append(f" - Exchange Fee Rate:     {self.fee_rate*100:.2f}%")
+            report_lines.append(f" - Estimated Slippage:    {self.slippage*100:.2f}%")
+            report_lines.append("\n[5] PERFORMANCE SUMMARY")
+            trades_count = (trade_log['Action'] == 'BUY').sum() + (trade_log['Action'] == 'SELL').sum()
+            report_lines.append(f" - Total Trades Executed: {trades_count}")
+            report_lines.append(f" - Maximum Drawdown:      {max_dd:.2f}%")
+            report_lines.append(f" - Sharpe Ratio:          {sharpe:.2f}")
+            report_lines.append(f" - Final Return:          {return_pct:.2f}%")
+            
+            report_lines.append("\n[6] DETAILED TRADE LOG & INDICATOR SNAPSHOTS")
+            report_lines.append("-"*60)
+            # Create a string representation of the DataFrame for the report
+            df_str = trade_log.to_string(index=False)
+            report_lines.append(df_str)
+            report_lines.append("\n" + "="*60 + "\n")
+            
+            report_text = "\n".join(report_lines)
+            
+        else:
+            report_text = "No trades were executed. No report generated."
+            
         return {
             'status': 'Success',
             'asset_a': asset_a,
@@ -180,5 +241,7 @@ class PairsTradingStrategy:
             'max_drawdown_pct': max_dd,
             'latest_hedge_ratio': rolling_beta.iloc[-1] if not pd.isna(rolling_beta.iloc[-1]) else 0.0,
             'latest_p_value': aligned_pval.iloc[-1] if not pd.isna(aligned_pval.iloc[-1]) else 1.0,
-            'final_equity': results['equity'].iloc[-1]
+            'final_equity': results['equity'].iloc[-1],
+            'trade_log': trade_log,
+            'report_text': report_text
         }

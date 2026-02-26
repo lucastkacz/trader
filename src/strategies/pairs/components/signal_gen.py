@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from src.stats.zscore import calculate_z_score, generate_signals
 
-def render_signal_gen(spread: pd.Series, p_values: pd.Series, z_window: int, z_entry: float, z_exit: float):
+def render_signal_gen(spread: pd.Series, p_values: pd.Series, z_window: int, z_entry: float, z_exit: float, coint_entry: float = 0.10, coint_cutoff: float = 0.40):
     """
     Renders Module 3: Signal Generation.
     Takes the raw spread, calculates the rolling Z-Score, applies the entry/exit thresholds,
@@ -34,9 +34,6 @@ def render_signal_gen(spread: pd.Series, p_values: pd.Series, z_window: int, z_e
         aligned_pval = rolling_pval.reindex(signals.index).ffill()
         
         # 3. Apply Regime Filter with Hysteresis
-        coint_threshold = 0.10
-        coint_cutoff_threshold = 0.40
-        
         positions = signals['position'].copy()
         positions_fixed = []
         current_pos = 0.0
@@ -48,14 +45,14 @@ def render_signal_gen(spread: pd.Series, p_values: pd.Series, z_window: int, z_e
             pval = pval if pd.notna(pval) else 1.0
             
             # Emergency Cutoff overrides everything
-            if pval > coint_cutoff_threshold:
+            if pval > coint_cutoff:
                 current_pos = 0.0
                 positions_fixed.append(0.0)
                 continue
                 
             # Entry Attempt (Transition from 0 to non-zero)
             if current_pos == 0.0 and pos != 0.0:
-                if pval <= coint_threshold:
+                if pval <= coint_entry:
                     current_pos = pos # Valid Entry
                 else:
                     current_pos = 0.0 # Invalid Entry, block it
@@ -64,7 +61,7 @@ def render_signal_gen(spread: pd.Series, p_values: pd.Series, z_window: int, z_e
                 current_pos = 0.0
             # Flip Position (Long to Short directly)
             elif current_pos != 0.0 and pos != current_pos and pos != 0.0:
-                 if pval <= coint_threshold:
+                 if pval <= coint_entry:
                      current_pos = pos
                  else:
                      current_pos = 0.0 # Block the flip, go flat

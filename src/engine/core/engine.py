@@ -28,6 +28,11 @@ class VectorizedEngine:
         self.compounding = compounding
         self.rebalance_mode = rebalance_mode
         self.total_cost_rate = self.fee_rate + self.slippage
+        
+        # State Tracking for Deep Inspector
+        self._prices_cache = None
+        self._weights_cache = None
+        self._equity_cache = None
 
     def run(
         self, 
@@ -60,6 +65,10 @@ class VectorizedEngine:
         # In vector land: We hold the position determined at t-1 during bar t.
         # Position_t = Weight_{t-1}
         allocated_weights = weights.shift(1).fillna(0.0)
+        
+        # Cache for Trade Inspector Extraction
+        self._prices_cache = prices
+        self._weights_cache = allocated_weights
         
         # 3. Handle Rebalancing Logic
         if self.rebalance_mode == 'signal':
@@ -118,6 +127,8 @@ class VectorizedEngine:
             equity_curve = self.initial_capital + (net_returns * self.initial_capital).cumsum()
             
         # 10. Compile Stats
+        self._equity_cache = equity_curve # Store for Inspector
+        
         results = pd.DataFrame({
             'equity': equity_curve,
             'returns': net_returns,
@@ -133,7 +144,65 @@ class VectorizedEngine:
     def get_trade_history(self) -> pd.DataFrame:
         """
         Reconstructs discrete trade list from vector weights.
-        Useful for CSV export.
+        Returns a rich Pandas DataFrame detailing every transactional event.
         """
-        # TODO: Implement trade reconstruction for detailed logs
-        pass
+        if self._weights_cache is None or self._prices_cache is None:
+            return pd.DataFrame()
+            
+        # We find exactly where weights change (Delta != 0)
+        weight_deltas = self._weights_cache.diff().fillna(self._weights_cache.iloc[0])
+        
+        trades = []
+        
+        # Iterate over columns (assets) finding non-zero deltas
+        for asset in weight_deltas.columns:
+            asset_deltas = weight_deltas[asset]
+            trade_mask = asset_deltas != 0.0
+            
+            # Filter the exact dates trades happened
+            trade_dates = asset_deltas[trade_mask].index
+            
+            for t in trade_dates:
+                delta_w = asset_deltas.loc[t]
+                
+                # Determine Side
+                side = "BUY" if delta_w > 0 else "SELL"
+                
+                # Get pricing
+                price = self._prices_cache.loc[t, asset]
+                
+                # Get Account Balance at time of execution (previous bar close approx)
+                # If t is not the first bar, get equity from previous bar, else intial
+                prev_idx = self._equity_cache.index.get_loc(t) - 1
+                if prev_idx >= 0:
+                    exec_capital = self._equity_cache.iloc[prev_idx]
+                else:
+                    exec_capital = self.initial_capital
+                    
+                # Calculate Notional Value (Size of trade in $)
+                # Delta Weight * Total Capital
+                notional = abs(delta_w) * exec_capital
+                
+                # Fee Paid
+                fee_paid = notional * self.fee_rate
+                
+                # Slippage Cost (approximate hidden cost)
+                slippage_cost = notional * self.slippage
+                
+                trades.append({
+                    "Date": t,
+                    "Asset": asset,
+                    "Action": side,
+                    "Price": price,
+                    "Delta Weight": delta_w,
+                    "Notional ($)": round(notional, 2),
+                    "Fees Paid ($)": round(fee_paid, 2),
+                    "Target Weight (Post)": self._weights_cache.loc[t, asset]
+                })
+                
+        # Create DataFrame and sort chronologically
+        trades_df = pd.DataFrame(trades)
+        if not trades_df.empty:
+            trades_df = trades_df.sort_values(by=["Date", "Asset"]).reset_index(drop=True)
+            
+        return trades_df
