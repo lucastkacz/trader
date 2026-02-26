@@ -70,7 +70,7 @@ class StrategyLogger:
         
         try:
             with open(json_filepath, "w") as f:
-                json.dump(debug_payload, f, indent=4)
+                json.dump(debug_payload, f, indent=4, default=str)
             saved_files['json'] = json_filepath
         except Exception as e:
             print(f"Failed to save JSON artifact: {e}")
@@ -81,8 +81,17 @@ class StrategyLogger:
             try:
                 # We need to make sure index is converted for Parquet to work easily
                 df_to_save = results_df.copy()
-                df_to_save.index.name = "Date"
+                
+                # Clear attrs because pyarrow might choke on custom non-string attributes 
+                # (like time_in_market_pct which is a float)
+                df_to_save.attrs = {}
+                
+                df_to_save.index.name = "Date" if "Date" not in df_to_save.columns else "Index_Date"
                 df_to_save.reset_index(inplace=True)
+                
+                # Ensure all columns are str
+                df_to_save.columns = [str(c) for c in df_to_save.columns]
+                
                 df_to_save.to_parquet(parquet_filepath, engine="pyarrow", index=False)
                 saved_files['parquet'] = parquet_filepath
             except Exception as e:
