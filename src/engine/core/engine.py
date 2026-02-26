@@ -129,6 +129,13 @@ class VectorizedEngine:
         # 10. Compile Stats
         self._equity_cache = equity_curve # Store for Inspector
         
+        # Calculate Time in Market
+        # A bar is considered "in market" if the sum of absolute weights is > 0
+        active_bars = (allocated_weights.abs().sum(axis=1) > 0.0)
+        time_in_market_bars = active_bars.sum()
+        total_bars = len(prices)
+        time_in_market_pct = (time_in_market_bars / total_bars) * 100 if total_bars > 0 else 0.0
+        
         results = pd.DataFrame({
             'equity': equity_curve,
             'returns': net_returns,
@@ -138,6 +145,11 @@ class VectorizedEngine:
             'turnover': turnover,
             'drawdown': (equity_curve / equity_curve.cummax() - 1)
         })
+        
+        # We attach the scalar metrics to the dataframe attributes for easy pulling later
+        results.attrs['time_in_market_pct'] = time_in_market_pct
+        results.attrs['total_bars'] = total_bars
+        results.attrs['active_bars'] = time_in_market_bars
         
         return results
 

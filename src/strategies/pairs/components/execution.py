@@ -5,10 +5,12 @@ import plotly.graph_objects as go
 import os
 from datetime import datetime
 from src.engine.core.engine import VectorizedEngine
+from src.engine.core.logger import StrategyLogger
 
 def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta: pd.Series, 
                      asset_a: str, asset_b: str, capital: float, fee_rate: float, slippage: float,
-                     trade_log: pd.DataFrame = None, report_text: str = None, results_df: pd.DataFrame = None, basket_name: str = "Unknown",
+                     trade_log: pd.DataFrame = None, report_text: str = None, results_df: pd.DataFrame = None,
+                     parameters: dict = None, performance: dict = None, basket_name: str = "Unknown",
                      raw_a: pd.DataFrame = None, raw_b: pd.DataFrame = None):
     """
     Renders Module 4: Engine Execution.
@@ -36,6 +38,7 @@ def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta:
     peak = results_df['equity'].cummax()
     drawdown = (results_df['equity'] - peak) / peak * 100
     max_dd = drawdown.min()
+    time_in_market = results_df.attrs.get('time_in_market_pct', 0.0)
     
     # Simple Sharpe (Annualized approx for hours)
     returns = results_df['equity'].pct_change().dropna()
@@ -44,15 +47,16 @@ def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta:
     sharpe = (mean_ret / std_ret) * (8760 ** 0.5) if std_ret > 0 else 0.0 # 8760 hours in a year
     
     # 4. KPI Metrics
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Final Equity", f"${final_equity:,.2f}", f"{total_return:,.2f}%")
     col2.metric("Sharpe Ratio", f"{sharpe:.2f}")
     col3.metric("Max Drawdown", f"{max_dd:.2f}%")
+    col4.metric("% In Market", f"{time_in_market:.1f}%")
     
     # Count exact number of trades taken (where position flipped)
     trades_taken = (pos != pos.shift(1)).sum() - 1 # Subtract 1 for initial 0
     if trades_taken < 0: trades_taken = 0
-    col4.metric("Trades Executed", f"{trades_taken}")
+    col5.metric("Trades Executed", f"{trades_taken}")
 
     # 5. Equity Curve Plot
     fig = px.line(
@@ -145,16 +149,35 @@ def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta:
         
         c1, c2 = st.columns([1, 3])
         with c1:
+            save_debug = st.checkbox("Save LLM-Friendly Debug Logs (JSON/Parquet)", value=True, help="Outputs discrete trades as JSON and continuous mathematical state as Parquet for programmatic agent ingestion.")
             if st.button("💾 Save Report to /data/strategy_logs", use_container_width=True):
                 # Sanitize basket name
                 safe_basket = "".join([c if c.isalnum() else "_" for c in basket_name])
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"strategy_pairs_{safe_basket}_{timestamp}.txt"
-                filepath = os.path.join(log_dir, filename)
+                
+                # Create a specific folder for this basket
+                basket_dir = os.path.join(log_dir, safe_basket)
+                os.makedirs(basket_dir, exist_ok=True)
+                
+                filename = f"strategy_pairs_{timestamp}.txt"
+                filepath = os.path.join(basket_dir, filename)
                 
                 try:
                     with open(filepath, "w") as f:
                         f.write(report_text)
-                    st.success(f"Log saved successfully! \n\n📁 `{filepath}`")
+                        
+                    debug_msg = ""
+                    if save_debug:
+                        artifacts = StrategyLogger.save_debug_artifacts(
+                            base_filepath=filepath,
+                            asset_info=f"{asset_a} / {asset_b}",
+                            parameters=parameters if parameters else {},
+                            performance=performance if performance else {},
+                            trade_log=trade_log,
+                            results_df=results_df
+                        )
+                        debug_msg = "\n\n🤖 " + " & ".join([ext.upper() for ext in artifacts.keys()]) + " Debug Logs also saved."
+                        
+                    st.success(f"Log saved successfully! \n\n📁 `{filepath}`" + debug_msg)
                 except Exception as e:
                     st.error(f"Failed to save log: {e}")

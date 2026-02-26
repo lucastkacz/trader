@@ -138,6 +138,8 @@ def render_strategy_page():
     trade_log = results.get('trade_log', None) if results else None
     report_text = results.get('report_text', None) if results else None
     results_df = results.get('results_df', None) if results else None
+    parameters = results.get('parameters', {}) if results else {}
+    performance = results.get('performance', {}) if results else {}
     
     # Module 4
     render_execution(
@@ -152,6 +154,8 @@ def render_strategy_page():
         trade_log=trade_log,
         report_text=report_text,
         results_df=results_df,
+        parameters=parameters,
+        performance=performance,
         basket_name=selected_b_name,
         raw_a=raw_a,
         raw_b=raw_b

@@ -6,6 +6,7 @@ from src.stats.cointegration import test_cointegration, calculate_rolling_spread
 from src.stats.zscore import calculate_z_score, generate_signals
 import os
 from src.engine.core.engine import VectorizedEngine
+from src.engine.core.logger import StrategyLogger
 
 class PairsTradingStrategy:
     """
@@ -211,43 +212,42 @@ class PairsTradingStrategy:
             os.makedirs("src/data/cache", exist_ok=True)
             
             # --- GENERATE COMPREHENSIVE TEXT REPORT ---
-            report_lines = []
-            report_lines.append("="*60)
-            report_lines.append(f" DEEP STRATEGY REPORT: PAIRS TRADING ({asset_a} / {asset_b})")
-            report_lines.append("="*60)
-            report_lines.append("\n[1] GENERAL METADATA")
-            report_lines.append(f" - Basket Used:           {basket_name}")
-            report_lines.append(f" - Timeframe:             {self.timeframe}")
-            report_lines.append("\n[2] COINTEGRATION REGIME PARAMETERS")
-            report_lines.append(f" - Cointegration Window:  {self.coint_window} bars")
-            report_lines.append(f" - P-Value Entry Barrier: <= {self.coint_threshold:.2f} (Green Zone)")
-            report_lines.append(f" - P-Value Emerg. Cutoff: >  {self.coint_cutoff:.2f} (Red Zone)")
-            report_lines.append("\n[3] SIGNAL GENERATION PARAMETERS (Z-SCORE)")
-            report_lines.append(f" - Z-Score MA Window:     {self.zscore_window} bars")
-            report_lines.append(f" - Z-Score Entry Trigger: ±{self.entry_threshold:.2f}")
-            report_lines.append(f" - Z-Score Exit Trigger:  {self.exit_threshold:.2f}")
-            report_lines.append("\n[4] EXECUTION PARAMETERS")
-            report_lines.append(f" - Capital Allocated:     ${self.capital:,.2f}")
-            report_lines.append(f" - Exchange Fee Rate:     {self.fee_rate*100:.2f}%")
-            report_lines.append(f" - Estimated Slippage:    {self.slippage*100:.2f}%")
-            report_lines.append("\n[5] PERFORMANCE SUMMARY")
             trades_count = (trade_log['Action'] == 'BUY').sum() + (trade_log['Action'] == 'SELL').sum()
-            report_lines.append(f" - Total Trades Executed: {trades_count}")
-            report_lines.append(f" - Maximum Drawdown:      {max_dd:.2f}%")
-            report_lines.append(f" - Sharpe Ratio:          {sharpe:.2f}")
-            report_lines.append(f" - Final Return:          {return_pct:.2f}%")
+            time_in_market = results.attrs.get('time_in_market_pct', 0.0)
             
-            report_lines.append("\n[6] DETAILED TRADE LOG & INDICATOR SNAPSHOTS")
-            report_lines.append("-"*60)
-            # Create a string representation of the DataFrame for the report
-            df_str = trade_log.to_string(index=False)
-            report_lines.append(df_str)
-            report_lines.append("\n" + "="*60 + "\n")
+            parameters = {
+                "Basket Used": basket_name,
+                "Timeframe": self.timeframe,
+                "Cointegration Window": f"{self.coint_window} bars",
+                "P-Value Entry Barrier": f"<= {self.coint_threshold:.2f} (Green Zone)",
+                "P-Value Emerg. Cutoff": f">  {self.coint_cutoff:.2f} (Red Zone)",
+                "Z-Score MA Window": f"{self.zscore_window} bars",
+                "Z-Score Entry Trigger": f"±{self.entry_threshold:.2f}",
+                "Z-Score Exit Trigger": f"{self.exit_threshold:.2f}",
+                "Capital Allocated": f"${self.capital:,.2f}",
+                "Exchange Fee Rate": f"{self.fee_rate*100:.2f}%",
+                "Estimated Slippage": f"{self.slippage*100:.2f}%"
+            }
             
-            report_text = "\n".join(report_lines)
+            performance = {
+                "Total Trades Executed": trades_count,
+                "Time in Market": f"{time_in_market:.2f}%",
+                "Maximum Drawdown": f"{max_dd:.2f}%",
+                "Sharpe Ratio": f"{sharpe:.2f}",
+                "Final Return": f"{return_pct:.2f}%"
+            }
+            
+            report_text = StrategyLogger.generate_report(
+                strategy_name="Pairs Trading",
+                asset_info=f"{asset_a} / {asset_b}",
+                parameters=parameters,
+                performance=performance,
+                trade_log=trade_log
+            )
             
         else:
             report_text = "No trades were executed. No report generated."
+            time_in_market = 0.0
             
         return {
             'status': 'Success',
@@ -256,10 +256,13 @@ class PairsTradingStrategy:
             'total_return_pct': return_pct,
             'sharpe_ratio': sharpe,
             'max_drawdown_pct': max_dd,
+            'time_in_market_pct': time_in_market,
             'latest_hedge_ratio': rolling_beta.iloc[-1] if not pd.isna(rolling_beta.iloc[-1]) else 0.0,
             'latest_p_value': aligned_pval.iloc[-1] if not pd.isna(aligned_pval.iloc[-1]) else 1.0,
             'final_equity': results['equity'].iloc[-1],
             'results_df': results,
             'trade_log': trade_log,
-            'report_text': report_text
+            'report_text': report_text,
+            'parameters': parameters if 'parameters' in locals() else {},
+            'performance': performance if 'performance' in locals() else {}
         }
