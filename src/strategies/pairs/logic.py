@@ -207,6 +207,7 @@ class PairsTradingStrategy:
             # Use numpy where to assign 1.0 if the row's 'Asset' is asset_a, else use raw_beta
             trade_log['Hedge Ratio (Beta)'] = np.where(trade_log['Asset'] == asset_a, 1.000, raw_beta)
             trade_log['P-Value'] = trade_dates.map(aligned_pval).round(4)
+            trade_log['Z-Score'] = trade_dates.map(z_score).round(3)
             
             # Ensure output directory exists for AI programmatic access logs
             os.makedirs("src/data/cache", exist_ok=True)
