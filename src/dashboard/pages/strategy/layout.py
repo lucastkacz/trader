@@ -90,6 +90,10 @@ def render_strategy_page():
             loader = DataLoader([asset_a, asset_b], timeframe)
             close_df, _, _ = loader.load()
             df_pair = close_df[[asset_a, asset_b]].ffill().dropna()
+            
+            # Fetch Raw OHLC for execution charts
+            raw_a = loader.data_dict.get(asset_a)
+            raw_b = loader.data_dict.get(asset_b)
         except Exception as e:
             st.error(f"Failed to load market data: {e}")
             return
@@ -146,7 +150,9 @@ def render_strategy_page():
         slippage=slippage,
         trade_log=trade_log,
         report_text=report_text,
-        basket_name=selected_b_name
+        basket_name=selected_b_name,
+        raw_a=raw_a,
+        raw_b=raw_b
     )
     
     st.markdown("<br><br><br>", unsafe_allow_html=True) # Spacer for scrolling

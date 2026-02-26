@@ -144,13 +144,17 @@ class PairsTradingStrategy:
         
         # Weight allocation logic:
         # We allocate self.capital to the long leg, and short the other leg by beta.
-        # To avoid continuous rebalancing of the hedge ratio and racking up fees block-by-block, 
-        # we freeze the beta exactly at the time the position is opened or flipped.
+        # CRITICAL FIX: Beta is a ratio of UNITS, not CAPITAL.
+        # To get the capital allocation ratio, we multiply Beta by (Price B / Price A)
+        current_capital_ratio = rolling_beta * (df_pair[asset_b] / df_pair[asset_a])
+        
+        # To avoid continuous rebalancing and racking up fees block-by-block, 
+        # we freeze this capital ratio exactly at the time the position is opened or flipped.
         position_switches = positions != positions.shift(1).fillna(0)
-        frozen_beta = rolling_beta.where(position_switches).ffill()
+        frozen_capital_ratio = current_capital_ratio.where(position_switches).ffill()
         
         weights[asset_a] = positions
-        weights[asset_b] = positions * (-frozen_beta)
+        weights[asset_b] = positions * (-frozen_capital_ratio)
         
         # Drop NAs
         weights = weights.fillna(0.0)
@@ -185,8 +189,8 @@ class PairsTradingStrategy:
             # at the exact moment of execution
             trade_dates = pd.to_datetime(trade_log['Date'])
             
-            # Map values
-            trade_log['Z-Score'] = trade_dates.map(z_score).round(3)
+            # We still log the frozen Beta for statistical analysis, not the capital ratio
+            frozen_beta = rolling_beta.where(position_switches).ffill()
             trade_log['Hedge Ratio (Beta)'] = trade_dates.map(frozen_beta).round(3)
             trade_log['P-Value'] = trade_dates.map(aligned_pval).round(4)
             

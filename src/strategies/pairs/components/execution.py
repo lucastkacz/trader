@@ -1,13 +1,15 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import os
 from datetime import datetime
 from src.engine.core.engine import VectorizedEngine
 
 def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta: pd.Series, 
                      asset_a: str, asset_b: str, capital: float, fee_rate: float, slippage: float,
-                     trade_log: pd.DataFrame = None, report_text: str = None, basket_name: str = "Unknown"):
+                     trade_log: pd.DataFrame = None, report_text: str = None, basket_name: str = "Unknown",
+                     raw_a: pd.DataFrame = None, raw_b: pd.DataFrame = None):
     """
     Renders Module 4: Engine Execution.
     Translates the filtered Long/Short signals into Target Portfolio Weights,
@@ -92,10 +94,63 @@ def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta:
         margin=dict(l=40, r=40, t=40, b=40)
     )
     
-    # Shade the area under the curve
-    fig.update_traces(fill='tozeroy', line_color='#00E676')
     
     st.plotly_chart(fig, use_container_width=True)
+    
+    # 5.5 Candlestick Execution Charts
+    if raw_a is not None and raw_b is not None and trade_log is not None and not trade_log.empty:
+        st.write("#### 🕯️ Trade Execution Explorer")
+        st.markdown("Visual validation of exactly where the bot executed Buy/Sell orders overlaid on candlestick price action.")
+        
+        # Helper to plot candlesticks
+        def plot_candlestick_with_trades(raw_df, asset_name, trades_df):
+            fig_candle = go.Figure()
+            
+            # 1. Add Candlestick trace
+            fig_candle.add_trace(go.Candlestick(
+                x=raw_df.index,
+                open=raw_df['open'],
+                high=raw_df['high'],
+                low=raw_df['low'],
+                close=raw_df['close'],
+                name=asset_name
+            ))
+            
+            # 2. Add Trade Markers
+            asset_trades = trades_df[trades_df['Asset'] == asset_name]
+            buys = asset_trades[asset_trades['Action'] == 'BUY']
+            sells = asset_trades[asset_trades['Action'] == 'SELL']
+            
+            if not buys.empty:
+                fig_candle.add_trace(go.Scatter(
+                    x=buys['Date'], y=buys['Price'] * 0.999,
+                    mode='markers',
+                    marker=dict(symbol='triangle-up', color='#00E676', size=14, line=dict(color='white', width=1)),
+                    name='Buy Executed'
+                ))
+            if not sells.empty:
+                fig_candle.add_trace(go.Scatter(
+                    x=sells['Date'], y=sells['Price'] * 1.001,
+                    mode='markers',
+                    marker=dict(symbol='triangle-down', color='#FF1744', size=14, line=dict(color='white', width=1)),
+                    name='Sell Executed'
+                ))
+                
+            fig_candle.update_layout(
+                title=f"{asset_name} Price Action & Executions",
+                template="plotly_dark",
+                xaxis_rangeslider_visible=False,
+                margin=dict(l=40, r=40, t=40, b=40),
+                height=400
+            )
+            return fig_candle
+            
+        # Draw side by side
+        ca, cb = st.columns(2)
+        with ca:
+            st.plotly_chart(plot_candlestick_with_trades(raw_a, asset_a, trade_log), use_container_width=True)
+        with cb:
+            st.plotly_chart(plot_candlestick_with_trades(raw_b, asset_b, trade_log), use_container_width=True)
     
     # 6. Deep Strategy Report (Comprehensive Text Log)
     if report_text:
