@@ -27,18 +27,51 @@ def render_signal_gen(spread: pd.Series, p_values: pd.Series, z_window: int, z_e
         z_score = calculate_z_score(spread, window=z_window)
         signals = generate_signals(z_score, entry_threshold=z_entry, exit_threshold=z_exit)
         
-        # 2. Apply Regime Filter
-        # If P-value > 0.05, force position to 0 (no trade / exit)
-        is_cointegrated = p_values <= 0.05
-        # Align indices (p_values might have NaNs at the start)
-        is_coint_aligned = is_cointegrated.reindex(signals.index).fillna(False)
+        # 2. Smooth P-Values and Align
+        pval_smoothing_window = 12
+        numeric_pval = pd.to_numeric(p_values, errors='coerce')
+        rolling_pval = numeric_pval.rolling(window=pval_smoothing_window).mean()
+        aligned_pval = rolling_pval.reindex(signals.index).ffill()
         
-        # Apply the filter natively to the positions
-        # If not cointegrated, forced exit. 
-        # (This is simplified for visualization; the actual Engine does strict path-dependent tracking, 
-        # but for the chart we can show the exact blocks where trading is valid).
-        filtered_position = signals['position'].where(is_coint_aligned, 0.0)
-        signals['filtered_position'] = filtered_position
+        # 3. Apply Regime Filter with Hysteresis
+        coint_threshold = 0.10
+        coint_cutoff_threshold = 0.40
+        
+        positions = signals['position'].copy()
+        positions_fixed = []
+        current_pos = 0.0
+        
+        for idx, pos in positions.items():
+            pval = aligned_pval.loc[idx]
+            
+            # If pval is still NaN (warm-up), we assume it's an invalid regime (p=1.0)
+            pval = pval if pd.notna(pval) else 1.0
+            
+            # Emergency Cutoff overrides everything
+            if pval > coint_cutoff_threshold:
+                current_pos = 0.0
+                positions_fixed.append(0.0)
+                continue
+                
+            # Entry Attempt (Transition from 0 to non-zero)
+            if current_pos == 0.0 and pos != 0.0:
+                if pval <= coint_threshold:
+                    current_pos = pos # Valid Entry
+                else:
+                    current_pos = 0.0 # Invalid Entry, block it
+            # Exit Signal
+            elif current_pos != 0.0 and pos == 0.0:
+                current_pos = 0.0
+            # Flip Position (Long to Short directly)
+            elif current_pos != 0.0 and pos != current_pos and pos != 0.0:
+                 if pval <= coint_threshold:
+                     current_pos = pos
+                 else:
+                     current_pos = 0.0 # Block the flip, go flat
+            
+            positions_fixed.append(current_pos)
+            
+        signals['filtered_position'] = pd.Series(positions_fixed, index=signals.index)
 
     # 3. Visualization
     fig = go.Figure()

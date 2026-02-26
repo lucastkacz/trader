@@ -59,7 +59,8 @@ class PairsTradingStrategy:
         
         # SMOOTHING (Combined Strategy Step 2): Apply a Moving Average to the p-value to remove 1-hour noise spikes
         pval_smoothing_window = 12
-        rolling_pval = raw_rolling_pval.rolling(window=pval_smoothing_window).mean()
+        numeric_pval = pd.to_numeric(raw_rolling_pval, errors='coerce')
+        rolling_pval = numeric_pval.rolling(window=pval_smoothing_window).mean()
         
         # Sanity check: If the smoothed p-value never cointegrated in the entire out-of-sample period, reject it early
         if rolling_pval.min() > self.coint_threshold:

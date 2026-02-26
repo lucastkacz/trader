@@ -15,6 +15,15 @@ def render_strategy_page():
 
     st.title("Strategy Lab (Deep Inspection)")
     st.markdown("Select a proven Alpha Basket, then pick **one pair** to step through the mathematical execution pipeline visually.")
+    
+    # 0. Strategy Documentation
+    import os
+    readme_path = os.path.join("src", "strategies", "pairs", "README.md")
+    if os.path.exists(readme_path):
+        with open(readme_path, "r") as f:
+            readme_content = f.read()
+        with st.expander("📖 Strategy Documentation & Rules", expanded=False):
+            st.markdown(readme_content)
 
     # 1. Selection Header
     col_b, col_p = st.columns(2)

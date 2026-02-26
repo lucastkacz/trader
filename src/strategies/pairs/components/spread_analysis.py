@@ -47,7 +47,8 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
     
     # apply smoothing algorithm
     pval_smoothing_window = 12
-    smoothed_p_values = p_values.rolling(window=pval_smoothing_window).mean()
+    numeric_p_values = pd.to_numeric(p_values, errors='coerce')
+    smoothed_p_values = numeric_p_values.rolling(window=pval_smoothing_window).mean()
     
     # 2. P-Value Plot (Color Coded with Hysteresis Zones)
     # Green: Safe Entry (<= 0.10)
