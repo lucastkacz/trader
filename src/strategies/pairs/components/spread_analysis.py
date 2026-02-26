@@ -12,10 +12,17 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
     """
     st.write("### ⚖️ Module 2: The Spread & Regime Filter")
     st.markdown(
-        f"This visualizes the raw spread between {asset_a} and {asset_b}. "
-        "The bottom chart plots the **Rolling P-Value**. When the P-Value drops below 0.05 (green), "
+        f"**Explanation of the Raw Spread:**\n\n"
+        f"The formula for the spread is `Spread = {asset_a} - (Hedge Ratio * {asset_b})`. "
+        f"If the graph shows a spread of e.g. `$40,000`, it simply means that `{asset_a}` is currently "
+        f"`$40,000` more expensive than the equivalent hedged amount of `{asset_b}`. "
+        f"This large number is completely normal because it contains the base price difference (the 'Alpha' intercept) "
+        f"between the two vastly different assets. What matters for trading is only the *volatility* and mean-reversion of this spread, not its absolute zero value. "
+        f"*(Note: The first {window} bars of the chart are hidden as the model warms up).* \n\n"
+        "--- \n\n"
+        f"The bottom chart plots the **Rolling P-Value**. When the P-Value drops below 0.10 (green), "
         "the mathematical relationship is proven, and the strategy is allowed to trade. "
-        "When it spikes above 0.05 (red), the relationship has broken down, and the strategy is forced to wait."
+        "When it spikes above 0.40 (red), the relationship has broken down, and the strategy is forced to liquidate."
     )
     
     if df_pair.empty or len(df_pair) < window:
@@ -35,10 +42,14 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
     )
     
     # 1. Spread Plot
+    # Remove Warm-up period for clean plotting
+    plot_spread = spread.copy()
+    plot_spread.iloc[:window-1] = pd.NA
+    
     fig.add_trace(
         go.Scatter(
-            x=spread.index, 
-            y=spread, 
+            x=plot_spread.index, 
+            y=plot_spread, 
             name="Spread", 
             line=dict(color='#ab47bc') # Purple
         ),
