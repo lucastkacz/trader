@@ -137,6 +137,7 @@ def render_strategy_page():
     results = strategy.evaluate_pair(asset_a, asset_b, close_df, basket_name=selected_b_name)
     trade_log = results.get('trade_log', None) if results else None
     report_text = results.get('report_text', None) if results else None
+    results_df = results.get('results_df', None) if results else None
     
     # Module 4
     render_execution(
@@ -150,6 +151,7 @@ def render_strategy_page():
         slippage=slippage,
         trade_log=trade_log,
         report_text=report_text,
+        results_df=results_df,
         basket_name=selected_b_name,
         raw_a=raw_a,
         raw_b=raw_b

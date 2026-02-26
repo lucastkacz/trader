@@ -8,7 +8,7 @@ from src.engine.core.engine import VectorizedEngine
 
 def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta: pd.Series, 
                      asset_a: str, asset_b: str, capital: float, fee_rate: float, slippage: float,
-                     trade_log: pd.DataFrame = None, report_text: str = None, basket_name: str = "Unknown",
+                     trade_log: pd.DataFrame = None, report_text: str = None, results_df: pd.DataFrame = None, basket_name: str = "Unknown",
                      raw_a: pd.DataFrame = None, raw_b: pd.DataFrame = None):
     """
     Renders Module 4: Engine Execution.
@@ -25,37 +25,12 @@ def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta:
         st.warning("No signals available to execute.")
         return
 
-    with st.spinner("Executing Vectorized Backtest..."):
-        # 1. Translate Signals to Weights
-        pos = signals['filtered_position']
-        
-        # We need a Weights DataFrame mapping exact Assets to their Target Percentage (-1.0 to 1.0+)
-        weights = pd.DataFrame(0.0, index=df_pair.index, columns=df_pair.columns)
-        
-        # When Long Spread (pos = +1): Buy A, Sell B (* Beta)
-        # When Short Spread (pos = -1): Sell A, Buy B (* Beta)
-        weights[asset_a] = pos
-        weights[asset_b] = pos * (-rolling_beta)
-        
-        # Clean up NaNs
-        weights = weights.fillna(0.0)
-        
-        # 2. Initialize Engine
-        engine = VectorizedEngine(
-            initial_capital=capital,
-            fee_rate=fee_rate,
-            slippage=slippage
-        )
-        
-        # 3. Run Strategy
-        # (The VectorizedEngine accepts the raw df directly right now, let's just pass it)
-        try:
-            results_df = engine.run(df_pair, weights)
-        except Exception as e:
-            st.error(f"Engine failed to execute: {e}")
-            return
+    if results_df is None or results_df.empty:
+        st.warning("Engine failed to execute or return valid results.")
+        return
             
     # Calculate KPIs
+    pos = signals['filtered_position']
     final_equity = results_df['equity'].iloc[-1]
     total_return = (final_equity / capital - 1) * 100
     peak = results_df['equity'].cummax()
@@ -165,12 +140,12 @@ def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta:
             
         st.write("---")
         # Ensure data folder exists
-        log_dir = os.path.join("data", "Strategy_Logs")
+        log_dir = os.path.join("data", "strategy_logs")
         os.makedirs(log_dir, exist_ok=True)
         
         c1, c2 = st.columns([1, 3])
         with c1:
-            if st.button("💾 Save Report to /data/Strategy_Logs", use_container_width=True):
+            if st.button("💾 Save Report to /data/strategy_logs", use_container_width=True):
                 # Sanitize basket name
                 safe_basket = "".join([c if c.isalnum() else "_" for c in basket_name])
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -197,7 +197,8 @@ class VectorizedEngine:
                     "Delta Weight": delta_w,
                     "Notional ($)": round(notional, 2),
                     "Fees Paid ($)": round(fee_paid, 2),
-                    "Target Weight (Post)": self._weights_cache.loc[t, asset]
+                    "Target Weight (Post)": self._weights_cache.loc[t, asset],
+                    "Current Equity ($)": round(exec_capital, 2)
                 })
                 
         # Create DataFrame and sort chronologically

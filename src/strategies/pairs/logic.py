@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from typing import Dict, Tuple, Optional, Any
 from src.engine.data.loader import DataLoader
 from src.stats.cointegration import test_cointegration, calculate_rolling_spread, test_rolling_cointegration
@@ -153,8 +154,17 @@ class PairsTradingStrategy:
         position_switches = positions != positions.shift(1).fillna(0)
         frozen_capital_ratio = current_capital_ratio.where(position_switches).ffill()
         
-        weights[asset_a] = positions
-        weights[asset_b] = positions * (-frozen_capital_ratio)
+        # Raw weights: +1 for A, -ratio for B
+        raw_w_a = positions
+        raw_w_b = positions * (-frozen_capital_ratio)
+        
+        # Normalize weights so that abs(W_a) + abs(W_b) <= 1.0 (No leverage)
+        total_abs_weight = raw_w_a.abs() + raw_w_b.abs()
+        # Avoid division by zero
+        total_abs_weight = total_abs_weight.replace(0, 1.0)
+        
+        weights[asset_a] = raw_w_a / total_abs_weight
+        weights[asset_b] = raw_w_b / total_abs_weight
         
         # Drop NAs
         weights = weights.fillna(0.0)
@@ -189,9 +199,12 @@ class PairsTradingStrategy:
             # at the exact moment of execution
             trade_dates = pd.to_datetime(trade_log['Date'])
             
-            # We still log the frozen Beta for statistical analysis, not the capital ratio
+            # We log 1.0 for Asset A (Base) and the actual Beta multiplier for Asset B
             frozen_beta = rolling_beta.where(position_switches).ffill()
-            trade_log['Hedge Ratio (Beta)'] = trade_dates.map(frozen_beta).round(3)
+            raw_beta = trade_dates.map(frozen_beta).round(3)
+            
+            # Use numpy where to assign 1.0 if the row's 'Asset' is asset_a, else use raw_beta
+            trade_log['Hedge Ratio (Beta)'] = np.where(trade_log['Asset'] == asset_a, 1.000, raw_beta)
             trade_log['P-Value'] = trade_dates.map(aligned_pval).round(4)
             
             # Ensure output directory exists for AI programmatic access logs
@@ -246,6 +259,7 @@ class PairsTradingStrategy:
             'latest_hedge_ratio': rolling_beta.iloc[-1] if not pd.isna(rolling_beta.iloc[-1]) else 0.0,
             'latest_p_value': aligned_pval.iloc[-1] if not pd.isna(aligned_pval.iloc[-1]) else 1.0,
             'final_equity': results['equity'].iloc[-1],
+            'results_df': results,
             'trade_log': trade_log,
             'report_text': report_text
         }
