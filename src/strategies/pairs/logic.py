@@ -74,72 +74,23 @@ class PairsTradingStrategy:
         # 2. Z-Score Calculation
         z_score = calculate_z_score(rolling_spread, window=self.zscore_window)
         
-        # 3. Signal Generation
-        signals_df = generate_signals(z_score, entry_threshold=self.entry_threshold, exit_threshold=self.exit_threshold)
+        # Align the smoothed p-value to the z_score index
+        aligned_pval = rolling_pval.reindex(z_score.index).ffill()
         
-        # Regimes & Hysteresis (Combined Strategy Step 4):
-        # We need to filter positions based on the smoothed p-value regime.
+        # Set up regime filters for the signal generator
+        is_valid_entry = aligned_pval <= self.coint_threshold
+        is_force_exit = aligned_pval > self.coint_cutoff
+        
+        # 3. Signal Generation (State machine handles regime logic natively now)
+        signals_df = generate_signals(
+            z_score, 
+            entry_threshold=self.entry_threshold, 
+            exit_threshold=self.exit_threshold,
+            is_valid_entry=is_valid_entry,
+            is_force_exit=is_force_exit
+        )
+        
         positions = signals_df['position'].copy()
-        
-        # Align pval to positions
-        aligned_pval = rolling_pval.reindex(positions.index).ffill()
-        
-        # Hysteresis Logic implementation without loops (using Pandas Vector tricks):
-        # 1. Coint Cut-Off (Emergency Exit): If p-value goes completely crazy, force exit.
-        regime_broken_mask = aligned_pval > self.coint_cutoff
-        
-        # 2. Coint Entry Barrier: If we are flat (0), we cannot enter unless p-value < coint_threshold (0.10).
-        # We find where signals_df ATTEMPTED to enter a new position
-        attempted_entries = (positions != 0) & (positions.shift(1).fillna(0) == 0)
-        invalid_entries_mask = attempted_entries & (aligned_pval > self.coint_threshold)
-        
-        # To handle the case where we invalidate an entry, we must also nullify the position 
-        # until the next valid exit or a new valid entry. In pure vectorization, this means 
-        # forcing the position to 0 where the regime is broken OR where we tried to enter illegally.
-        # Note: A true state machine would be better here, but for vectorized speed:
-        
-        # Apply the emergency cutoff
-        positions.loc[regime_broken_mask] = 0.0
-        
-        # Instead of fully tracking the nullified state, let's use a simpler approach:
-        # We just mute the position on the EXACT bars where entry is illegal. The generate_signals
-        # logic already holds the '1' or '-1' state. If we mute it here, we are effectively saying 
-        # "you can't hold a position while the p-val is > threshold AND you just tried to enter".
-        # A more rigorous historical fix requires iterating, but let's approximate:
-        # Let's apply the entry filter: if you were flat, and try to enter on bad p-val, stay flat.
-        
-        # Create a state machine series to fix the invalid entries cascading
-        positions_fixed = []
-        current_pos = 0.0
-        
-        for idx, pos in positions.items():
-            pval = aligned_pval.loc[idx]
-            
-            # Emergency Cutoff overrides everything
-            if pval > self.coint_cutoff:
-                current_pos = 0.0
-                positions_fixed.append(0.0)
-                continue
-                
-            # Entry Attempt (Transition from 0 to non-zero)
-            if current_pos == 0.0 and pos != 0.0:
-                if pval <= self.coint_threshold:
-                    current_pos = pos # Valid Entry
-                else:
-                    current_pos = 0.0 # Invalid Entry, block it
-            # Exit Signal
-            elif current_pos != 0.0 and pos == 0.0:
-                current_pos = 0.0
-            # Flip Position (Long to Short directly)
-            elif current_pos != 0.0 and pos != current_pos and pos != 0.0:
-                 if pval <= self.coint_threshold:
-                     current_pos = pos
-                 else:
-                     current_pos = 0.0 # Block the flip, go flat
-            
-            positions_fixed.append(current_pos)
-            
-        positions = pd.Series(positions_fixed, index=positions.index)
         
         # 4. Generate Target Weights for the Engine
         weights = pd.DataFrame(0.0, index=df_pair.index, columns=df_pair.columns)

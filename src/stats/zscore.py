@@ -23,20 +23,24 @@ def calculate_z_score(spread: pd.Series, window: int = 30) -> pd.Series:
 def generate_signals(
     z_score: pd.Series, 
     entry_threshold: float = 2.0, 
-    exit_threshold: float = 0.0
+    exit_threshold: float = 0.0,
+    is_valid_entry: pd.Series = None,
+    is_force_exit: pd.Series = None
 ) -> pd.DataFrame:
     """
     Translates a Z-Score series into generic +/- 1 signals for a single spread.
     
     Logic:
-    If Z > entry_threshold => Sell Spread (-1) (Spread too high)
-    If Z < -entry_threshold => Buy Spread (+1) (Spread too low)
-    If Z crosses exit_threshold => Flat (0) (Mean Reversion complete)
+    If Z > entry_threshold (and valid entry) => Sell Spread (-1) (Spread too high)
+    If Z < -entry_threshold (and valid entry) => Buy Spread (+1) (Spread too low)
+    If Z crosses exit_threshold (or forced exit) => Flat (0) (Mean Reversion complete / Broken Regime)
     
     Args:
         z_score (pd.Series): The rolling Z-score.
         entry_threshold (float): Z-score required to enter a trade.
         exit_threshold (float): Z-score required to exit a trade (crosses 0).
+        is_valid_entry (pd.Series, optional): Boolean series. True if entry is allowed.
+        is_force_exit (pd.Series, optional): Boolean series. True if current positions must be liquidated.
         
     Returns:
         pd.DataFrame: A DataFrame with the Z-score and the generated Position.
@@ -78,21 +82,29 @@ def generate_signals(
     positions = []
     current_pos = 0.0
     
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
         z = row['z_score']
         
-        # Check Exits
-        if current_pos == 1.0 and z >= exit_threshold:
+        # Determine external regime states (default to safe if None)
+        valid_entry = is_valid_entry.loc[idx] if is_valid_entry is not None else True
+        force_exit = is_force_exit.loc[idx] if is_force_exit is not None else False
+        
+        # 1. Check Force Exits First
+        if force_exit:
             current_pos = 0.0
-        elif current_pos == -1.0 and z <= -exit_threshold:
-            current_pos = 0.0
-            
-        # Check Entries
-        if current_pos == 0.0:
-            if z < -entry_threshold:
-                current_pos = 1.0
-            elif z > entry_threshold:
-                current_pos = -1.0
+        else:
+            # 2. Check Standard Exits
+            if current_pos == 1.0 and z >= exit_threshold:
+                current_pos = 0.0
+            elif current_pos == -1.0 and z <= -exit_threshold:
+                current_pos = 0.0
+                
+            # 3. Check Entries (ONLY when Flat)
+            if current_pos == 0.0 and valid_entry:
+                if z < -entry_threshold:
+                    current_pos = 1.0
+                elif z > entry_threshold:
+                    current_pos = -1.0
                 
         positions.append(current_pos)
         
