@@ -1,0 +1,18 @@
+name: "Pairs Trading (Classic Cointegration)"
+description: "Statistical Arbitrage strategy exploiting mean-reversion in rolling cointegrated spreads."
+author: "Quant"
+timeframe: "1h"
+
+parameters:
+  cointegration_window: 90
+  cointegration_thresholds:
+    entry: 0.10
+    cutoff: 0.40
+  zscore_window: 30
+  zscore_thresholds:
+    entry: 2.0
+    exit: 0.0
+  capital_per_pair: 10000.0
+  execution:
+    fee_rate: 0.0005    # 0.05% per trade
+    slippage: 0.0002    # 0.02% estimated slippage

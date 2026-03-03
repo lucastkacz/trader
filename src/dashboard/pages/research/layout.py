@@ -4,8 +4,8 @@ from src.dashboard.styles import apply_compact_styles
 from src.data.universe import UniverseManager
 from src.engine.data.loader import DataLoader
 from src.stats.correlation import calculate_correlation_matrix, get_top_correlated_pairs
-from src.stats.cointegration import calculate_rolling_spread, test_rolling_cointegration
 from src.data.basket import BasketManager
+from src.strategies.factory import StrategyFactory
 
 def render_research_page():
     # Apply shared styles
@@ -91,10 +91,13 @@ def render_research_page():
         top_n = st.number_input("Test Top N Pairs", min_value=1, value=15, help="How many highly correlated pairs to pass to Step 2")
         
     with col2:
-        st.markdown("**2. Cointegration Stability (Short-Term)**")
+        st.markdown("**2. Strategy Selection & Screening**")
+        strategy_names = list(StrategyFactory.STRATEGY_REGISTRY.keys())
+        selected_strategy = st.selectbox("Select Strategy Matrix", strategy_names)
+
         coint_window = st.number_input("Rolling Window (Periods)", min_value=30, value=168, help="Rule of Thumb: This should match your target Trade Holding Period.")
-        st.caption(f"⏱️ Testing tight mean-reversion over rolling **{get_time_estimate(coint_window, timeframe)}** blocks")
-        pval_thresh = st.number_input("Max Allowable P-Value", min_value=0.01, max_value=0.20, value=0.05, step=0.01, help="Statistical threshold. 0.05 means 95% confidence the spread is mean-reverting.")
+        st.caption(f"⏱️ Evaluating over rolling **{get_time_estimate(coint_window, timeframe)}** blocks")
+        pval_thresh = st.number_input("Max Allowable Metric (e.g. P-Value)", min_value=0.01, max_value=0.20, value=0.05, step=0.01)
 
     st.divider()
 
@@ -155,12 +158,12 @@ def render_research_page():
 
         st.divider()
         
-        # 4. Execution Step B: Cointegration
-        if st.button("🔬 Step 2: Run Rolling Cointegration Tests", type="primary", use_container_width=True):
+        # 4. Execution Step B: Strategy Screening
+        if st.button("🔬 Step 2: Run Strategy Screener", type="primary", use_container_width=True):
             symbols = selected_universe['symbols']
             top_pairs_df = st.session_state.alpha_candidates
             
-            with st.spinner(f"Running rolling Engle-Granger tests across {len(top_pairs_df)} candidate pairs..."):
+            with st.spinner(f"Running strategy evaluation across {len(top_pairs_df)} candidate pairs..."):
                 try:
                     loader = DataLoader(symbols, timeframe)
                     close_df, _, _ = loader.load()
@@ -168,32 +171,41 @@ def render_research_page():
                     results_list = []
                     progress_bar = st.progress(0)
                     
+                    # Instantiate strategy dynamically
+                    config = {
+                        "name": selected_strategy,
+                        "timeframe": timeframe,
+                        "parameters": {
+                            "cointegration_window": coint_window,
+                            "cointegration_thresholds": {"entry": pval_thresh, "cutoff": pval_thresh * 4}
+                        }
+                    }
+                    strategy = StrategyFactory.create(config)
+                    sort_ascending = strategy.sort_ascending
+                    
                     for idx, row in top_pairs_df.iterrows():
                         asset_a = row['Asset_1']
                         asset_b = row['Asset_2']
                         
-                        df_pair = close_df[[asset_a, asset_b]].ffill().dropna()
-                        if len(df_pair) >= coint_window:
-                            _, rolling_beta = calculate_rolling_spread(df_pair[asset_a], df_pair[asset_b], window=coint_window)
-                            _, rolling_pval = test_rolling_cointegration(df_pair[asset_a], df_pair[asset_b], window=coint_window)
-                            
-                            valid_pvals = rolling_pval.dropna()
-                            if len(valid_pvals) > 0 and valid_pvals.min() <= pval_thresh:
-                                latest_pval = valid_pvals.iloc[-1]
-                                latest_beta = rolling_beta.dropna().iloc[-1] if not rolling_beta.dropna().empty else 0.0
-                                
-                                results_list.append({
-                                    'asset_a': asset_a,
-                                    'asset_b': asset_b,
-                                    'correlation': row['Correlation'],
-                                    'p_value': latest_pval,
-                                    'hedge_ratio': latest_beta
-                                })
+                        metric, metadata = strategy.get_screening_metric(close_df, asset_a, asset_b)
+                        
+                        if metric is not None:
+                            result_row = {
+                                'asset_a': asset_a,
+                                'asset_b': asset_b,
+                                'correlation': row['Correlation'],
+                                'screening_metric': metric,
+                                'strategy_name': selected_strategy
+                            }
+                            # Merge in strategy-specific metadata (like hedge_ratio)
+                            result_row.update(metadata)
+                            results_list.append(result_row)
                                 
                         progress_bar.progress((idx + 1) / len(top_pairs_df))
                         
                     progress_bar.empty()
                     st.session_state.alpha_results = results_list
+                    st.session_state.alpha_sort_ascending = sort_ascending
                     st.session_state.alpha_start_date = str(close_df.index[0].date()) if not close_df.empty else ""
                     st.session_state.alpha_end_date = str(close_df.index[-1].date()) if not close_df.empty else ""
                     
@@ -205,22 +217,28 @@ def render_research_page():
         results_list = st.session_state.alpha_results
         
         if not results_list:
-            st.warning("No pairs survived the Cointegration Regime filter.")
+            st.warning("No pairs survived the Strategy Screening filter.")
         else:
             results_df = pd.DataFrame(results_list)
             
-            # Sort by tightest minimum p-value
-            results_df = results_df.sort_values('p_value', ascending=True)
+            # Sort by strategy preference
+            sort_ascending = st.session_state.get('alpha_sort_ascending', True)
+            results_df = results_df.sort_values('screening_metric', ascending=sort_ascending)
             
-            st.success(f"Discovery Complete! {len(results_df)} Pairs share a proven statistical mean-reverting relationship.")
+            st.success(f"Discovery Complete! {len(results_df)} Pairs share a proven statistical relationship.")
             
-            st.write("### Alpha Discovery Results (Ranked by Current Cointegration Strength)")
+            st.write("### Alpha Discovery Results (Ranked by Strategy Metric)")
+            
+            # Determine which columns to show (dynamic based on metadata)
+            display_cols = ['asset_a', 'asset_b', 'correlation', 'screening_metric']
+            format_dict = {'correlation': "{:.2f}", 'screening_metric': "{:.4f}"}
+            
+            if 'hedge_ratio' in results_df.columns:
+                display_cols.append('hedge_ratio')
+                format_dict['hedge_ratio'] = "{:.4f}"
+                
             st.dataframe(
-                results_df[['asset_a', 'asset_b', 'correlation', 'p_value', 'hedge_ratio']].style.format({
-                    'correlation': "{:.2f}",
-                    'p_value': "{:.4f}",
-                    'hedge_ratio': "{:.4f}"
-                }),
+                results_df[display_cols].style.format(format_dict),
                 use_container_width=True
             )
             

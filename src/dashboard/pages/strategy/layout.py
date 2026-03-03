@@ -9,7 +9,7 @@ from src.strategies.pairs.components.data_alignment import render_data_alignment
 from src.strategies.pairs.components.spread_analysis import render_spread_analysis
 from src.strategies.pairs.components.signal_gen import render_signal_gen
 from src.strategies.pairs.components.execution import render_execution
-from src.strategies.pairs.logic import PairsTradingStrategy
+from src.strategies.factory import StrategyFactory
 
 def render_strategy_page():
     apply_compact_styles()
@@ -121,20 +121,32 @@ def render_strategy_page():
     
     # Run the Engine Logic via the Strategy Class itself
     # This generates the unified metrics and the enriched Trade Log
-    strategy = PairsTradingStrategy(
-        timeframe=timeframe,
-        cointegration_window=coint_window_input,
-        cointegration_p_value_threshold=coint_entry,
-        cointegration_cutoff_threshold=coint_cutoff,
-        zscore_window=z_window,
-        entry_threshold=z_entry,
-        exit_threshold=z_exit,
-        capital_per_pair=capital_per_pair,
-        fee_rate=fee_rate,
-        slippage=slippage
-    )
+    # Build config dynamically based on UI inputs
+    config = {
+        "name": "Pairs Trading (Classic Cointegration)",
+        "timeframe": timeframe,
+        "parameters": {
+            "cointegration_window": coint_window_input,
+            "cointegration_thresholds": {
+                "entry": coint_entry,
+                "cutoff": coint_cutoff
+            },
+            "zscore_window": z_window,
+            "zscore_thresholds": {
+                "entry": z_entry,
+                "exit": z_exit
+            },
+            "capital_per_pair": capital_per_pair,
+            "execution": {
+                "fee_rate": fee_rate,
+                "slippage": slippage
+            }
+        }
+    }
     
-    results = strategy.evaluate_pair(asset_a, asset_b, close_df, basket_name=selected_b_name)
+    strategy = StrategyFactory.create(config)
+    
+    results = strategy.evaluate(close_df, asset_a=asset_a, asset_b=asset_b, basket_name=selected_b_name)
     trade_log = results.get('trade_log', None) if results else None
     report_text = results.get('report_text', None) if results else None
     results_df = results.get('results_df', None) if results else None

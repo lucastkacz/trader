@@ -7,8 +7,9 @@ from src.stats.zscore import calculate_z_score, generate_signals
 import os
 from src.engine.core.engine import VectorizedEngine
 from src.engine.core.logger import StrategyLogger
+from src.strategies.base import BaseStrategy
 
-class PairsTradingStrategy:
+class PairsTradingStrategy(BaseStrategy):
     """
     Production Strategy Class for Pairs Trading / Auto-Screener.
     Responsible for:
@@ -18,33 +19,49 @@ class PairsTradingStrategy:
     4. Passing the weights through VectorizedEngine to evaluate the edge.
     """
     
-    def __init__(
-        self, 
-        timeframe: str = '1h',
-        cointegration_window: int = 90,
-        cointegration_p_value_threshold: float = 0.10,
-        cointegration_cutoff_threshold: float = 0.40,
-        zscore_window: int = 30,
-        entry_threshold: float = 2.0,
-        exit_threshold: float = 0.0,
-        capital_per_pair: float = 10000.0,
-        fee_rate: float = 0.0005,
-        slippage: float = 0.0002
-    ):
-        self.timeframe = timeframe
-        self.coint_window = cointegration_window
-        self.coint_threshold = cointegration_p_value_threshold
-        self.coint_cutoff = cointegration_cutoff_threshold
-        self.zscore_window = zscore_window
-        self.entry_threshold = entry_threshold
-        self.exit_threshold = exit_threshold
-        self.capital = capital_per_pair
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        
+        # Load params from config
+        params = self.config.get("parameters", {})
+        
+        self.timeframe = self.config.get("timeframe", "1h")
+        self.coint_window = params.get("cointegration_window", 90)
+        self.coint_threshold = params.get("cointegration_thresholds", {}).get("entry", 0.10)
+        self.coint_cutoff = params.get("cointegration_thresholds", {}).get("cutoff", 0.40)
+        self.zscore_window = params.get("zscore_window", 30)
+        self.entry_threshold = params.get("zscore_thresholds", {}).get("entry", 2.0)
+        self.exit_threshold = params.get("zscore_thresholds", {}).get("exit", 0.0)
+        self.capital = params.get("capital_per_pair", 10000.0)
         
         # Engine parameters for evaluation
-        self.fee_rate = fee_rate
-        self.slippage = slippage
+        execution_params = params.get("execution", {})
+        self.fee_rate = execution_params.get("fee_rate", 0.0005)
+        self.slippage = execution_params.get("slippage", 0.0002)
         
-    def evaluate_pair(self, asset_a: str, asset_b: str, prices: pd.DataFrame, basket_name: str = "Unknown") -> Dict[str, Any]:
+    @property
+    def sort_ascending(self) -> bool:
+        """Lower P-Value is better for Cointegration"""
+        return True
+
+    def get_screening_metric(self, prices: pd.DataFrame, asset_a: str, asset_b: str = None) -> Tuple[Optional[float], Dict[str, Any]]:
+        """Runs rolling Engle-Granger tests to see if the pair meets the valid regime."""
+        df_pair = prices[[asset_a, asset_b]].ffill().dropna()
+        if len(df_pair) < self.coint_window:
+            return None, {}
+            
+        _, rolling_beta = calculate_rolling_spread(df_pair[asset_a], df_pair[asset_b], window=self.coint_window)
+        _, rolling_pval = test_rolling_cointegration(df_pair[asset_a], df_pair[asset_b], window=self.coint_window)
+        
+        valid_pvals = rolling_pval.dropna()
+        if len(valid_pvals) > 0 and valid_pvals.min() <= self.coint_threshold:
+            latest_pval = float(valid_pvals.iloc[-1])
+            latest_beta = float(rolling_beta.dropna().iloc[-1]) if len(rolling_beta.dropna()) > 0 else 0.0
+            return latest_pval, {'hedge_ratio': latest_beta}
+            
+        return None, {}
+        
+    def evaluate(self, prices: pd.DataFrame, asset_a: str, asset_b: str = None, basket_name: str = "Unknown") -> Dict[str, Any]:
         """
         Runs the full pipeline for a single pair:
         Math -> Signals -> Weights -> Engine Backtest
