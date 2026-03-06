@@ -99,13 +99,23 @@ def render_research_page():
         
         if methodology == MeanReversionMethod.CLASSIC_COINTEGRATION.value:
             # Classic Cointegration UI
+            basket_lookback = selected_basket.get('metadata', {}).get('correlation_lookback_periods') if selected_basket else None
+            default_window = basket_lookback if basket_lookback else default_params.get("cointegration_window", 168)
+            
             screener_params['cointegration_window'] = st.number_input(
                 "Evaluation/Lookback Window (Periods)", 
                 min_value=30, 
-                value=default_params.get("cointegration_window", 168), 
+                value=int(default_window), 
                 help="Matches your target holding period."
             )
             st.caption(f"⏱️ Evaluating over rolling **{get_time_estimate(screener_params['cointegration_window'], timeframe)}** blocks")
+            
+            screener_params['zscore_window'] = st.number_input(
+                "Z-Score Moving Average (Periods)",
+                min_value=10,
+                value=default_params.get("zscore_window", 30),
+                help="Window size for calculating the Z-Score of the spread."
+            )
             
             pval_entry = default_params.get("cointegration_thresholds", {}).get("entry", 0.05)
             screener_params['cointegration_thresholds'] = {
@@ -191,20 +201,31 @@ def render_research_page():
         results_list = st.session_state.alpha_results
         
         if not results_list:
-            st.warning("No pairs survived the Strategy Screening filter.")
+            st.warning("No pairs processed.")
         else:
             results_df = pd.DataFrame(results_list)
+            survived_mask = results_df['survived'] == True if 'survived' in results_df.columns else pd.Series([True]*len(results_df))
+            survived_count = survived_mask.sum()
             
-            # Sort by strategy preference
+            # Sort by strategy preference: Survived pairs first
             sort_ascending = st.session_state.get('alpha_sort_ascending', True)
-            results_df = results_df.sort_values('screening_metric', ascending=sort_ascending)
+            if 'survived' in results_df.columns:
+                results_df = results_df.sort_values(['survived', 'screening_metric'], ascending=[False, sort_ascending])
+            else:
+                results_df = results_df.sort_values('screening_metric', ascending=sort_ascending)
             
-            st.success(f"Discovery Complete! {len(results_df)} Pairs share a proven statistical relationship.")
+            if survived_count == 0:
+                st.warning(f"None of the {len(results_df)} pairs survived the Strategy Screening filter. Showing evaluated pairs below.")
+            else:
+                st.success(f"Discovery Complete! {survived_count} out of {len(results_df)} pairs share a proven statistical relationship.")
             
-            st.write("### Alpha Discovery Results (Ranked by Strategy Metric)")
+            st.write(f"### Alpha Discovery Results ({survived_count} Survived / {len(results_df)} Evaluated)")
             
             # Determine which columns to show (dynamic based on metadata)
             display_cols = ['asset_a', 'asset_b', 'correlation', 'screening_metric']
+            if 'survived' in results_df.columns:
+                display_cols.append('survived')
+            
             format_dict = {'correlation': "{:.2f}", 'screening_metric': "{:.4f}"}
             
             if 'hedge_ratio' in results_df.columns:
@@ -258,7 +279,7 @@ def render_research_page():
                                 asset_a=selected_row['asset_a'],
                                 asset_b=selected_row['asset_b'],
                                 hedge_ratio=selected_row.get('hedge_ratio', 1.0),
-                                rolling_window=screener_params.get('cointegration_window', 168)
+                                rolling_window=screener_params.get('zscore_window', 30)
                             )
                             
                         st.write("")
@@ -282,9 +303,20 @@ def render_research_page():
                 st.write("")
                 if st.button("💾 Save Basket", use_container_width=True):
                     if basket_name:
-                        saved_path = BasketManager.save_basket(
-                            name=basket_name,
-                            pairs=results_list,
+                        survived_pairs = [p for p in results_list if p.get('survived', True)]
+                        
+                        # Optimization: Strip repetitive keys from individual pair dictionaries
+                        clean_pairs = []
+                        for p in survived_pairs:
+                            clean_p = {k: v for k, v in p.items() if k not in ['strategy_name', 'survived']}
+                            clean_pairs.append(clean_p)
+                            
+                        if not clean_pairs:
+                            st.warning("Cannot save basket. No pairs survived the screener.")
+                        else:
+                            saved_path = BasketManager.save_basket(
+                                name=basket_name,
+                                pairs=clean_pairs,
                             universe_name=selected_basket.get('universe_name', 'Unknown'),
                             timeframe=timeframe,
                             basket_type="strategy",
@@ -293,7 +325,9 @@ def render_research_page():
                                 "cointegration_window_periods": screener_params.get('cointegration_window', None),
                                 "data_start_date": st.session_state.get('alpha_start_date', ''),
                                 "data_end_date": st.session_state.get('alpha_end_date', ''),
-                                "screening_methodology": methodology
+                                "screening_methodology": methodology,
+                                "strategy_name": selected_strategy,
+                                "survival_filtered": True
                             }
                         )
                         st.success(f"Basket saved successfully! You can now use this in the Strategy Lab.")

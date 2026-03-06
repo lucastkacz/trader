@@ -68,4 +68,5 @@ def render_zscore_spread(df: pd.DataFrame, asset_a: str, asset_b: str, hedge_rat
     )
     
     st.plotly_chart(fig, use_container_width=True)
-    st.caption(f"*Showing the {rolling_window}-period Z-Score (driven by your Evaluation/Lookback Window). Trades are typically entered when the line crosses the red/green bands, and exited when it returns to 0.*")
+    st.caption(f"*Showing the {rolling_window}-period Z-Score Moving Average. Trades are typically entered when the line crosses the red/green bands, and exited when it returns to 0.*")
+    st.info("**⚠️ Institutional Disclaimer (Lookahead Bias):** The Hedge Ratio ($\beta$) used to draw this specific historical Z-Score was calculated using the *entire* Evaluation Window. In a real real-time environment, you wouldn't know this $\beta$ until the very last day. This chart is a static 'best-fit' used exclusively to confirm the existence of a regime during strategy discovery. For true out-of-sample execution without Lookahead Bias, test this basket in the **Strategy Lab**, where the engine strictly uses a causal, rolling OLS regression.")

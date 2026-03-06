@@ -54,10 +54,11 @@ class PairsTradingStrategy(BaseStrategy):
         _, rolling_pval = test_rolling_cointegration(df_pair[asset_a], df_pair[asset_b], window=self.coint_window)
         
         valid_pvals = rolling_pval.dropna()
-        if len(valid_pvals) > 0 and valid_pvals.min() <= self.coint_threshold:
+        if len(valid_pvals) > 0:
             latest_pval = float(valid_pvals.iloc[-1])
             latest_beta = float(rolling_beta.dropna().iloc[-1]) if len(rolling_beta.dropna()) > 0 else 0.0
-            return latest_pval, {'hedge_ratio': latest_beta}
+            survived = bool(valid_pvals.min() <= self.coint_threshold)
+            return latest_pval, {'hedge_ratio': latest_beta, 'survived': survived}
             
         return None, {}
         

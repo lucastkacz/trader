@@ -34,11 +34,11 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
         _, p_values = test_rolling_cointegration(df_pair[asset_a], df_pair[asset_b], window=window)
 
     fig = make_subplots(
-        rows=2, cols=1, 
+        rows=3, cols=1, 
         shared_xaxes=True, 
         vertical_spacing=0.1,
-        row_heights=[0.7, 0.3],
-        subplot_titles=("Raw Spread", "Rolling P-Value (Cointegration Regime Filter)")
+        row_heights=[0.5, 0.25, 0.25],
+        subplot_titles=("Raw Spread", "Rolling Hedge Ratio (Beta)", "Rolling P-Value (Cointegration Regime Filter)")
     )
     
     # 1. Spread Plot
@@ -54,6 +54,20 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
             line=dict(color='#ab47bc') # Purple
         ),
         row=1, col=1
+    )
+    
+    # 2. Rolling Beta Plot
+    plot_beta = rolling_beta.copy()
+    plot_beta.iloc[:window-1] = pd.NA
+    
+    fig.add_trace(
+        go.Scatter(
+            x=plot_beta.index,
+            y=plot_beta,
+            name="Hedge Ratio (Beta)",
+            line=dict(color='#29B6F6') # Light blue
+        ),
+        row=2, col=1
     )
     
     # apply smoothing algorithm
@@ -84,7 +98,7 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
             marker_color=colors,
             marker_line_width=0
         ),
-        row=2, col=1
+        row=3, col=1
     )
     
     # Add the Entry threshold line
@@ -94,7 +108,7 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
         line_color="#00E676", 
         annotation_text=f"{coint_entry:.2f} Entry Barrier", 
         annotation_position="top left",
-        row=2, col=1
+        row=3, col=1
     )
     
     # Add the Cut-off threshold line
@@ -104,11 +118,11 @@ def render_spread_analysis(df_pair: pd.DataFrame, asset_a: str, asset_b: str, wi
         line_color="#FF1744", 
         annotation_text=f"{coint_cutoff:.2f} Emergency Cut-Off", 
         annotation_position="top left",
-        row=2, col=1
+        row=3, col=1
     )
     
     # Restrict Y-axis for P-value to make it readable
-    fig.update_yaxes(range=[0, min(1.0, smoothed_p_values.max() * 1.1 if not smoothed_p_values.empty else 1.0)], row=2, col=1)
+    fig.update_yaxes(range=[0, min(1.0, smoothed_p_values.max() * 1.1 if not smoothed_p_values.empty else 1.0)], row=3, col=1)
 
     fig.update_layout(
         height=600,

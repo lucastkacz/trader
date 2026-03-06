@@ -73,8 +73,27 @@ def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta:
         margin=dict(l=40, r=40, t=40, b=40)
     )
     
-    
     st.plotly_chart(fig, use_container_width=True)
+    
+    # 5.1 Underwater Plot (Drawdown)
+    if 'drawdown' in results_df.columns:
+        fig_dd = px.area(
+            results_df, 
+            x=results_df.index, 
+            y='drawdown', 
+            title="Underwater Plot (Drawdown)"
+        )
+        # Convert to percentage for display
+        fig_dd.update_traces(y=results_df['drawdown'] * 100, fillcolor='rgba(255, 23, 68, 0.3)', line_color='#FF1744')
+        fig_dd.update_layout(
+            xaxis_title="Date",
+            yaxis_title="Drawdown (%)",
+            template="plotly_dark",
+            hovermode="x unified",
+            margin=dict(l=40, r=40, t=40, b=40),
+            height=300
+        )
+        st.plotly_chart(fig_dd, use_container_width=True)
     
     # 5.5 Candlestick Execution Charts
     if raw_a is not None and raw_b is not None and trade_log is not None and not trade_log.empty:
@@ -132,6 +151,35 @@ def render_execution(df_pair: pd.DataFrame, signals: pd.DataFrame, rolling_beta:
             st.plotly_chart(plot_candlestick_with_trades(raw_b, asset_b, trade_log), use_container_width=True)
     
     # 6. Deep Strategy Report (Comprehensive Text Log)
+    if not trade_log.empty:
+        st.write("#### 📋 Comprehensive Trade Log")
+        st.markdown(
+            "Every single transaction executed by the engine, detailing exact entry/exit points, notional sizes, "
+            "exchange fees paid, and the resulting equity balance."
+        )
+        
+        # Display the parsed trade log dataframe cleanly
+        display_log = trade_log.copy()
+        
+        # Determine format precision dynamically
+        format_dict = {
+            'Notional ($)': "${:,.2f}",
+            'Fees Paid ($)': "${:,.2f}",
+            'Current Equity ($)': "${:,.2f}"
+            # Let Price determine its own precision automatically since tokens have vastly different scales
+        }
+        
+        if 'Z-Score' in display_log.columns:
+            format_dict['Z-Score'] = "{:.2f}"
+            
+        st.dataframe(
+            display_log.style.format(format_dict, na_rep=""),
+            use_container_width=True,
+            height=400
+        )
+        
+        st.write("---")
+        
     if report_text:
         st.write("#### 🔎 Deep Trade Inspector & Strategy Report")
         st.markdown(
