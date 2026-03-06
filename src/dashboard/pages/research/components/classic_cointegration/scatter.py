@@ -42,7 +42,8 @@ def render_cointegration_scatter(df: pd.DataFrame, asset_a: str, asset_b: str, m
     results = px.get_trendline_results(fig)
     if not results.empty:
         model = results.iloc[0]["px_fit_results"]
-        hedge_ratio = model.params.iloc[1] # slope
+        # Use standard indexing [1] since model.params can be a numpy array
+        hedge_ratio = model.params[1] if len(model.params) > 1 else model.params[0]
         r_squared = model.rsquared
         
         st.caption(f"**OLS Hedge Ratio ($\\\\beta$):** `{hedge_ratio:.4f}` | **$R^2$:** `{r_squared:.4f}`")
