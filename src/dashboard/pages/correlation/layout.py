@@ -142,8 +142,14 @@ def render_correlation_page():
                 st.error(f"Correlation check failed: {str(e)}")
 
     if st.session_state.corr_matrix is not None and st.session_state.corr_candidates is not None:
-        render_correlation_heatmap(st.session_state.corr_matrix, st.session_state.corr_candidates)
+        
+        # 4. Returns Distribution Analysis
+        if hasattr(st.session_state, 'corr_returns') and st.session_state.corr_returns is not None:
+             render_returns_histogram(st.session_state.corr_returns)
 
+        st.divider()
+
+        render_correlation_heatmap(st.session_state.corr_matrix, st.session_state.corr_candidates)
 
         st.divider()
         
@@ -184,8 +190,3 @@ def render_correlation_page():
                  else:
                       st.warning("Please provide a name for the basket.")
 
-        st.divider()
-
-        # 4. Returns Distribution Analysis
-        if hasattr(st.session_state, 'corr_returns') and st.session_state.corr_returns is not None:
-             render_returns_histogram(st.session_state.corr_returns)
