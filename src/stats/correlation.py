@@ -14,8 +14,9 @@ def calculate_correlation_matrix(prices: pd.DataFrame, method: str = 'pearson', 
     Returns:
         pd.DataFrame: Correlation matrix.
     """
-    # Use returns, not absolute prices for correlation to avoid spurious correlation
-    returns = prices.pct_change().dropna(how='all')
+    # Use logarithmic returns, not absolute prices for correlation to avoid spurious correlation
+    # and to ensure returns are symmetric and additive
+    returns = np.log(prices / prices.shift(1)).dropna(how='all')
     return returns.corr(method=method, min_periods=min_periods)
 
 def get_top_correlated_pairs(corr_matrix: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
