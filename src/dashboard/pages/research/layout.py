@@ -74,12 +74,7 @@ def render_research_page():
     # 2. Screener Parameters
     st.write("### Discovery Parameters")
     
-    with st.expander("🎓 Strategy Parameters Help", expanded=False):
-        st.markdown("""
-        Configure the parameters for the specific strategy you are testing.
-        *   **Rolling Window:** Generally should match your target Holding Period.
-        *   **Max Allowable Metric:** The threshold for the strategy's screening metric (e.g. Cointegration P-Value <= 0.05).
-        """)
+
     
     col1, col2 = st.columns(2)
     with col1:
@@ -87,11 +82,15 @@ def render_research_page():
         selected_strategy = st.selectbox("Select Strategy", strategy_names)
 
     # Instantiate strategy to get its configuration and methodology
-    # Default initialize with empty config to read default params
-    temp_config = {"name": selected_strategy, "timeframe": timeframe, "parameters": {}}
-    strategy_instance = StrategyFactory.create(temp_config)
-    methodology = strategy_instance.methodology
-    default_params = strategy_instance.config.get("parameters", {})
+    try:
+        default_config = StrategyFactory.get_default_config(selected_strategy)
+        default_config['timeframe'] = timeframe
+        strategy_instance = StrategyFactory.create(default_config)
+        methodology = strategy_instance.methodology
+        default_params = strategy_instance.config.get("parameters", {})
+    except Exception as e:
+        st.error(f"Error loading strategy config: {e}")
+        return
 
     with col2:
         st.info(f"**Methodology:** {methodology}")

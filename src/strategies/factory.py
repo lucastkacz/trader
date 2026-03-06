@@ -45,6 +45,23 @@ class StrategyFactory:
         return strategy_class
 
     @classmethod
+    def get_default_config(cls, strategy_name: str) -> Dict[str, Any]:
+        """
+        Derives the path to the strategy's config.yml from the registry and loads it.
+        """
+        if strategy_name not in cls.STRATEGY_REGISTRY:
+            raise KeyError(f"Strategy '{strategy_name}' is not registered.")
+            
+        # Extract module path: e.g. "src.strategies.pairs.strategy.PairsTradingStrategy"
+        module_path = cls.STRATEGY_REGISTRY[strategy_name].rsplit('.', 2)[0] # gives "src.strategies.pairs"
+        
+        # Convert dot path to file path relative to project root
+        dir_path = module_path.replace(".", os.sep)
+        config_path = os.path.join(dir_path, "config.yml")
+        
+        return cls.load_config(config_path)
+
+    @classmethod
     def create(cls, config: Dict[str, Any]) -> BaseStrategy:
         """
         Creates and returns an instantiated strategy object.
