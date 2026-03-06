@@ -24,7 +24,7 @@ def render_cointegration_scatter(df: pd.DataFrame, asset_a: str, asset_b: str, m
         opacity=0.6,
         color_discrete_sequence=[COLORS['primary']],
         trendline="ols",
-        trendline_color_override=COLORS['accent']
+        trendline_color_override=COLORS['secondary']
     )
     
     fig.update_layout(
