@@ -45,16 +45,41 @@ def render_returns_histogram(corr_returns: pd.DataFrame):
          if selected_hist_asset and corr_returns is not None:
              hist_data = corr_returns[selected_hist_asset].dropna()
              
+             import scipy.stats as stats
+             import numpy as np
+             import plotly.graph_objects as go
+             
+             # Create base histogram with marginal box plot
              fig_hist = px.histogram(
                   hist_data, 
                   x=selected_hist_asset,
                   nbins=bins,
-                  marginal="box", # Adds a box plot on top indicating outliers
+                  marginal="box", # Restored the box plot
+                  histnorm="probability density", # Normalized for KDE
                   color_discrete_sequence=['#00bfff'] # Vibrant deep sky blue
              )
              
              # Add borders to the bars for visual pop
-             fig_hist.update_traces(marker_line_width=1, marker_line_color="rgba(0,0,0,0.2)", opacity=0.8)
+             fig_hist.update_traces(marker_line_width=1, marker_line_color="rgba(0,0,0,0.2)", opacity=0.8, selector=dict(type='histogram'))
+             
+             # Calculate and add custom colored KDE curve
+             try:
+                 kde = stats.gaussian_kde(hist_data)
+                 x_kde = np.linspace(hist_data.min(), hist_data.max(), 500)
+                 y_kde = kde(x_kde)
+                 
+                 # Add KDE as a separate line trace (orange/red to stand out)
+                 fig_hist.add_trace(go.Scatter(
+                     x=x_kde, 
+                     y=y_kde, 
+                     mode='lines', 
+                     line=dict(color='#ff4500', width=2.5), # OrangeRed color
+                     name='Curva KDE',
+                     hoverinfo='skip'
+                 ))
+             except Exception as e:
+                 pass # If KDE fails for any reason (e.g. not enough variance), just show histogram
+             
              
              # Calculate numerical statistics for normality
              mean_ret = hist_data.mean()
@@ -68,5 +93,8 @@ def render_returns_histogram(corr_returns: pd.DataFrame):
                   yaxis_title="Frecuencia",
                   showlegend=False
              )
+             
+             # Add a vertical dotted line at zero for reference
+             fig_hist.add_vline(x=0, line_width=2, line_dash="dot", line_color="rgba(0,0,0,0.5)")
              
              st.plotly_chart(fig_hist, use_container_width=True)
