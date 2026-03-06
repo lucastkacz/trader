@@ -84,12 +84,39 @@ def render_research_page():
     col1, col2 = st.columns(2)
     with col1:
         strategy_names = list(StrategyFactory.STRATEGY_REGISTRY.keys())
-        selected_strategy = st.selectbox("Select Strategy Matrix", strategy_names)
+        selected_strategy = st.selectbox("Select Strategy", strategy_names)
+
+    # Instantiate strategy to get its configuration and methodology
+    # Default initialize with empty config to read default params
+    temp_config = {"name": selected_strategy, "timeframe": timeframe, "parameters": {}}
+    strategy_instance = StrategyFactory.create(temp_config)
+    methodology = strategy_instance.methodology
+    default_params = strategy_instance.config.get("parameters", {})
 
     with col2:
-        coint_window = st.number_input("Rolling Window (Periods)", min_value=30, value=168, help="Matches your target holding period.")
-        st.caption(f"⏱️ Evaluating over rolling **{get_time_estimate(coint_window, timeframe)}** blocks")
-        pval_thresh = st.number_input("Screening Threshold (e.g. Max P-Value)", min_value=0.01, max_value=0.20, value=0.05, step=0.01)
+        st.info(f"**Methodology:** {methodology}")
+        # --- DYNAMIC UI INPUTS BASED ON METHODOLOGY ---
+        from src.strategies.constants import MeanReversionMethod
+        
+        screener_params = {}
+        
+        if methodology == MeanReversionMethod.CLASSIC_COINTEGRATION.value:
+            # Classic Cointegration UI
+            screener_params['cointegration_window'] = st.number_input(
+                "Rolling Window (Periods)", 
+                min_value=30, 
+                value=default_params.get("cointegration_window", 168), 
+                help="Matches your target holding period."
+            )
+            st.caption(f"⏱️ Evaluating over rolling **{get_time_estimate(screener_params['cointegration_window'], timeframe)}** blocks")
+            
+            pval_entry = default_params.get("cointegration_thresholds", {}).get("entry", 0.05)
+            screener_params['cointegration_thresholds'] = {
+                "entry": st.number_input("Max P-Value Threshold", min_value=0.01, max_value=0.20, value=pval_entry, step=0.01),
+                "cutoff": pval_entry * 4 # Default cutoff assumption
+            }
+        else:
+            st.warning("UI for this methodology is under construction.")
 
     st.divider()
 
@@ -97,7 +124,7 @@ def render_research_page():
     if 'alpha_results' not in st.session_state:
         st.session_state.alpha_results = None
         # 3. Execution: Strategy Screening
-        if st.button("🔬 Run Strategy Screener", type="primary", use_container_width=True):
+        if st.button(f"🔬 Run {selected_strategy} Screener", type="primary", use_container_width=True):
             if not selected_basket or not symbols:
                 st.error("Invalid Basket.")
                 return
@@ -110,14 +137,11 @@ def render_research_page():
                     results_list = []
                     progress_bar = st.progress(0)
                     
-                    # Instantiate strategy dynamically
+                    # Instantiate strategy dynamically with USER INPUTS
                     config = {
                         "name": selected_strategy,
                         "timeframe": timeframe,
-                        "parameters": {
-                            "cointegration_window": coint_window,
-                            "cointegration_thresholds": {"entry": pval_thresh, "cutoff": pval_thresh * 4}
-                        }
+                        "parameters": screener_params
                     }
                     strategy = StrategyFactory.create(config)
                     sort_ascending = strategy.sort_ascending
@@ -182,6 +206,39 @@ def render_research_page():
                 use_container_width=True
             )
             
+            # --- DYNAMIC VISUALIZATIONS BASED ON METHODOLOGY ---
+            from src.strategies.constants import MeanReversionMethod
+            
+            st.divider()
+            st.write("### 👁️ Inspect Discovery Results")
+            
+            # Let user select one pair from the results to visualize
+            pair_strs = [f"{row['asset_a']} / {row['asset_b']} (Metric: {row['screening_metric']:.4f})" for _, row in results_df.iterrows()]
+            selected_pair_str = st.selectbox("Select Pair to Visualize Methodology", pair_strs)
+            selected_idx = pair_strs.index(selected_pair_str)
+            selected_row = results_df.iloc[selected_idx]
+            
+            if methodology == MeanReversionMethod.CLASSIC_COINTEGRATION.value:
+                from src.dashboard.pages.research.components.scatter import render_cointegration_scatter
+                
+                # Fetch data just for this pair to plot
+                try:
+                    with st.spinner("Loading visualization data..."):
+                        loader = DataLoader([selected_row['asset_a'], selected_row['asset_b']], timeframe)
+                        df, _, _ = loader.load()
+                        df_recent = df.tail(screener_params.get('cointegration_window', 168))
+                        
+                        render_cointegration_scatter(
+                            df=df_recent, 
+                            asset_a=selected_row['asset_a'], 
+                            asset_b=selected_row['asset_b'],
+                            metric_value=selected_row['screening_metric']
+                        )
+                except Exception as e:
+                    st.error(f"Failed to load visualization: {e}")
+            else:
+                st.info("Visualization for this methodology is under construction.")
+            
             # Save Basket Form
             st.divider()
             st.write("### Build Strategy Basket")
@@ -203,9 +260,10 @@ def render_research_page():
                             basket_type="strategy",
                             metadata={
                                 "correlation_lookback_periods": selected_basket.get('metadata', {}).get('correlation_lookback_periods'),
-                                "cointegration_window_periods": coint_window,
+                                "cointegration_window_periods": screener_params.get('cointegration_window', None),
                                 "data_start_date": st.session_state.get('alpha_start_date', ''),
-                                "data_end_date": st.session_state.get('alpha_end_date', '')
+                                "data_end_date": st.session_state.get('alpha_end_date', ''),
+                                "screening_methodology": methodology
                             }
                         )
                         st.success(f"Basket saved successfully! You can now use this in the Strategy Lab.")
