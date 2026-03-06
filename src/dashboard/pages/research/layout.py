@@ -2,10 +2,8 @@ import streamlit as st
 import pandas as pd
 from src.dashboard.styles import apply_compact_styles
 from src.data.universe import UniverseManager
-from src.engine.data.loader import DataLoader
 from src.data.basket import BasketManager
 from src.engine.data.loader import DataLoader
-from src.strategies.factory import StrategyFactory
 from src.strategies.factory import StrategyFactory
 
 def render_research_page():
@@ -245,7 +243,8 @@ def render_research_page():
             
             col_name, col_btn = st.columns([3, 1])
             with col_name:
-                basket_name = st.text_input("Basket Name", value=f"Strategy_{selected_b_name}_{coint_window}w")
+                default_name = f"Strategy_{selected_b_name}_{methodology.replace(' ', '')}"
+                basket_name = st.text_input("Basket Name", value=default_name)
             with col_btn:
                 st.write("") # Spacing
                 st.write("")
