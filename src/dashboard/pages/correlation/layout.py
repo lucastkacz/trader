@@ -180,11 +180,13 @@ def render_correlation_page():
                           pairs=pairs_list,
                           universe_name=selected_u_name,
                           timeframe=timeframe,
-                          corr_lookback=corr_lookback,
-                          coint_window=None, # Not applicable at this stage
-                          start_date=st.session_state.corr_start_date,
-                          end_date=st.session_state.corr_end_date,
-                          correlation_method=st.session_state.corr_method_used
+                          basket_type="correlated",
+                          metadata={
+                              "correlation_method": st.session_state.corr_method_used,
+                              "correlation_lookback_periods": corr_lookback,
+                              "data_start_date": st.session_state.corr_start_date,
+                              "data_end_date": st.session_state.corr_end_date
+                          }
                       )
                       st.success(f"Basket saved successfully! Head over to Alpha Discovery.")
                  else:

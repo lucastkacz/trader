@@ -28,7 +28,7 @@ def render_strategy_page():
 
     # 1. Selection Header
     col_b, col_p = st.columns(2)
-    baskets = BasketManager.list_baskets()
+    baskets = BasketManager.list_baskets(basket_type="strategy")
     
     if not baskets:
         st.warning("No Baskets found. Please run Alpha Discovery and save a basket first.")

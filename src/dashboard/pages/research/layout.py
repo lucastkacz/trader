@@ -18,7 +18,7 @@ def render_research_page():
     # 1. Basket Selection
     st.write("### Data Selection")
     
-    baskets = BasketManager.list_baskets()
+    baskets = BasketManager.list_baskets(basket_type="correlated")
     # Filter for baskets that might be from the correlation step (or just show all for now)
     if not baskets:
         st.warning("No baskets found. Please create one in the Correlation Analysis page.")
@@ -200,10 +200,13 @@ def render_research_page():
                             pairs=results_list,
                             universe_name=selected_basket.get('universe_name', 'Unknown'),
                             timeframe=timeframe,
-                            corr_lookback=selected_basket.get('corr_lookback'),
-                            coint_window=coint_window,
-                            start_date=st.session_state.get('alpha_start_date', ''),
-                            end_date=st.session_state.get('alpha_end_date', '')
+                            basket_type="strategy",
+                            metadata={
+                                "correlation_lookback_periods": selected_basket.get('metadata', {}).get('correlation_lookback_periods'),
+                                "cointegration_window_periods": coint_window,
+                                "data_start_date": st.session_state.get('alpha_start_date', ''),
+                                "data_end_date": st.session_state.get('alpha_end_date', '')
+                            }
                         )
                         st.success(f"Basket saved successfully! You can now use this in the Strategy Lab.")
                     else:

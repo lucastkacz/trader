@@ -11,34 +11,31 @@ class BasketManager:
     BASKETS_DIR = "data/baskets"
 
     @classmethod
-    def _ensure_dir(cls):
-        if not os.path.exists(cls.BASKETS_DIR):
-            os.makedirs(cls.BASKETS_DIR)
+    def get_dir(cls, basket_type: str = "") -> str:
+        """Returns the specific directory for the basket type, creating it if necessary."""
+        target_dir = os.path.join(cls.BASKETS_DIR, basket_type) if basket_type else cls.BASKETS_DIR
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+        return target_dir
 
     @classmethod
     def save_basket(cls, name: str, pairs: List[Dict[str, Any]], universe_name: str, timeframe: str, 
-                    corr_lookback: int = 0, coint_window: int = 0, start_date: str = "", end_date: str = "",
-                    correlation_method: str = "Not Specified") -> str:
+                    basket_type: str = "strategy", metadata: Dict[str, Any] = None) -> str:
         """
         Saves a list of dictionaries containing asset pairs and their stats.
         Returns the path of the saved file.
         """
-        cls._ensure_dir()
+        target_dir = cls.get_dir(basket_type)
         filename = f"{name.replace(' ', '_').lower()}.json"
-        filepath = os.path.join(cls.BASKETS_DIR, filename)
+        filepath = os.path.join(target_dir, filename)
 
         data = {
             "name": name,
+            "basket_type": basket_type,
             "created_at": datetime.now().isoformat(),
             "universe_name": universe_name,
             "timeframe": timeframe,
-            "metadata": {
-                "correlation_method": correlation_method,
-                "correlation_lookback_periods": corr_lookback,
-                "cointegration_window_periods": coint_window,
-                "data_start_date": start_date,
-                "data_end_date": end_date
-            },
+            "metadata": metadata or {},
             "pairs": pairs
         }
 
@@ -48,21 +45,29 @@ class BasketManager:
         return filepath
 
     @classmethod
-    def list_baskets(cls) -> List[Dict[str, Any]]:
+    def list_baskets(cls, basket_type: str = None) -> List[Dict[str, Any]]:
         """
-        Returns a list of metadata for all saved baskets.
+        Returns a list of metadata for all saved baskets, optionally filtered by type.
         """
-        cls._ensure_dir()
         baskets = []
-        for filename in os.listdir(cls.BASKETS_DIR):
-            if filename.endswith(".json"):
-                filepath = os.path.join(cls.BASKETS_DIR, filename)
-                try:
-                    with open(filepath, 'r') as f:
-                        data = json.load(f)
-                        baskets.append(data)
-                except Exception as e:
-                    print(f"Error loading {filename}: {e}")
+        # Check specific type dir, or check all (correlated, strategy, and root)
+        types_to_check = [basket_type] if basket_type else ["correlated", "strategy", ""]
+        
+        for b_type in types_to_check:
+            dir_path = os.path.join(cls.BASKETS_DIR, b_type) if b_type else cls.BASKETS_DIR
+            if os.path.exists(dir_path):
+                for filename in os.listdir(dir_path):
+                    if filename.endswith(".json"):
+                        filepath = os.path.join(dir_path, filename)
+                        try:
+                            with open(filepath, 'r') as f:
+                                data = json.load(f)
+                                # Retroactively fix missing basket_type
+                                if "basket_type" not in data:
+                                    data["basket_type"] = b_type if b_type else "unknown"
+                                baskets.append(data)
+                        except Exception as e:
+                            print(f"Error loading {filename}: {e}")
         return baskets
 
     @classmethod
@@ -70,7 +75,6 @@ class BasketManager:
         """
         Loads a specific basket by its exact name.
         """
-        cls._ensure_dir()
         baskets = cls.list_baskets()
         for b in baskets:
             if b.get("name") == name:
@@ -80,16 +84,19 @@ class BasketManager:
     @classmethod
     def delete_basket(cls, name: str) -> bool:
         """
-        Deletes a specific basket file by its exact name.
+        Deletes a specific basket file by its exact name, scanning all directories.
         """
         filename = f"{name.replace(' ', '_').lower()}.json"
-        filepath = os.path.join(cls.BASKETS_DIR, filename)
         
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-                return True
-            except Exception as e:
-                print(f"Error deleting {filename}: {e}")
-                return False
+        for b_type in ["correlated", "strategy", ""]:
+            dir_path = os.path.join(cls.BASKETS_DIR, b_type) if b_type else cls.BASKETS_DIR
+            filepath = os.path.join(dir_path, filename)
+            
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                    return True
+                except Exception as e:
+                    print(f"Error deleting {filename}: {e}")
+                    return False
         return False

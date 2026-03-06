@@ -16,13 +16,16 @@ def render_baskets_tab():
     table_data = []
     for b in baskets:
         meta = b.get("metadata", {})
+        hold_target = f"{meta.get('cointegration_window_periods')} Bars" if meta.get('cointegration_window_periods') else "N/A"
+        
         table_data.append({
             "Name": b.get("name"),
+            "Type": str(b.get("basket_type", "unknown")).capitalize(),
             "Universe": b.get("universe_name"),
             "Pairs": len(b.get("pairs", [])),
             "Timeframe": b.get("timeframe"),
             "Created": b.get("created_at", "").split("T")[0] if "T" in b.get("created_at", "") else "Legacy",
-            "Hold Target": f"{meta.get('cointegration_window_periods', 'N/A')} Bars",
+            "Hold Target": hold_target,
             "Data Window": f"{meta.get('data_start_date', 'N/A')} to {meta.get('data_end_date', 'N/A')}"
         })
         
