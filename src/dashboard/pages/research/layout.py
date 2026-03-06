@@ -137,13 +137,14 @@ def render_research_page():
                 results_list = []
                 progress_bar = st.progress(0)
                 
-                # Instantiate strategy dynamically with USER INPUTS
-                config = {
-                    "name": selected_strategy,
-                    "timeframe": timeframe,
-                    "parameters": screener_params
-                }
-                strategy = StrategyFactory.create(config)
+                # Instantiate strategy dynamically with USER INPUTS overriding DEFAULTS
+                run_config = default_config.copy()
+                run_config["timeframe"] = timeframe
+                
+                # Merge UI params into the default parameters (preserves required Methodology objects)
+                run_config["parameters"].update(screener_params)
+                
+                strategy = StrategyFactory.create(run_config)
                 sort_ascending = strategy.sort_ascending
                 
                 for idx, pair in enumerate(pairs):
