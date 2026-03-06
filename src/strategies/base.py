@@ -18,6 +18,19 @@ class BaseStrategy(ABC):
         """
         self.config = config
         
+    @property
+    def methodology(self) -> str:
+        """
+        Returns the standardized Mean Reversion Method (e.g., from MeanReversionMethod Enum)
+        defined in the strategy's config.yml.
+        """
+        from src.strategies.constants import MeanReversionMethod
+        method_str = self.config.get("parameters", {}).get("methodology", {}).get("mean_reversion_detection", "Unknown Method")
+        try:
+            return MeanReversionMethod(method_str).value
+        except ValueError:
+            return MeanReversionMethod.UNKNOWN.value
+        
     @abstractmethod
     def evaluate(self, prices: pd.DataFrame, asset_a: str, asset_b: str = None) -> Dict[str, Any]:
         """

@@ -4,6 +4,8 @@ author: "Quant"
 timeframe: "1h"
 
 parameters:
+  methodology:
+    mean_reversion_detection: "Classic Cointegration (OLS)"
   cointegration_window: 90
   cointegration_thresholds:
     entry: 0.10
