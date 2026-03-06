@@ -117,61 +117,64 @@ def render_research_page():
 
     st.divider()
 
-    # Session State Management
+    st.divider()
+
+    # Initialize Session State Variables if they don't exist
     if 'alpha_results' not in st.session_state:
         st.session_state.alpha_results = None
-        # 3. Execution: Strategy Screening
-        if st.button(f"🔬 Run {selected_strategy} Screener", type="primary", use_container_width=True):
-            if not selected_basket or not symbols:
-                st.error("Invalid Basket.")
-                return
+
+    # 3. Execution: Strategy Screening
+    if st.button(f"🔬 Run {selected_strategy} Screener", type="primary", use_container_width=True):
+        if not selected_basket or not symbols:
+            st.error("Invalid Basket.")
+            return
+            
+        with st.spinner(f"Running strategy evaluation across candidate pairs..."):
+            try:
+                loader = DataLoader(list(symbols), timeframe)
+                close_df, _, _ = loader.load()
                 
-            with st.spinner(f"Running strategy evaluation across candidate pairs..."):
-                try:
-                    loader = DataLoader(list(symbols), timeframe)
-                    close_df, _, _ = loader.load()
+                results_list = []
+                progress_bar = st.progress(0)
+                
+                # Instantiate strategy dynamically with USER INPUTS
+                config = {
+                    "name": selected_strategy,
+                    "timeframe": timeframe,
+                    "parameters": screener_params
+                }
+                strategy = StrategyFactory.create(config)
+                sort_ascending = strategy.sort_ascending
+                
+                for idx, pair in enumerate(pairs):
+                    asset_a = pair.get('asset_a')
+                    asset_b = pair.get('asset_b')
+                    correlation = pair.get('correlation', 0.0)
                     
-                    results_list = []
-                    progress_bar = st.progress(0)
+                    metric, metadata = strategy.get_screening_metric(close_df, asset_a, asset_b)
                     
-                    # Instantiate strategy dynamically with USER INPUTS
-                    config = {
-                        "name": selected_strategy,
-                        "timeframe": timeframe,
-                        "parameters": screener_params
-                    }
-                    strategy = StrategyFactory.create(config)
-                    sort_ascending = strategy.sort_ascending
+                    if metric is not None:
+                        result_row = {
+                            'asset_a': asset_a,
+                            'asset_b': asset_b,
+                            'correlation': correlation,
+                            'screening_metric': metric,
+                            'strategy_name': selected_strategy
+                        }
+                        # Merge in strategy-specific metadata (like hedge_ratio)
+                        result_row.update(metadata)
+                        results_list.append(result_row)
+                            
+                    progress_bar.progress((idx + 1) / len(pairs))
                     
-                    for idx, pair in enumerate(pairs):
-                        asset_a = pair.get('asset_a')
-                        asset_b = pair.get('asset_b')
-                        correlation = pair.get('correlation', 0.0)
-                        
-                        metric, metadata = strategy.get_screening_metric(close_df, asset_a, asset_b)
-                        
-                        if metric is not None:
-                            result_row = {
-                                'asset_a': asset_a,
-                                'asset_b': asset_b,
-                                'correlation': correlation,
-                                'screening_metric': metric,
-                                'strategy_name': selected_strategy
-                            }
-                            # Merge in strategy-specific metadata (like hedge_ratio)
-                            result_row.update(metadata)
-                            results_list.append(result_row)
-                                
-                        progress_bar.progress((idx + 1) / len(pairs))
-                        
-                    progress_bar.empty()
-                    st.session_state.alpha_results = results_list
-                    st.session_state.alpha_sort_ascending = sort_ascending
-                    st.session_state.alpha_start_date = str(close_df.index[0].date()) if not close_df.empty else ""
-                    st.session_state.alpha_end_date = str(close_df.index[-1].date()) if not close_df.empty else ""
-                    
-                except Exception as e:
-                    st.error(f"Cointegration testing failed: {str(e)}")
+                progress_bar.empty()
+                st.session_state.alpha_results = results_list
+                st.session_state.alpha_sort_ascending = sort_ascending
+                st.session_state.alpha_start_date = str(close_df.index[0].date()) if not close_df.empty else ""
+                st.session_state.alpha_end_date = str(close_df.index[-1].date()) if not close_df.empty else ""
+                
+            except Exception as e:
+                st.error(f"Cointegration testing failed: {str(e)}")
 
     # 5. Display Final Results and Save Basket Form
     if st.session_state.alpha_results is not None:
