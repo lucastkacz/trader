@@ -1,5 +1,16 @@
 import streamlit as st
 
+# Global UI Theme Colors for Plotly Charts
+COLORS = {
+    'primary': '#0068C9',
+    'secondary': '#83B5E0',
+    'background': '#0E1117',
+    'text': '#FAFAFA',
+    'success': '#00BFA5',
+    'danger': '#FF5252',
+    'warning': '#FFD600',
+    'info': '#42A5F5'
+}
 def apply_compact_styles():
     """
     Injects custom CSS for a more compact, professional look.
