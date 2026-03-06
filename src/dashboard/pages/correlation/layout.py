@@ -148,7 +148,8 @@ def render_correlation_page():
                 st.session_state.corr_method_used = corr_method
                 
                 # Pre-calculate log returns for both the filter and the histogram
-                log_returns = np.log(recent_df / recent_df.shift(1)).dropna(how='all')
+                log_returns_unfiltered = np.log(recent_df / recent_df.shift(1)).dropna(how='all')
+                log_returns = log_returns_unfiltered.copy()
                 
                 filtered_assets_log = []
                 
@@ -176,12 +177,13 @@ def render_correlation_page():
                         else:
                             filtered_assets_log.append(f"**{col}**: Eliminado por alta {' y '.join(reasons)}.")
                     
-                    # Update dataframes with only surviving assets
+                    # Update dataframes with only surviving assets for the correlation matrix
                     recent_df = recent_df[assets_to_keep]
                     log_returns = log_returns[assets_to_keep]
                 
                 st.session_state.corr_filtered_assets = filtered_assets_log
-                st.session_state.corr_returns = log_returns
+                # Keep ALL returns for the histogram so user can inspect excluded assets
+                st.session_state.corr_returns = log_returns_unfiltered 
                 
                 st.session_state.corr_matrix = calculate_correlation_matrix(recent_df, method=corr_method)
                 st.session_state.corr_candidates = get_top_correlated_pairs(st.session_state.corr_matrix, top_n=top_n)
@@ -189,17 +191,18 @@ def render_correlation_page():
             except Exception as e:
                 st.error(f"Correlation check failed: {str(e)}")
 
-    # Display Filter Log 
-    if st.session_state.corr_filtered_assets:
-        with st.expander(f"⚠️ {len(st.session_state.corr_filtered_assets)} activos fueron excluidos por el Pre-Filtro estadístico.", expanded=False):
-            for log_msg in st.session_state.corr_filtered_assets:
-                st.markdown(f"- {log_msg}")
-
     if st.session_state.corr_matrix is not None and st.session_state.corr_candidates is not None:
         
-        # 4. Returns Distribution Analysis
+        # 4. Returns Distribution Analysis (Shows ALL assets, including excluded)
         if hasattr(st.session_state, 'corr_returns') and st.session_state.corr_returns is not None:
              render_returns_histogram(st.session_state.corr_returns)
+
+        # Display Filter Log AFTER the histogram
+        if st.session_state.corr_filtered_assets:
+            with st.expander(f"⚠️ {len(st.session_state.corr_filtered_assets)} activos fueron excluidos del análisis por el Pre-Filtro estadístico.", expanded=False):
+                st.info("Pista: Puedes buscar estos activos en el histograma de arriba para visualizar su comportamiento anómalo.")
+                for log_msg in st.session_state.corr_filtered_assets:
+                    st.markdown(f"- {log_msg}")
 
         st.divider()
 
