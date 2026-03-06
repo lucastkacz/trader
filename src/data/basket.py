@@ -17,7 +17,8 @@ class BasketManager:
 
     @classmethod
     def save_basket(cls, name: str, pairs: List[Dict[str, Any]], universe_name: str, timeframe: str, 
-                    corr_lookback: int = 0, coint_window: int = 0, start_date: str = "", end_date: str = "") -> str:
+                    corr_lookback: int = 0, coint_window: int = 0, start_date: str = "", end_date: str = "",
+                    correlation_method: str = "Not Specified") -> str:
         """
         Saves a list of dictionaries containing asset pairs and their stats.
         Returns the path of the saved file.
@@ -32,6 +33,7 @@ class BasketManager:
             "universe_name": universe_name,
             "timeframe": timeframe,
             "metadata": {
+                "correlation_method": correlation_method,
                 "correlation_lookback_periods": corr_lookback,
                 "cointegration_window_periods": coint_window,
                 "data_start_date": start_date,
