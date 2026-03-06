@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 import pandas as pd
 from typing import Dict, Any, Tuple
 
+from src.strategies.models import StrategyConfig
+
 class BaseStrategy(ABC):
     """
     Abstract Base Class for all trading strategies in the Strategy Lab.
@@ -16,20 +18,25 @@ class BaseStrategy(ABC):
         Args:
             config: A dictionary loaded from the strategy's config.yml file.
         """
-        self.config = config
+        self.raw_config = config
+        try:
+            # Strictly validate the YAML-parsed config using Pydantic
+            self.validated_config = StrategyConfig(**config)
+        except Exception as e:
+            raise ValueError(f"Strategy Configuration Validation Error: {e}")
+            
+    @property
+    def config(self) -> Dict[str, Any]:
+        """Provides backward-compatibility for direct config dictionary access."""
+        return self.raw_config
         
     @property
     def methodology(self) -> str:
         """
         Returns the standardized Mean Reversion Method (e.g., from MeanReversionMethod Enum)
-        defined in the strategy's config.yml.
+        defined in the strategy's config.yml, safely typed by Pydantic.
         """
-        from src.strategies.constants import MeanReversionMethod
-        method_str = self.config.get("parameters", {}).get("methodology", {}).get("mean_reversion_detection", "Unknown Method")
-        try:
-            return MeanReversionMethod(method_str).value
-        except ValueError:
-            return MeanReversionMethod.UNKNOWN.value
+        return self.validated_config.parameters.methodology.mean_reversion_detection.value
         
     @abstractmethod
     def evaluate(self, prices: pd.DataFrame, asset_a: str, asset_b: str = None) -> Dict[str, Any]:
