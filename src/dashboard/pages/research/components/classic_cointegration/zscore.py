@@ -10,7 +10,17 @@ def render_zscore_spread(df: pd.DataFrame, asset_a: str, asset_b: str, hedge_rat
     Renders the rolling Z-Score of the spread to visualize mean-reversion 
     entry and exit thresholds for the Classic Cointegration strategy.
     """
-    st.write(f"### 📊 Z-Score Spread Dynamics")
+    st.write(f"### 📊 Z-Score Spread Dynamics: {asset_a} vs {asset_b}")
+    
+    # Extract date range from the dataframe assuming index is datetime
+    try:
+        start_date = df.index.min().strftime('%Y-%m-%d %H:%M')
+        end_date = df.index.max().strftime('%Y-%m-%d %H:%M')
+        date_str = f"**Period:** `{start_date}` to `{end_date}`"
+    except Exception:
+        date_str = ""
+        
+    st.markdown(date_str)
     
     if len(df) < rolling_window:
         st.warning(f"Not enough data points ({len(df)}) to calculate a rolling window of {rolling_window} for the Z-Score.")
@@ -58,4 +68,4 @@ def render_zscore_spread(df: pd.DataFrame, asset_a: str, asset_b: str, hedge_rat
     )
     
     st.plotly_chart(fig, use_container_width=True)
-    st.caption(f"*Showing the rolling {rolling_window}-period Z-Score. Trades are typically entered when the line crosses the red/green bands, and exited when it returns to 0.*")
+    st.caption(f"*Showing the {rolling_window}-period Z-Score (driven by your Evaluation/Lookback Window). Trades are typically entered when the line crosses the red/green bands, and exited when it returns to 0.*")

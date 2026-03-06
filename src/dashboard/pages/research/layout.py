@@ -100,7 +100,7 @@ def render_research_page():
         if methodology == MeanReversionMethod.CLASSIC_COINTEGRATION.value:
             # Classic Cointegration UI
             screener_params['cointegration_window'] = st.number_input(
-                "Rolling Window (Periods)", 
+                "Evaluation/Lookback Window (Periods)", 
                 min_value=30, 
                 value=default_params.get("cointegration_window", 168), 
                 help="Matches your target holding period."
@@ -114,6 +114,15 @@ def render_research_page():
             }
         else:
             st.warning("UI for this methodology is under construction.")
+
+    # Show methodology info before running the screener
+    st.write("") # Spacing
+    if methodology == MeanReversionMethod.CLASSIC_COINTEGRATION.value:
+        from src.dashboard.pages.research.components.classic_cointegration.info import render_methodology_info
+        render_methodology_info(
+            window=screener_params.get('cointegration_window', 168),
+            timeframe=timeframe
+        )
 
     st.divider()
 
@@ -228,7 +237,9 @@ def render_research_page():
                     with st.spinner("Loading visualization data..."):
                         loader = DataLoader([selected_row['asset_a'], selected_row['asset_b']], timeframe)
                         df, _, _ = loader.load()
-                        df_recent = df.tail(screener_params.get('cointegration_window', 168))
+                        # We pass the full loaded df so rolling indicators can calculate.
+                        # The charts handle their own zooming or display.
+                        df_recent = df
                         
                         # Use Streamlit tabs to organize the charts cleanly
                         tab1, tab2 = st.tabs(["Scatter (OLS)", "Z-Score Spread"])
@@ -247,8 +258,10 @@ def render_research_page():
                                 asset_a=selected_row['asset_a'],
                                 asset_b=selected_row['asset_b'],
                                 hedge_ratio=selected_row.get('hedge_ratio', 1.0),
-                                rolling_window=default_params.get("zscore_window", 30)
+                                rolling_window=screener_params.get('cointegration_window', 168)
                             )
+                            
+                        st.write("")
                             
                 except Exception as e:
                     st.error(f"Failed to load visualization: {e}")

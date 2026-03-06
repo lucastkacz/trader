@@ -10,15 +10,26 @@ def render_cointegration_scatter(df: pd.DataFrame, asset_a: str, asset_b: str, m
     linear relationship (cointegration base) between two assets.
     """
     st.write(f"### 📈 Cointegration Visualizer: {asset_a} vs {asset_b}")
-    st.markdown(f"**P-Value (Dickey-Fuller):** `{metric_value:.4f}`")
     
-    # Calculate simple linear regression for the trendline
-    x = df[asset_a].values
-    y = df[asset_b].values
+    # Extract date range from the dataframe assuming index is datetime
+    try:
+        start_date = df.index.min().strftime('%Y-%m-%d %H:%M')
+        end_date = df.index.max().strftime('%Y-%m-%d %H:%M')
+        date_str = f" | **Period:** `{start_date}` to `{end_date}`"
+    except Exception:
+        date_str = ""
+        
+    st.markdown(f"**P-Value (Dickey-Fuller):** `{metric_value:.4f}`{date_str}")
     
-    # Create the scatter plot using plotly express
+    # Calculate simple linear regression for the trendline using Log Prices
+    # This prevents Hedge Ratio collapsing to 0.0 for extreme price scale differences (e.g. BTC vs XRP)
+    plot_df = df.copy()
+    plot_df[asset_a] = np.log(plot_df[asset_a])
+    plot_df[asset_b] = np.log(plot_df[asset_b])
+    
+    # Create the scatter plot using plotly express on Log prices
     fig = px.scatter(
-        df, 
+        plot_df, 
         x=asset_a, 
         y=asset_b,
         opacity=0.6,
@@ -32,8 +43,8 @@ def render_cointegration_scatter(df: pd.DataFrame, asset_a: str, asset_b: str, m
         paper_bgcolor=COLORS['background'],
         font_color=COLORS['text'],
         margin=dict(l=40, r=40, t=40, b=40),
-        xaxis_title=f"{asset_a} Price",
-        yaxis_title=f"{asset_b} Price"
+        xaxis_title=f"Log({asset_a}) Price",
+        yaxis_title=f"Log({asset_b}) Price"
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -47,4 +58,4 @@ def render_cointegration_scatter(df: pd.DataFrame, asset_a: str, asset_b: str, m
         r_squared = model.rsquared
         
         st.caption(f"**OLS Hedge Ratio ($\\\\beta$):** `{hedge_ratio:.4f}` | **$R^2$:** `{r_squared:.4f}`")
-        st.markdown("*A stable, tight spread around this orange regression line suggests mean-reverting behavior.*")
+        st.markdown("*A stable, tight spread around this regression line suggests mean-reverting behavior.*")
