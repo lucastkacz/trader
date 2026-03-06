@@ -216,7 +216,7 @@ def render_research_page():
             selected_row = results_df.iloc[selected_idx]
             
             if methodology == MeanReversionMethod.CLASSIC_COINTEGRATION.value:
-                from src.dashboard.pages.research.components.scatter import render_cointegration_scatter
+                from src.dashboard.pages.research.components.classic_cointegration.scatter import render_cointegration_scatter
                 
                 # Fetch data just for this pair to plot
                 try:
