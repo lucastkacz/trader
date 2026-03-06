@@ -96,6 +96,19 @@ def render_correlation_page():
         corr_method = st.selectbox("Correlation Method", ["pearson", "spearman", "kendall"], index=0)
 
     st.divider()
+    
+    st.write("### Normality Pre-Filter (For Pearson)")
+    st.markdown("Exclude assets that severely violate normality assumptions (e.g. extreme *flash crashes*) before calculating Pearson correlation, as they can cause spurious high correlations.")
+    
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        use_prefilter = st.checkbox("Enable Normality Pre-Filter", value=True, help="Recommended if using Pearson. Disabling this includes all assets regardless of their distribution.")
+    with col_f2:
+        max_skew = st.number_input("Max Absolute Skewness", min_value=0.5, value=2.0, step=0.1, help="Tolerance for asymmetry. A perfect normal distribution is 0.")
+    with col_f3:
+        max_kurtosis = st.number_input("Max Excess Kurtosis", min_value=1.0, value=7.0, step=0.5, help="Tolerance for 'fat tails' (extreme events). A perfect normal distribution is 0. Crypto naturally has higher values.")
+
+    st.divider()
 
     # Session State Management
     if 'corr_matrix' not in st.session_state:
@@ -108,6 +121,8 @@ def render_correlation_page():
         st.session_state.corr_end_date = None
     if 'corr_method_used' not in st.session_state:
         st.session_state.corr_method_used = None
+    if 'corr_filtered_assets' not in st.session_state:
+        st.session_state.corr_filtered_assets = []
 
     # 3. Execution: Correlation
     if st.button("📊 Run Correlation Filter", type="primary", use_container_width=True):
@@ -132,14 +147,53 @@ def render_correlation_page():
                 st.session_state.corr_end_date = str(close_df.index[-1].date())
                 st.session_state.corr_method_used = corr_method
                 
-                # Pre-calculate log returns for the histogram
-                st.session_state.corr_returns = np.log(recent_df / recent_df.shift(1)).dropna(how='all')
+                # Pre-calculate log returns for both the filter and the histogram
+                log_returns = np.log(recent_df / recent_df.shift(1)).dropna(how='all')
+                
+                filtered_assets_log = []
+                
+                # Apply Normality Pre-Filter
+                if use_prefilter:
+                    assets_to_keep = []
+                    for col in log_returns.columns:
+                        col_data = log_returns[col].dropna()
+                        if col_data.empty: continue
+                        
+                        asset_skew = col_data.skew()
+                        asset_kurtosis = col_data.kurt()
+                        
+                        is_valid = True
+                        reasons = []
+                        if abs(asset_skew) > max_skew:
+                            is_valid = False
+                            reasons.append(f"Skewness ({asset_skew:.2f})")
+                        if asset_kurtosis > max_kurtosis:
+                            is_valid = False
+                            reasons.append(f"Kurtosis ({asset_kurtosis:.2f})")
+                            
+                        if is_valid:
+                            assets_to_keep.append(col)
+                        else:
+                            filtered_assets_log.append(f"**{col}**: Eliminado por alta {' y '.join(reasons)}.")
+                    
+                    # Update dataframes with only surviving assets
+                    recent_df = recent_df[assets_to_keep]
+                    log_returns = log_returns[assets_to_keep]
+                
+                st.session_state.corr_filtered_assets = filtered_assets_log
+                st.session_state.corr_returns = log_returns
                 
                 st.session_state.corr_matrix = calculate_correlation_matrix(recent_df, method=corr_method)
                 st.session_state.corr_candidates = get_top_correlated_pairs(st.session_state.corr_matrix, top_n=top_n)
                 
             except Exception as e:
                 st.error(f"Correlation check failed: {str(e)}")
+
+    # Display Filter Log 
+    if st.session_state.corr_filtered_assets:
+        with st.expander(f"⚠️ {len(st.session_state.corr_filtered_assets)} activos fueron excluidos por el Pre-Filtro estadístico.", expanded=False):
+            for log_msg in st.session_state.corr_filtered_assets:
+                st.markdown(f"- {log_msg}")
 
     if st.session_state.corr_matrix is not None and st.session_state.corr_candidates is not None:
         
