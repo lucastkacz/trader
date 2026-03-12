@@ -167,3 +167,20 @@ def render_strategy_page():
             return
             
         st.divider()
+
+        # --- PHASE 4: EXECUTION ENGINE & WEIGHTS ---
+        st.header("Phase 4: Execution Engine & Weights")
+        from src.strategies.pairs.components.render_engine import render_engine_execution
+        
+        render_engine_execution(
+            df_pair=df_pair,
+            signals_df=signals_df,
+            rolling_beta=rolling_beta,
+            asset_a=asset_a,
+            asset_b=asset_b,
+            capital=capital,
+            fee_rate=fee_rate,
+            slippage=slippage
+        )
+        
+        st.divider()

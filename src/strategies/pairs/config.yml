@@ -6,11 +6,11 @@ timeframe: "1h"
 parameters:
   methodology:
     mean_reversion_detection: "Classic Cointegration (OLS)"
-  cointegration_window: 90
+  cointegration_window: 180
   cointegration_thresholds:
     entry: 0.10
-    cutoff: 0.40
-  zscore_window: 30
+    cutoff: 0.70
+  zscore_window: 60
   zscore_thresholds:
     entry: 2.0
     exit: 0.0
