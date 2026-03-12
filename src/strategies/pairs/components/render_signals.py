@@ -78,6 +78,7 @@ def render_zscore_and_signals(spread: pd.Series, smoothed_p_values: pd.Series, z
         ))
 
     # One colored shape per valid bar
+    valid = aligned_pval.dropna()
     for idx, pval in valid.items():
         regime_shapes.append(dict(
             type="rect", xref="x", yref="paper",
