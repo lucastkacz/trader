@@ -8,12 +8,12 @@ parameters:
     mean_reversion_detection: "Classic Cointegration (OLS)"
   cointegration_window: 180
   cointegration_thresholds:
-    entry: 0.10
+    entry: 0.15
     cutoff: 0.70
   zscore_window: 60
   zscore_thresholds:
     entry: 2.0
-    exit: 0.0
+    exit: 0.5
   execution:
     capital: 10000.0
     fee_rate_pct: 0.05     # displayed as % in UI, converted to decimal internally

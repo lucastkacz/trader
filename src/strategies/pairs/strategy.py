@@ -81,6 +81,7 @@ class PairsTradingStrategy(BaseStrategy):
         from src.strategies.pairs.components.render_raw_data import plot_raw_normalized_prices
         from src.strategies.pairs.components.render_spread import plot_spread_and_regime
         from src.strategies.pairs.components.render_signals import render_zscore_and_signals
+        from src.strategies.pairs.components.render_trade_overlay import plot_price_with_trades
         from src.strategies.pairs.components.render_engine import render_engine_execution
 
         # --- Phase 1: Raw Data ---
@@ -118,6 +119,16 @@ class PairsTradingStrategy(BaseStrategy):
         if result is None:
             return
         signals_df, z_score = result
+
+        st.divider()
+
+        # --- Phase 3b: Trade Overlay on Prices ---
+        st.markdown("### 📍 Trade Overlay on Normalized Prices")
+        st.markdown(
+            "The same normalized price chart from Phase 1, now annotated with trade entries and exits "
+            "from the signal generator. Shaded regions show when a trade is active."
+        )
+        plot_price_with_trades(df_pair, signals_df, z_score, asset_a, asset_b)
 
         st.divider()
 
