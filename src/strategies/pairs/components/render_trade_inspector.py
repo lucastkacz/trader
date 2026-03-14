@@ -116,11 +116,18 @@ def render_trade_inspector(
         line=dict(color=long_color if asset_b == long_asset else short_color, width=2.5),
     ))
 
-    # Entry / Exit vertical lines
-    fig.add_vline(x=t_open,  line_dash="dash", line_color="white",  line_width=1,
-                  annotation_text="OPEN", annotation_position="top left")
-    fig.add_vline(x=t_close, line_dash="dash", line_color="#BDBDBD", line_width=1,
-                  annotation_text="CLOSE", annotation_position="top right")
+    # Entry / Exit vertical lines (manual shapes to avoid pandas Timestamp + int bug in add_vline)
+    for ts, label, color in [(t_open, "OPEN", "white"), (t_close, "CLOSE", "#BDBDBD")]:
+        fig.add_shape(
+            type="line", xref="x", yref="paper",
+            x0=ts, x1=ts, y0=0, y1=1,
+            line=dict(color=color, width=1, dash="dash"),
+        )
+        fig.add_annotation(
+            x=ts, y=1, yref="paper", text=label,
+            showarrow=False, font=dict(color=color, size=10),
+            yshift=8,
+        )
 
     # Base-100 reference
     fig.add_hline(y=100, line_dash="dot", line_color="#757575", line_width=0.8)
