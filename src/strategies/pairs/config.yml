@@ -14,7 +14,7 @@ parameters:
   zscore_thresholds:
     entry: 2.0
     exit: 0.0
-  capital_per_pair: 10000.0
   execution:
-    fee_rate: 0.0005    # 0.05% per trade
-    slippage: 0.0002    # 0.02% estimated slippage
+    capital: 10000.0
+    fee_rate_pct: 0.05     # displayed as % in UI, converted to decimal internally
+    slippage_pct: 0.02     # displayed as % in UI, converted to decimal internally

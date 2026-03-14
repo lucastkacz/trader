@@ -73,3 +73,33 @@ class BaseStrategy(ABC):
         Returns False if a higher screening metric is better (e.g., Correlation, Sharpe).
         """
         pass
+
+    @abstractmethod
+    def render_parameters(self, st) -> Dict[str, Any]:
+        """
+        Render strategy-specific Streamlit parameter widgets.
+        Reads defaults from the strategy's config.yml and creates interactive
+        inputs for the user to adjust.
+        
+        Args:
+            st: The Streamlit module (passed to avoid module-level import).
+            
+        Returns:
+            A dict of user-chosen parameter values ready for the pipeline.
+        """
+        pass
+
+    @abstractmethod
+    def render_pipeline(self, st, df_pair: pd.DataFrame, asset_a: str, asset_b: str, params: Dict[str, Any]) -> None:
+        """
+        Render the full visual inspection pipeline (e.g. Phase 2, 3, 4 for pairs).
+        Each strategy defines its own phases and visualizations.
+        
+        Args:
+            st: The Streamlit module.
+            df_pair: Aligned price DataFrame for the selected assets.
+            asset_a: Primary asset ticker.
+            asset_b: Secondary asset ticker.
+            params: Dict of parameters returned by render_parameters().
+        """
+        pass
