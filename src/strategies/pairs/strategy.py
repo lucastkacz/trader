@@ -83,6 +83,7 @@ class PairsTradingStrategy(BaseStrategy):
         from src.strategies.pairs.components.render_signals import render_zscore_and_signals
         from src.strategies.pairs.components.render_trade_overlay import plot_price_with_trades
         from src.strategies.pairs.components.render_engine import render_engine_execution
+        from src.strategies.pairs.components.render_trade_inspector import render_trade_inspector
 
         # --- Phase 1: Raw Data ---
         st.markdown("### 📊 Raw Asset Correlation")
@@ -146,3 +147,11 @@ class PairsTradingStrategy(BaseStrategy):
         )
 
         st.divider()
+
+        # --- Phase 5: Individual Trade Inspector ---
+        st.header("Phase 5: Trade Inspector")
+        st.markdown(
+            "Select a specific round-trip trade to see both assets re-normalized to **base 100** "
+            "at the entry timestamp. This reveals the exact divergence between the long and short legs."
+        )
+        render_trade_inspector(df_pair, signals_df, asset_a, asset_b)
