@@ -69,98 +69,10 @@ class PairsTradingStrategy(BaseStrategy):
     def render_parameters(self, st) -> Dict[str, Any]:
         """
         Renders parameter widgets, reading defaults from config.yml.
-        Returns a flat dict of user-chosen values.
+        Delegates to the dedicated parameters module.
         """
-        params = self.config.get("parameters", {})
-        exec_params = params.get("execution", {})
-        coint_thresh = params.get("cointegration_thresholds", {})
-        z_thresh = params.get("zscore_thresholds", {})
-
-        with st.expander("⚙️ Step 1: Define Rules & Capital", expanded=True):
-            st.markdown("Before calculating any math, we need to define the environment constraints.")
-            c1, c2, c3 = st.columns(3)
-
-            with c1:
-                st.markdown("**Execution Costs**")
-                capital = st.number_input(
-                    "Total Capital Allocation ($)", 
-                    min_value=100.0, 
-                    value=float(exec_params.get("capital", 10000.0)),
-                    step=1000.0, key="phase1_capital"
-                )
-                fee_rate_pct = st.number_input(
-                    "Exchange Fee Rate (%)", 
-                    min_value=0.0, 
-                    value=float(exec_params.get("fee_rate_pct", 0.05)),
-                    step=0.01, key="phase1_fee"
-                )
-                slippage_pct = st.number_input(
-                    "Slippage (%)", 
-                    min_value=0.0, 
-                    value=float(exec_params.get("slippage_pct", 0.02)),
-                    step=0.01, key="phase1_slippage"
-                )
-
-            with c2:
-                st.markdown("**Statistical Windows**")
-                coint_window = st.number_input(
-                    "Cointegration Window (Bars)",
-                    min_value=10,
-                    value=int(params.get("cointegration_window", 180)),
-                    help="How many bars to look back to calculate the OLS regression (Hedge Ratio).",
-                    key="phase1_coint_window"
-                )
-                z_window = st.number_input(
-                    "Z-Score MA Window (Bars)",
-                    min_value=10,
-                    value=int(params.get("zscore_window", 60)),
-                    help="Smoothing window for the spread oscillator.",
-                    key="phase1_z_window"
-                )
-
-            with c3:
-                st.markdown("**Regime Filters (P-Value)**")
-                coint_entry = st.number_input(
-                    "Entry Barrier (Start Trading)",
-                    min_value=0.01, max_value=1.0,
-                    value=float(coint_thresh.get("entry", 0.10)),
-                    step=0.01, key="phase1_coint_entry"
-                )
-                coint_cutoff = st.number_input(
-                    "Emergency Cutoff (Kill Switch)",
-                    min_value=0.05, max_value=1.0,
-                    value=float(coint_thresh.get("cutoff", 0.70)),
-                    step=0.01, key="phase1_coint_cutoff"
-                )
-
-            st.markdown("**Z-Score Triggers**")
-            c4, c5 = st.columns(2)
-            with c4:
-                z_entry = st.number_input(
-                    "Z-Score Entry",
-                    min_value=1.0,
-                    value=float(z_thresh.get("entry", 2.0)),
-                    step=0.1, key="phase1_z_entry"
-                )
-            with c5:
-                z_exit = st.number_input(
-                    "Z-Score Exit",
-                    min_value=-1.0,
-                    value=float(z_thresh.get("exit", 0.0)),
-                    step=0.1, key="phase1_z_exit"
-                )
-
-        return {
-            "capital": capital,
-            "fee_rate": fee_rate_pct / 100.0,
-            "slippage": slippage_pct / 100.0,
-            "coint_window": coint_window,
-            "z_window": z_window,
-            "coint_entry": coint_entry,
-            "coint_cutoff": coint_cutoff,
-            "z_entry": z_entry,
-            "z_exit": z_exit,
-        }
+        from src.strategies.pairs.parameters import render_parameters as _render
+        return _render(self.config, st)
 
     def render_pipeline(self, st, df_pair: pd.DataFrame, asset_a: str, asset_b: str, params: Dict[str, Any]) -> None:
         """
