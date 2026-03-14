@@ -3,12 +3,6 @@ import pandas as pd
 from src.dashboard.styles import apply_compact_styles
 from src.data.basket import BasketManager
 from src.engine.data.loader import DataLoader
-
-# Import modular components
-from src.strategies.pairs.components.data_alignment import render_data_alignment
-from src.strategies.pairs.components.spread_analysis import render_spread_analysis
-from src.strategies.pairs.components.signal_gen import render_signal_gen
-from src.strategies.pairs.components.execution import render_execution
 from src.strategies.factory import StrategyFactory
 
 def render_strategy_page():
@@ -19,13 +13,7 @@ def render_strategy_page():
     
     # 0. Strategy Documentation
     import os
-    readme_path = os.path.join("src", "strategies", "pairs", "README.md")
-    if os.path.exists(readme_path):
-        with open(readme_path, "r") as f:
-            readme_content = f.read()
-        with st.expander("📖 Strategy Documentation & Rules", expanded=False):
-            st.markdown(readme_content)
-
+    
     # 1. Strategy Selection
     strategy_options = list(StrategyFactory.STRATEGY_REGISTRY.keys())
     col_s, col_b, col_p = st.columns(3)
@@ -33,14 +21,26 @@ def render_strategy_page():
     with col_s:
         selected_strategy = st.selectbox("1. Select Strategy", strategy_options)
 
-    # 2. Basket Selection (Filtered)
+    # 2. Load config & instantiate strategy
+    config = StrategyFactory.get_default_config(selected_strategy)
+    strategy = StrategyFactory.create(config)
+
+    # Show README if available
+    module_path = StrategyFactory.STRATEGY_REGISTRY[selected_strategy].rsplit('.', 2)[0]
+    readme_path = os.path.join(module_path.replace(".", os.sep), "README.md")
+    if os.path.exists(readme_path):
+        with open(readme_path, "r") as f:
+            readme_content = f.read()
+        with st.expander("📖 Strategy Documentation & Rules", expanded=False):
+            st.markdown(readme_content)
+
+    # 3. Basket Selection (Filtered by strategy)
     all_baskets = BasketManager.list_baskets(basket_type="strategy")
     
-    # Filter baskets by selected strategy (or fallback for older baskets missing the metadata tag)
     compatible_baskets = []
     for b in all_baskets:
         meta_strat = b.get("metadata", {}).get("strategy_name")
-        if meta_strat == selected_strategy or meta_strat is None: # None allows older baskets to still be loaded
+        if meta_strat == selected_strategy or meta_strat is None:
             compatible_baskets.append(b)
             
     if not compatible_baskets:
@@ -60,9 +60,8 @@ def render_strategy_page():
 
     pairs = selected_basket['pairs']
     timeframe = selected_basket.get('timeframe', '1h')
-    coint_window_default = selected_basket.get('metadata', {}).get('cointegration_window_periods', 168)
     
-    # 3. Pair Selection
+    # 4. Pair Selection
     pair_strs = [f"{p['asset_a']} / {p['asset_b']}" for p in pairs]
     
     with col_p:
@@ -75,123 +74,30 @@ def render_strategy_page():
 
     st.divider()
 
-    # Routing logic based on selected strategy
-    if selected_strategy == "Pairs Trading (Classic Cointegration)":
-        
-        # 4. Strategy Parameters
-        with st.expander("⚙️ Execution Parameters (Z-Score & Portfolio)", expanded=True):
-            st.markdown("Fine-tune the parameters for the historical backtest execution.")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                coint_window_input = st.number_input(
-                    "Cointegration Window", 
-                    min_value=10, 
-                    value=int(coint_window_default)
-                )
-                coint_entry = st.number_input("P-Value Entry Barrier", min_value=0.01, max_value=1.0, value=0.10, step=0.01)
-                coint_cutoff = st.number_input("P-Value Emergency Cutoff", min_value=0.05, max_value=1.0, value=0.40, step=0.01)
-            with c2:
-                z_window = st.number_input("Z-Score Moving Average", min_value=10, value=30)
-                z_entry = st.number_input("Z-Score Entry", min_value=1.0, value=2.0, step=0.1)
-                z_exit = st.number_input("Z-Score Exit", min_value=-1.0, value=0.0, step=0.1)
-            with c3:
-                capital_per_pair = st.number_input("Capital Allocation ($)", min_value=1000.0, value=10000.0, step=1000.0)
-                fee_rate = st.number_input("Exchange Fee Rate (%)", min_value=0.0, value=0.05, step=0.01) / 100.0
-                slippage = st.number_input("Slippage (%)", min_value=0.0, value=0.02, step=0.01) / 100.0
+    # --- PHASE 1: SETUP & DATA ALIGNMENT ---
+    st.header("Phase 1: Setup & Data Alignment")
+    
+    # Strategy renders its own parameter UI
+    params = strategy.render_parameters(st)
+    
+    st.divider()
 
-        st.divider()
-
-        # 5. Global Data Fetching (Passes down to modules)
-        with st.spinner(f"Loading deep historical data for {asset_a} and {asset_b} ({timeframe})..."):
-            try:
-                loader = DataLoader([asset_a, asset_b], timeframe)
-                close_df, _, _ = loader.load()
-                df_pair = close_df[[asset_a, asset_b]].ffill().dropna()
-                
-                # Fetch Raw OHLC for execution charts
-                raw_a = loader.data_dict.get(asset_a)
-                raw_b = loader.data_dict.get(asset_b)
-            except Exception as e:
-                st.error(f"Failed to load market data: {e}")
-                return
-                
-        if df_pair.empty:
-            st.error("Data missing for these assets.")
-            return
-
-        # --- PIPELINE RENDERING (Pairs Trading Specific) ---
-        
-        # Module 1
-        render_data_alignment(df_pair, asset_a, asset_b)
-        st.divider()
-        
-        # Module 2
-        spread, p_values, rolling_beta = render_spread_analysis(df_pair, asset_a, asset_b, window=coint_window_input, coint_entry=coint_entry, coint_cutoff=coint_cutoff)
-        st.divider()
-        
-        # Module 3
-        signals = render_signal_gen(spread, p_values, z_window=z_window, z_entry=z_entry, z_exit=z_exit, coint_entry=coint_entry, coint_cutoff=coint_cutoff)
-        if signals is None:
+    # Data Loading (strategy-agnostic)
+    st.markdown(f"### 📊 Raw Asset Correlation")
+    st.markdown(f"Fetching deep historical `{timeframe}` data for **{asset_a}** and **{asset_b}**...")
+    
+    with st.spinner("Loading market data..."):
+        try:
+            loader = DataLoader([asset_a, asset_b], timeframe)
+            close_df, _, _ = loader.load()
+            df_pair = close_df[[asset_a, asset_b]].ffill().dropna()
+        except Exception as e:
+            st.error(f"Failed to load market data: {e}")
             return
             
-        st.divider()
-        
-        # Run the Engine Logic via the Strategy Class itself
-        # Build config dynamically based on UI inputs
-        config = {
-            "name": selected_strategy,
-            "timeframe": timeframe,
-            "parameters": {
-                "methodology": {
-                    "mean_reversion_detection": "Classic Cointegration (OLS)"
-                },
-                "cointegration_window": coint_window_input,
-                "cointegration_thresholds": {
-                    "entry": coint_entry,
-                    "cutoff": coint_cutoff
-                },
-                "zscore_window": z_window,
-                "zscore_thresholds": {
-                    "entry": z_entry,
-                    "exit": z_exit
-                },
-                "capital_per_pair": capital_per_pair,
-                "execution": {
-                    "fee_rate": fee_rate,
-                    "slippage": slippage
-                }
-            }
-        }
-        
-        strategy = StrategyFactory.create(config)
-        
-        results = strategy.evaluate(close_df, asset_a=asset_a, asset_b=asset_b, basket_name=selected_b_name)
-        trade_log = results.get('trade_log', None) if results else None
-        report_text = results.get('report_text', None) if results else None
-        results_df = results.get('results_df', None) if results else None
-        parameters = results.get('parameters', {}) if results else {}
-        performance = results.get('performance', {}) if results else {}
-        
-        # Module 4
-        render_execution(
-            df_pair=df_pair, 
-            signals=signals, 
-            rolling_beta=rolling_beta, 
-            asset_a=asset_a, 
-            asset_b=asset_b, 
-            capital=capital_per_pair, 
-            fee_rate=fee_rate, 
-            slippage=slippage,
-            trade_log=trade_log,
-            report_text=report_text,
-            results_df=results_df,
-            parameters=parameters,
-            performance=performance,
-            basket_name=selected_b_name,
-            raw_a=raw_a,
-            raw_b=raw_b
-        )
-    else:
-        st.info(f"Visual dashboard modules for '{selected_strategy}' are currently under construction. Select 'Pairs Trading (Classic Cointegration)' to view the full institutional pipeline.")
-    
-    st.markdown("<br><br><br>", unsafe_allow_html=True) # Spacer for scrolling
+    if df_pair.empty:
+        st.error("Data missing for these assets.")
+        return
+
+    # Strategy renders its own pipeline (Phases 2, 3, 4, ...)
+    strategy.render_pipeline(st, df_pair, asset_a, asset_b, params)
