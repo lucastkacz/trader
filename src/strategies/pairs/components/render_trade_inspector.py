@@ -42,7 +42,6 @@ def render_trade_inspector(
     signals_df: pd.DataFrame,
     asset_a: str,
     asset_b: str,
-    stop_events: list = None,
 ):
     """
     Dropdown trade selector + per-trade normalized price chart.
@@ -118,17 +117,15 @@ def render_trade_inspector(
     ))
 
     # Entry / Exit vertical lines (manual shapes to avoid pandas Timestamp + int bug in add_vline)
-    is_stopped = stop_events is not None and any(ev[0] == t_close and ev[1] == t_open for ev in stop_events)
-
-    for ts, label, color in [(t_open, "OPEN", "white"), (t_close, "⛔ STOP LOSS" if is_stopped else "CLOSE", "#FF1744" if is_stopped else "#BDBDBD")]:
+    for ts, label, color in [(t_open, "OPEN", "white"), (t_close, "CLOSE", "#BDBDBD")]:
         fig.add_shape(
             type="line", xref="x", yref="paper",
             x0=ts, x1=ts, y0=0, y1=1,
-            line=dict(color=color, width=1.5 if is_stopped else 1, dash="dash"),
+            line=dict(color=color, width=1, dash="dash"),
         )
         fig.add_annotation(
             x=ts, y=1, yref="paper", text=label,
-            showarrow=False, font=dict(color=color, size=10, weight="bold" if is_stopped else "normal"),
+            showarrow=False, font=dict(color=color, size=10),
             yshift=8,
         )
 

@@ -275,5 +275,3 @@ def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rol
             display_df['Portfolio Equity'] = display_df['Current Equity ($)'].apply(lambda x: f"${x:,.2f}")
             display_df = display_df[['Date', 'Asset', 'Action', 'Price', 'Delta Weight', 'Notional', 'Fees Paid', 'Portfolio Equity']]
             st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-    return stop_events
