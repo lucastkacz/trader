@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from src.engine.core.engine import VectorizedEngine
 from src.strategies.pairs.strategy import StrategyLogger
+from src.strategies.pairs.weighting import calculate_beta_neutral_weights
 
 def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rolling_beta: pd.Series, asset_a: str, asset_b: str, capital: float, fee_rate: float, slippage: float, stop_loss_pct: float = 0.0):
     """
@@ -15,21 +16,13 @@ def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rol
     st.markdown("### ⚙️ Engine Execution: From Signals to Dollars")
     st.markdown(
         "To backtest this, we translate the `+1 / 0 / -1` abstract signals into **Target Portfolio Weights**. "
-        "Each leg receives exactly **50% of capital**, making the portfolio dollar-neutral. "
-        "The Hedge Ratio is already embedded in the spread construction and does not re-enter sizing."
+        "We use **Normalized Beta-Neutral Weighting** to dynamically allocate capital based on the rolling Hedge Ratio. "
+        "Safety guardrails (clipping) ensure no single asset ever consumes more than 85% or less than 15% of the portfolio."
     )
     
     with st.spinner("Executing Vectorized Backtest Engine..."):
         # 1. GENERATE TARGET WEIGHTS
-        positions = signals_df['position']
-        weights = pd.DataFrame(0.0, index=df_pair.index, columns=df_pair.columns)
-        
-        # Dollar-neutral sizing: each leg gets exactly 50% of capital.
-        # Signal convention: +1 = long spread (long A, short B)
-        #                    -1 = short spread (short A, long B)
-        weights[asset_a] = positions * 0.5
-        weights[asset_b] = positions * -0.5
-        weights = weights.fillna(0.0)
+        weights = calculate_beta_neutral_weights(df_pair, signals_df, rolling_beta, asset_a, asset_b)
         
         # 2. RUN VECTORIZED ENGINE
         engine = VectorizedEngine(initial_capital=capital, fee_rate=fee_rate, slippage=slippage)
@@ -213,6 +206,12 @@ def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rol
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+    # -----------------------------------------------------------------------
+    # PLOT TARGET WEIGHTS
+    # -----------------------------------------------------------------------
+    from src.strategies.pairs.components.render_weights import plot_target_weights
+    plot_target_weights(weights, rolling_beta, asset_a, asset_b)
 
     # -----------------------------------------------------------------------
     # METRICS
