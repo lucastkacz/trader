@@ -82,8 +82,10 @@ class PairsTradingStrategy(BaseStrategy):
         from src.strategies.pairs.components.render_spread import plot_spread_and_regime
         from src.strategies.pairs.components.render_signals import render_zscore_and_signals
         from src.strategies.pairs.components.render_trade_overlay import plot_price_with_trades
-        from src.strategies.pairs.components.render_engine import render_engine_execution
+        from src.strategies.pairs.components.render_performance import plot_performance_metrics
+        from src.strategies.pairs.components.render_weights import plot_target_weights
         from src.strategies.pairs.components.render_trade_inspector import render_trade_inspector
+        from src.strategies.pairs.weighting import calculate_beta_neutral_weights
 
         # --- Phase 1: Raw Data ---
         st.markdown("### 📊 Raw Asset Correlation")
@@ -133,19 +135,35 @@ class PairsTradingStrategy(BaseStrategy):
 
         st.divider()
 
-        # --- Phase 4: Execution Engine ---
+        # --- Phase 4: Orchestration & Execution ---
         st.header("Phase 4: Execution Engine & Weights")
-        render_engine_execution(
-            df_pair=df_pair,
-            signals_df=signals_df,
-            rolling_beta=rolling_beta,
+        
+        # 1. Orchestrator: Generate target weights using core math logic
+        weights = calculate_beta_neutral_weights(df_pair, signals_df, rolling_beta, asset_a, asset_b)
+        
+        # 2. Orchestrator: Run the Vectorized Engine
+        with st.spinner("Executing Vectorized Backtest Engine..."):
+            engine = VectorizedEngine(
+                initial_capital=params["capital"], 
+                fee_rate=params["fee_rate"], 
+                slippage=params["slippage"]
+            )
+            sl = params.get("stop_loss_pct", 0.0) / 100.0 if params.get("stop_loss_pct", 0.0) > 0 else None
+            results = engine.run(df_pair, weights, stop_loss_pct=sl)
+            trade_log = engine.get_trade_history()
+            
+        # 3. View: Render Performance Metrics (Equity curve, stats, table)
+        plot_performance_metrics(
+            results=results,
+            trade_log=trade_log,
             asset_a=asset_a,
             asset_b=asset_b,
             capital=params["capital"],
-            fee_rate=params["fee_rate"],
-            slippage=params["slippage"],
             stop_loss_pct=params.get("stop_loss_pct", 0.0),
         )
+        
+        # 4. View: Render Dynamic Target Weights Chart
+        plot_target_weights(weights, rolling_beta, asset_a, asset_b)
 
         st.divider()
 

@@ -2,35 +2,17 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from src.engine.core.engine import VectorizedEngine
-from src.strategies.pairs.strategy import StrategyLogger
-from src.strategies.pairs.weighting import calculate_beta_neutral_weights
 
-def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rolling_beta: pd.Series, asset_a: str, asset_b: str, capital: float, fee_rate: float, slippage: float, stop_loss_pct: float = 0.0):
+def plot_performance_metrics(results: pd.DataFrame, trade_log: pd.DataFrame, asset_a: str, asset_b: str, capital: float, stop_loss_pct: float = 0.0):
     """
-    Renders Phase 4: Execution Engine & Weights.
+    Renders Phase 4: Performance Metrics & Equity Curve.
+    This is a pure UI component. It only visualizes pre-calculated engine results.
     """
-    if signals_df is None or signals_df.empty:
+    if results is None or results.empty:
         return
         
-    st.markdown("### ⚙️ Engine Execution: From Signals to Dollars")
-    st.markdown(
-        "To backtest this, we translate the `+1 / 0 / -1` abstract signals into **Target Portfolio Weights**. "
-        "We use **Normalized Beta-Neutral Weighting** to dynamically allocate capital based on the rolling Hedge Ratio. "
-        "Safety guardrails (clipping) ensure no single asset ever consumes more than 85% or less than 15% of the portfolio."
-    )
-    
-    with st.spinner("Executing Vectorized Backtest Engine..."):
-        # 1. GENERATE TARGET WEIGHTS
-        weights = calculate_beta_neutral_weights(df_pair, signals_df, rolling_beta, asset_a, asset_b)
-        
-        # 2. RUN VECTORIZED ENGINE
-        engine = VectorizedEngine(initial_capital=capital, fee_rate=fee_rate, slippage=slippage)
-        sl = stop_loss_pct / 100.0 if stop_loss_pct > 0 else None
-        results = engine.run(df_pair, weights, stop_loss_pct=sl)
-        trade_log = engine.get_trade_history()
-        stop_events = results.attrs.get('stop_events', [])
-        stop_timestamps = {ev[0] for ev in stop_events}  # set of bar timestamps where stops fired
+    stop_events = results.attrs.get('stop_events', [])
+    stop_timestamps = {ev[0] for ev in stop_events}  # set of bar timestamps where stops fired
 
     # -----------------------------------------------------------------------
     # BUILD ROUND-TRIP LIST (needed for both chart and table)
@@ -206,12 +188,6 @@ def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rol
     )
 
     st.plotly_chart(fig, use_container_width=True)
-
-    # -----------------------------------------------------------------------
-    # PLOT TARGET WEIGHTS
-    # -----------------------------------------------------------------------
-    from src.strategies.pairs.components.render_weights import plot_target_weights
-    plot_target_weights(weights, rolling_beta, asset_a, asset_b)
 
     # -----------------------------------------------------------------------
     # METRICS
