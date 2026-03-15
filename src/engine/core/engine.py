@@ -38,7 +38,8 @@ class VectorizedEngine:
         self, 
         prices: pd.DataFrame, 
         target_weights: pd.DataFrame, 
-        funding_rates: Optional[pd.DataFrame] = None
+        funding_rates: Optional[pd.DataFrame] = None,
+        stop_loss_pct: Optional[float] = None,
     ) -> pd.DataFrame:
         """
         Executes the backtest.
@@ -126,11 +127,23 @@ class VectorizedEngine:
             # Fixed capital allocation
             equity_curve = self.initial_capital + (net_returns * self.initial_capital).cumsum()
             
-        # 10. Compile Stats
-        self._equity_cache = equity_curve # Store for Inspector
+        # ------------------------------------------------------------------
+        # 10. OPTIONAL: Per-Trade Equity Stop-Loss (post-process)
+        # ------------------------------------------------------------------
+        self._stop_events = []  # list of (stop_bar_ts, trade_entry_ts)
+
+        if stop_loss_pct is not None and stop_loss_pct > 0:
+            allocated_weights, equity_curve, net_returns, transaction_costs, turnover = (
+                self._apply_stop_loss(
+                    prices, allocated_weights, asset_returns,
+                    funding_rates, equity_curve, stop_loss_pct,
+                )
+            )
+
+        # 11. Compile Stats
+        self._equity_cache = equity_curve
+        self._weights_cache = allocated_weights
         
-        # Calculate Time in Market
-        # A bar is considered "in market" if the sum of absolute weights is > 0
         active_bars = (allocated_weights.abs().sum(axis=1) > 0.0)
         time_in_market_bars = active_bars.sum()
         total_bars = len(prices)
@@ -146,12 +159,91 @@ class VectorizedEngine:
             'drawdown': (equity_curve / equity_curve.cummax() - 1)
         })
         
-        # We attach the scalar metrics to the dataframe attributes for easy pulling later
         results.attrs['time_in_market_pct'] = time_in_market_pct
         results.attrs['total_bars'] = total_bars
         results.attrs['active_bars'] = time_in_market_bars
+        results.attrs['stop_events'] = self._stop_events
         
         return results
+
+    # ------------------------------------------------------------------
+    # Stop-Loss Post-Process
+    # ------------------------------------------------------------------
+
+    def _apply_stop_loss(
+        self, prices, allocated_weights, asset_returns,
+        funding_rates, equity_curve, stop_pct,
+    ):
+        """
+        Post-process pass: for each round-trip trade, check if intra-trade
+        drawdown exceeds stop_pct. If so, zero the weights from the stop
+        bar onward and recompute equity.
+
+        Returns updated (allocated_weights, equity_curve, net_returns,
+        transaction_costs, turnover).
+        """
+        weights = allocated_weights.copy()
+        is_active = weights.abs().sum(axis=1) > 0
+
+        # Find trade boundaries: groups of consecutive active bars
+        trade_groups = (is_active != is_active.shift()).cumsum()
+        trade_groups = trade_groups[is_active]
+
+        modified = False
+
+        for _, group_idx in trade_groups.groupby(trade_groups):
+            entry_bar = group_idx.index[0]
+
+            # Equity at the bar BEFORE the trade opens (the capital we risk)
+            entry_loc = equity_curve.index.get_loc(entry_bar)
+            entry_equity = equity_curve.iloc[entry_loc - 1] if entry_loc > 0 else self.initial_capital
+
+            # Scan bars within this trade
+            for bar in group_idx.index:
+                bar_equity = equity_curve.loc[bar]
+                dd = (bar_equity - entry_equity) / entry_equity
+
+                if dd < -stop_pct:
+                    # Stop triggered: zero weights from this bar onward until trade ends
+                    remaining_bars = group_idx.index[group_idx.index >= bar]
+                    weights.loc[remaining_bars] = 0.0
+                    self._stop_events.append((bar, entry_bar))
+                    modified = True
+                    break  # move to next trade
+
+        if not modified:
+            net_returns = (weights * asset_returns).sum(axis=1)
+            funding_costs = (weights * funding_rates).sum(axis=1)
+            prev_w = weights.shift(1).fillna(0.0)
+            turnover = (weights - prev_w).abs().sum(axis=1)
+            transaction_costs = turnover * self.total_cost_rate
+            return weights, equity_curve, net_returns, transaction_costs, turnover
+
+        # Recompute everything with modified weights
+        net_returns = self._compute_net_returns(weights, asset_returns, funding_rates)
+        if self.compounding:
+            equity_curve = self.initial_capital * (1 + net_returns).cumprod()
+        else:
+            equity_curve = self.initial_capital + (net_returns * self.initial_capital).cumsum()
+
+        prev_w = weights.shift(1).fillna(0.0)
+        turnover = (weights - prev_w).abs().sum(axis=1)
+        transaction_costs = turnover * self.total_cost_rate
+
+        return weights, equity_curve, net_returns, transaction_costs, turnover
+
+    def _compute_net_returns(self, weights, asset_returns, funding_rates):
+        """Recompute net returns from weights (used after stop-loss modifies weights)."""
+        gross = (weights * asset_returns).sum(axis=1)
+        funding = (weights * funding_rates).sum(axis=1)
+        prev_w = weights.shift(1).fillna(0.0)
+        turnover = (weights - prev_w).abs().sum(axis=1)
+        costs = turnover * self.total_cost_rate
+        return gross - funding - costs
+
+    # ------------------------------------------------------------------
+    # Trade History Reconstruction
+    # ------------------------------------------------------------------
 
     def get_trade_history(self) -> pd.DataFrame:
         """

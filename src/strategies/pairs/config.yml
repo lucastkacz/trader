@@ -18,3 +18,4 @@ parameters:
     capital: 10000.0
     fee_rate_pct: 0.05     # displayed as % in UI, converted to decimal internally
     slippage_pct: 0.02     # displayed as % in UI, converted to decimal internally
+    stop_loss_pct: 0.0     # 0 = disabled, e.g. 1.5 = close trade if it loses >1.5% of entry equity

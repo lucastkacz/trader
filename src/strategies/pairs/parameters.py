@@ -21,15 +21,16 @@ def get_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     z_thr  = params.get("zscore_thresholds", {})
 
     return {
-        "capital":      float(exec_p.get("capital", 10000.0)),
-        "fee_rate":     float(exec_p.get("fee_rate_pct", 0.05)) / 100.0,
-        "slippage":     float(exec_p.get("slippage_pct", 0.02)) / 100.0,
-        "coint_window": int(params.get("cointegration_window", 180)),
-        "z_window":     int(params.get("zscore_window", 60)),
-        "coint_entry":  float(coint.get("entry", 0.10)),
-        "coint_cutoff": float(coint.get("cutoff", 0.70)),
-        "z_entry":      float(z_thr.get("entry", 2.0)),
-        "z_exit":       float(z_thr.get("exit", 0.0)),
+        "capital":        float(exec_p.get("capital", 10000.0)),
+        "fee_rate":       float(exec_p.get("fee_rate_pct", 0.05)) / 100.0,
+        "slippage":       float(exec_p.get("slippage_pct", 0.02)) / 100.0,
+        "stop_loss_pct":  float(exec_p.get("stop_loss_pct", 0.0)),
+        "coint_window":   int(params.get("cointegration_window", 180)),
+        "z_window":       int(params.get("zscore_window", 60)),
+        "coint_entry":    float(coint.get("entry", 0.10)),
+        "coint_cutoff":   float(coint.get("cutoff", 0.70)),
+        "z_entry":        float(z_thr.get("entry", 2.0)),
+        "z_exit":         float(z_thr.get("exit", 0.0)),
     }
 
 
@@ -77,6 +78,14 @@ def render_parameters(config: Dict[str, Any], st) -> Dict[str, Any]:
                 value=float(exec_p.get("slippage_pct", 0.02)),
                 step=0.01,
                 key="phase1_slippage",
+            )
+            stop_loss_pct = st.number_input(
+                "Per-Trade Stop Loss (%)",
+                min_value=0.0,
+                value=defaults["stop_loss_pct"],
+                step=0.1,
+                help="Close a trade if it loses more than this % of entry equity. 0 = disabled.",
+                key="phase1_stop_loss",
             )
 
         # ── Statistical Windows ──────────────────────────────────────
@@ -138,13 +147,14 @@ def render_parameters(config: Dict[str, Any], st) -> Dict[str, Any]:
             )
 
     return {
-        "capital":      capital,
-        "fee_rate":     fee_rate_pct / 100.0,
-        "slippage":     slippage_pct / 100.0,
-        "coint_window": coint_window,
-        "z_window":     z_window,
-        "coint_entry":  coint_entry,
-        "coint_cutoff": coint_cutoff,
-        "z_entry":      z_entry,
-        "z_exit":       z_exit,
+        "capital":        capital,
+        "fee_rate":       fee_rate_pct / 100.0,
+        "slippage":       slippage_pct / 100.0,
+        "stop_loss_pct":  stop_loss_pct,
+        "coint_window":   coint_window,
+        "z_window":       z_window,
+        "coint_entry":    coint_entry,
+        "coint_cutoff":   coint_cutoff,
+        "z_entry":        z_entry,
+        "z_exit":         z_exit,
     }

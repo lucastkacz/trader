@@ -144,6 +144,7 @@ class PairsTradingStrategy(BaseStrategy):
             capital=params["capital"],
             fee_rate=params["fee_rate"],
             slippage=params["slippage"],
+            stop_loss_pct=params.get("stop_loss_pct", 0.0),
         )
 
         st.divider()

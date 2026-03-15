@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from src.engine.core.engine import VectorizedEngine
 from src.strategies.pairs.strategy import StrategyLogger
 
-def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rolling_beta: pd.Series, asset_a: str, asset_b: str, capital: float, fee_rate: float, slippage: float):
+def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rolling_beta: pd.Series, asset_a: str, asset_b: str, capital: float, fee_rate: float, slippage: float, stop_loss_pct: float = 0.0):
     """
     Renders Phase 4: Execution Engine & Weights.
     """
@@ -33,8 +33,11 @@ def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rol
         
         # 2. RUN VECTORIZED ENGINE
         engine = VectorizedEngine(initial_capital=capital, fee_rate=fee_rate, slippage=slippage)
-        results = engine.run(df_pair, weights)
+        sl = stop_loss_pct / 100.0 if stop_loss_pct > 0 else None
+        results = engine.run(df_pair, weights, stop_loss_pct=sl)
         trade_log = engine.get_trade_history()
+        stop_events = results.attrs.get('stop_events', [])
+        stop_timestamps = {ev[0] for ev in stop_events}  # set of bar timestamps where stops fired
 
     # -----------------------------------------------------------------------
     # BUILD ROUND-TRIP LIST (needed for both chart and table)
@@ -74,10 +77,18 @@ def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rol
             if duration_hrs >= 24
             else f"{duration_hrs:.0f}h"
         )
+
+        # Check if this trade was stopped
+        was_stopped = any(
+            stop_ts >= t_open and stop_ts <= t_close
+            for stop_ts in stop_timestamps
+        )
+        status = "⛔ STOPPED" if was_stopped else "✅ CLOSED"
         
         round_trips.append({
             "Trade #":        len(round_trips) + 1,
             "Direction":      direction,
+            "Status":         status,
             "Opened":         t_open.strftime("%Y-%m-%d %H:%M"),
             "Closed":         t_close.strftime("%Y-%m-%d %H:%M"),
             "Duration":       duration_str,
@@ -176,6 +187,21 @@ def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rol
         )
     )
 
+    # Stop-loss markers (if any)
+    if stop_events:
+        stop_times = [ev[0] for ev in stop_events]
+        stop_equities = [equity.get(t, equity.iloc[-1]) for t in stop_times]
+        fig.add_trace(
+            go.Scatter(
+                x=stop_times,
+                y=stop_equities,
+                mode='markers',
+                name=f"⛔ Stop Loss ({len(stop_events)})",
+                marker=dict(symbol='octagon', size=14, color='#FF1744',
+                            line=dict(width=2, color='white')),
+            )
+        )
+
     fig.update_layout(
         title="Historical Backtest Equity Curve",
         height=420,
@@ -225,6 +251,9 @@ def render_engine_execution(df_pair: pd.DataFrame, signals_df: pd.DataFrame, rol
     row2[3].metric("Avg Trade Duration",
                    (f"{sum((t_close-t_open).total_seconds()/3600 for t_open,t_close,_ in trip_spans)/len(trip_spans):.0f}h"
                     if trip_spans else "—"))
+
+    if stop_events:
+        st.info(f"⛔ **{len(stop_events)} trade(s) stopped** by the {stop_loss_pct:.1f}% per-trade equity stop-loss.")
 
     # -----------------------------------------------------------------------
     # ROUND-TRIP TRADE LOG TABLE
