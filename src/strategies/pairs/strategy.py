@@ -135,7 +135,7 @@ class PairsTradingStrategy(BaseStrategy):
 
         # --- Phase 4: Execution Engine ---
         st.header("Phase 4: Execution Engine & Weights")
-        render_engine_execution(
+        stop_events = render_engine_execution(
             df_pair=df_pair,
             signals_df=signals_df,
             rolling_beta=rolling_beta,
@@ -155,4 +155,4 @@ class PairsTradingStrategy(BaseStrategy):
             "Select a specific round-trip trade to see both assets re-normalized to **base 100** "
             "at the entry timestamp. This reveals the exact divergence between the long and short legs."
         )
-        render_trade_inspector(df_pair, signals_df, asset_a, asset_b)
+        render_trade_inspector(df_pair, signals_df, asset_a, asset_b, stop_events=stop_events)
