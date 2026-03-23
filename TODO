@@ -1,1 +1,3 @@
 Hacer que el Trading Inspector muestre los stops 
+hacer que el trade inspector considere los delta weights porque hay trades perdedores pero si estan bie weighteados son ganadores
+udpate data page to work with baskets
