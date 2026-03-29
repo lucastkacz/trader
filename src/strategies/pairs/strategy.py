@@ -46,8 +46,46 @@ class PairsTradingStrategy(BaseStrategy):
         return True
 
     def get_screening_metric(self, prices: pd.DataFrame, asset_a: str, asset_b: str = None) -> Tuple[Optional[float], Dict[str, Any]]:
-        """Placeholder for step-by-step rebuild"""
-        return None, {}
+        """
+        Evaluate pair cointegration for the Alpha Screener.
+        Returns the p-value as the defining metric.
+        """
+        if asset_b is None:
+            return None, {"reason": "Asset B is missing"}
+            
+        if asset_a not in prices.columns or asset_b not in prices.columns:
+            return None, {"reason": "Missing price data for one or both assets"}
+            
+        # Get historical slice based on coint_window
+        price_a = prices[asset_a].dropna()
+        price_b = prices[asset_b].dropna()
+        
+        # Make sure they align
+        common_idx = price_a.index.intersection(price_b.index)
+        if len(common_idx) < self.coint_window:
+            return None, {"reason": f"Insufficient overlapping data points (found {len(common_idx)}, required {self.coint_window})"}
+            
+        price_a = price_a.loc[common_idx][-self.coint_window:]
+        price_b = price_b.loc[common_idx][-self.coint_window:]
+        
+        try:
+            # Run stats (use_log=True matches Pairs Strategy defaults)
+            hedge_ratio, adf_stat, p_value = test_cointegration(price_a, price_b, use_log=True)
+            
+            # Survived means the P-Value is less than our required cointegration entry threshold
+            survived = bool(p_value <= self.coint_threshold)
+            
+            metadata = {
+                "hedge_ratio": hedge_ratio,
+                "adf_stat": adf_stat,
+                "survived": survived,
+                "reason": f"P-Value {p_value:.4f} > Threshold {self.coint_threshold}" if not survived else "Passed"
+            }
+            
+            return p_value, metadata
+            
+        except Exception as e:
+            return None, {"reason": f"Statistical test failed: {str(e)}"}
         
     def evaluate(self, prices: pd.DataFrame, asset_a: str, asset_b: str = None, basket_name: str = "Unknown") -> Dict[str, Any]:
         """
