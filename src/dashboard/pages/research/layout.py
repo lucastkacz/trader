@@ -154,6 +154,7 @@ def render_research_page():
                 close_df, _, _ = loader.load()
                 
                 results_list = []
+                error_logs = []
                 progress_bar = st.progress(0)
                 
                 # Instantiate strategy dynamically with USER INPUTS overriding DEFAULTS
@@ -171,24 +172,31 @@ def render_research_page():
                     asset_b = pair.get('asset_b')
                     correlation = pair.get('correlation', 0.0)
                     
-                    metric, metadata = strategy.get_screening_metric(close_df, asset_a, asset_b)
-                    
-                    if metric is not None:
-                        result_row = {
-                            'asset_a': asset_a,
-                            'asset_b': asset_b,
-                            'correlation': correlation,
-                            'screening_metric': metric,
-                            'strategy_name': selected_strategy
-                        }
-                        # Merge in strategy-specific metadata (like hedge_ratio)
-                        result_row.update(metadata)
-                        results_list.append(result_row)
+                    try:
+                        metric, metadata = strategy.get_screening_metric(close_df, asset_a, asset_b)
+                        
+                        if metric is not None:
+                            result_row = {
+                                'asset_a': asset_a,
+                                'asset_b': asset_b,
+                                'correlation': correlation,
+                                'screening_metric': metric,
+                                'strategy_name': selected_strategy
+                            }
+                            # Merge in strategy-specific metadata (like hedge_ratio)
+                            result_row.update(metadata)
+                            results_list.append(result_row)
+                        else:
+                            reason = metadata.get("reason", "Metric returned None (discarded)") if isinstance(metadata, dict) else "Metric returned None (discarded)"
+                            error_logs.append({"pair": f"{asset_a}/{asset_b}", "reason": reason})
+                    except Exception as e:
+                        error_logs.append({"pair": f"{asset_a}/{asset_b}", "reason": f"Error: {e}"})
                             
                     progress_bar.progress((idx + 1) / len(pairs))
                     
                 progress_bar.empty()
                 st.session_state.alpha_results = results_list
+                st.session_state.alpha_error_logs = error_logs
                 st.session_state.alpha_sort_ascending = sort_ascending
                 st.session_state.alpha_start_date = str(close_df.index[0].date()) if not close_df.empty else ""
                 st.session_state.alpha_end_date = str(close_df.index[-1].date()) if not close_df.empty else ""
@@ -199,9 +207,13 @@ def render_research_page():
     # 5. Display Final Results and Save Basket Form
     if st.session_state.alpha_results is not None:
         results_list = st.session_state.alpha_results
+        error_logs = st.session_state.get("alpha_error_logs", [])
         
         if not results_list:
             st.warning("No pairs processed.")
+            if error_logs:
+                with st.expander(f"View Processing Logs ({len(error_logs)} pairs discarded)"):
+                    st.dataframe(pd.DataFrame(error_logs), use_container_width=True)
         else:
             results_df = pd.DataFrame(results_list)
             survived_mask = results_df['survived'] == True if 'survived' in results_df.columns else pd.Series([True]*len(results_df))
@@ -218,6 +230,10 @@ def render_research_page():
                 st.warning(f"None of the {len(results_df)} pairs survived the Strategy Screening filter. Showing evaluated pairs below.")
             else:
                 st.success(f"Discovery Complete! {survived_count} out of {len(results_df)} pairs share a proven statistical relationship.")
+                
+            if error_logs:
+                with st.expander(f"View Processing Logs ({len(error_logs)} pairs discarded)"):
+                    st.dataframe(pd.DataFrame(error_logs), use_container_width=True)
             
             st.write(f"### Alpha Discovery Results ({survived_count} Survived / {len(results_df)} Evaluated)")
             
