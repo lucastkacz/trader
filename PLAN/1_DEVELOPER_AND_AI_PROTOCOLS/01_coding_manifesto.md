@@ -8,7 +8,7 @@ This document serves as the absolute rulebook for the platform's codebase. Every
 Financial data processing in Python is disastrously slow if forced into pure python `for` loops. Time-series data operates in millions of rows.
 * **The Absolute Ban:** You are strictly forbidden from using `df.iterrows()`, `df.itertuples()`, or base python `for` loops to iterate over historical prices or technical indicators.
 * **The Standard:** Mathematical and statistical logic must rely entirely on **Vectorized Operations** via `pandas` and `numpy`. Use matrix multiplication, native `df.shift()`, `df.rolling()`, and `np.where()` to perform instantaneous bulk-calculations in C-compiled memory.
-* **La Ley del "Thread Offloading" (Async Safety):** El sistema I/O es asíncrono (`asyncio`/`ccxt`), pero Numpy y Pandas son **bloqueantes**. Cualquier operación matemática que dure >50ms (ej. `df.corr()` sobre cientos de activos) **DEBE ser delegada a un hilo secundario** (usando `asyncio.to_thread()` o `run_in_executor`). El *Event Loop* principal queda EXCLUSIVAMENTE liberado para red, webhooks y cancelaciones de emergencia. Bloquear el hilo paraliza el bot y dispara falsas alarmas de desconexión.
+* **The "Thread Offloading" Law (Async Safety):** The I/O system is asynchronous (`asyncio`/`ccxt`), but Numpy and Pandas are **blocking**. Any mathematical operation lasting >50ms (e.g., `df.corr()` over hundreds of assets) **MUST be delegated to a secondary thread** (using `asyncio.to_thread()` or `run_in_executor`). The main *Event Loop* is reserved EXCLUSIVELY for networking, webhooks, and emergency cancellations. Blocking the thread paralyzes the bot and triggers false disconnection alarms.
 
 ---
 
@@ -24,18 +24,19 @@ A Quantitative bot trading real capital cannot rely on "print debugging".
 Code is read orders of magnitude more often than it is written, and Crypto APIs are unforgiving regarding primitive data types.
 * **Type Hinting:** Mandatory for ALL function signatures across the repository. (Example: `def fetch_ohlcv(symbol: str, limit: int = 100) -> pd.DataFrame:`).
 * **Floating Point Shield:** A primary failure vector in live trading is "Precision Errors" (e.g., sending `1.234567891` lots to an asset that only accepts 4 decimal places). All Python `float` arithmetic must be routed directly through `ccxt.amount_to_precision(symbol, amount)` and `ccxt.price_to_precision(symbol, price)` before generating the final JSON POST payload.
-* **Bifurcación de Configuración & Secretos:** Está **terminantemente prohibido** mezclar secretos y matemática en un mismo archivo. `config.yml` se reserva ÚNICAMENTE para hiperparámetros del bot (Limits, ventanas, VIX thresholds). Las credenciales (API Keys, Webhooks) DEBEN ir en un `.env` independiente cargado con `pydantic-settings`. Todo esto debe ser parseado fuertemente antes de tocar el Engine Live.
+* **Configuration & Secrets Bifurcation:** It is **strictly prohibited** to mix secrets and math in the same file. `config.yml` is reserved ONLY for bot hyperparameters (Limits, windows, VIX thresholds). Credentials (API Keys, Webhooks) MUST be placed in an independent `.env` parsed securely via `pydantic-settings`. All this must be strongly typed before touching the Live Engine.
 
 ---
 
 ## 4. The Core Tech Stack
 Do not reinvent the wheel. The engine relies exclusively on these battle-tested, heavy-duty frameworks to guarantee speed and stability:
 1. **Data Ingestion:** `ccxt` (Universal Exchange API async management).
-2. **Storage Execution:** `pyarrow` / `parquet` (Gigabyte-scale OHLCV local cache reading relying exclusively on Custom Metadata headers, completely abandoning heavy CSV processing). **Mandato:** Las escrituras en Parquet DEBEN blindarse con esquemas (`pyarrow.schema()`) fuertemente tipados. El bot crasheará si confía ciegamente en la inferencia de tipos de pandas y el Exchange altera silenciosamente su payload (ej. regresando strings en lugar de floats).
+2. **Storage Execution:** `pyarrow` / `parquet` (Gigabyte-scale OHLCV local cache reading relying exclusively on Custom Metadata headers, completely abandoning heavy CSV processing). **Mandate:** Parquet writes MUST be shielded with strongly typed schemas (`pyarrow.schema()`). The bot will crash if it blindly trusts pandas type inference while the Exchange silently alters its payload (e.g., returning strings instead of floats).
 3. **Core Mathematics:** `pandas`, `numpy`, and `statsmodels` (Augmented Dickey-Fuller, OLS regression matrixes, Johansen Vectors).
 4. **Machine Learning:** `networkx` (For Unsupervised Louvain Community Clustering).
 5. **State Auditing:** `loguru` (JSON Lines Dual-Sink architecture).
-6. **State Management (ORM):** `SQLAlchemy` apoyado estrictamente en **`aiosqlite`**. (Raw SQL strings are strictly prohibited). El motor de base de datos DEBE ser asíncrono (`sqlite+aiosqlite://`). Usar un driver síncrono bloquearía el hilo principal durante las lecturas escrituras masivas a `active_trades.db`, paralizando el sistema y disparando cancelaciones de red.
+6. **SQLite Degradation (Append-Only Log):** `active_trades.db` has immediately lost its transactional status and is relegated passively. Using the local DB as a synchronously active manager promotes "Database is Locked" fatalities and thread interference (Main Thread vs Auditor Thread). State routing will happen inside a **Shared Volatile Dictionary in RAM**. SQLite is strictly a silent layer of historical, append-only logging required for retroactive AI Audit joins.
+7. **`asyncio` Abstraction Restriction:** Prioritizing *Solopreneur* technical sanity, the use of abstractly complex concurrent paradigms is strictly restricted. Broker transactions must be explicitly routed in a "Sequential Iterative Single-Thread" format. The `asyncio.gather()` method is permitted ONLY when capturing massive static reads against the Binance API to evade REST congestion; when opening or chasing stat-arb legs, sequential execution guarantees traceability.
 
 ---
 

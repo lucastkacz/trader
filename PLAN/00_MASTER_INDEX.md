@@ -1,37 +1,37 @@
 # V2 PLAN MASTER INDEX
 
-Este archivo es el **Directorio Raíz** de la planeación arquitectónica del Motor de Arbitraje Estadístico Fase 2.
-Los documentos monolíticos han sido fragmentados en 5 dominios de responsabilidad única para asegurar que los Agentes y los Desarrolladores no sufran contaminación cruzada de instrucciones.
+This file is the **Root Directory** for the architectural planning of the Phase 2 Statistical Arbitrage Engine.
+The monolithic documents have been fragmented into 5 single-responsibility domains to ensure that Agents and Developers do not suffer from cross-contamination of instructions.
 
-Cualquier Bot o Desarrollador ingresando al sistema debe consultar este índice para encontrar las reglas pertinentes a su especialidad.
+Any Bot or Developer entering the system must consult this index to find the rules pertinent to their specialty.
 
 ---
 
 ## 📂 1_DEVELOPER_AND_AI_PROTOCOLS/
-*Reglas base para los Agentes Autónomos (Cursor, Aider, Gemini) y restricciones de tecnología.*
-- `01_coding_manifesto.md` -> Vectorización estricta, PyArrow Schema guards, SQLAlchemy asíncrono.
-- `02_llm_system_prompts.md` -> Reglas de Anti-Alucinación, Rate Limits en red e Interacción con Humanos.
-- `03_tdd_and_testing_rules.md` -> Aislamiento forzoso de red, mocking de CCXT y flujo TDD.
-- `04_construction_phases.md` -> Strict Order Sequence desde Logger Base hasta Reconciliation Auditor.
+*Foundation rules for Autonomous Agents (Cursor, Aider, Gemini) and technological restrictions.*
+- `01_coding_manifesto.md` -> Strict vectorization, PyArrow Schema guards, asynchronous SQLite/RAM logic.
+- `02_llm_system_prompts.md` -> Anti-Hallucination rules, network Rate Limits, and Human Interaction.
+- `03_tdd_and_testing_rules.md` -> Forced network isolation, CCXT mocking, and TDD flow.
+- `04_construction_phases.md` -> Strict Order Sequence from Base Logger to Reconciliation Auditor.
 
 ## 📂 2_SYSTEM_INFRASTRUCTURE/
-*La plomería estructural transaccional que asegura la supervivencia en 24/7.*
-- `01_dual_sink_logging.md` -> Jsonlines estructurado en Loguru, colas OOM y `.complete()` de drenaje.
-- `02_state_reconciliation_auditor.md` -> El Cronjob en 10 min, Ghost/Desertion Tracker y exclusión `PENDING_CLOSE`.
+*Transactional structural plumbing ensuring 24/7 survival.*
+- `01_dual_sink_logging.md` -> Structured Jsonlines in Loguru, OOM queues, and drainage `.complete()`.
+- `02_state_reconciliation_auditor.md` -> The 10-minute Cronjob, Ghost/Desertion Tracker, and the Amnesia/Blackout Protocol logic.
 
 ## 📂 3_QUANT_AND_TRADING_ENGINE/
-*Matemática de Generación y Ejecución de órdenes de Nivel de Producción.*
-- `01_universe_and_clustering.md` -> Sieve Volumes, Data Maturity de 180 días, y Louvain Graph Clustering pipelines.
-- `02_execution_loop.md` -> El ciclo cron 4H basal, Retraso API pasivo y el Master Switch del VIX (Protección de Pánicos).
-- `03_signals_and_ew_ols.md` -> La capa cuantitativa (Fase 4 y 5): Mean Reverting Funding, Exponentially Weighted OLS Deviation, Hedge Ratios y filtros O-U.
-- `04_twap_and_order_routing.md` -> Protocolo Quirúrgico Atómico 4H: El "Micro-TWAP" y las reglas de Aborto de Tolerancia a Slippage.
+*Mathematical Generation and Execution of Production-Grade orders.*
+- `01_universe_and_clustering.md` -> Volume Sieves, 180-day Data Maturity, and Louvain Graph Clustering pipelines.
+- `02_execution_loop.md` -> The foundational 4H cron cycle, passive API Delays, and the VIX Master Switch (Panic Protection).
+- `03_signals_and_ew_ols.md` -> The quantitative layer (Phases 4 & 5): Expected Value (EV) formal equation, Exponentially Weighted OLS Deviation, Hedge Ratios, and O-U filters.
+- `04_twap_and_order_routing.md` -> Atomic 4H Surgical Protocol: "Limit Maker Chasing" at the 00:05 mark, and Slippage Tolerance Abort rules (180s TTL).
 
 ## 📂 4_PORTFOLIO_AND_RISK/
-*Los cortafuegos del capital real.*
-- `01_isolated_margin_mandates.md` -> Prohibición estricta del Cross Margin, y el límite absoluto de Aislamiento.
-- `02_capital_exposure_limits.md` -> Reglas volumétricas, fraccionado proporcional e interrupción del sesgo de Sector por "Clúster".
+*Real capital firewalls.*
+- `01_isolated_margin_mandates.md` -> Strict prohibition of Cross Margin, and the absolute Isolated Margin limit to survive systemic collapses.
+- `02_capital_exposure_limits.md` -> Volumetric rules, proportional scaling, and Sector Bias interruption via "Clustering".
 
 ## 📂 5_BACKTESTING_SIMULATION/
-*Reglas del Motor de Realidad Simulado.*
-- `01_vectorized_simulation.md` -> Prohibición exhaustiva de look-ahead bias a través de "Tiempo + 1m".
-- `02_friction_and_funding_penalties.md` -> Costos transaccionales cuadráticos y deducción de *Time-in-Market* para castigar proyecciones ilusorias.
+*Simulated Reality Engine rules.*
+- `01_vectorized_simulation.md` -> Exhaustive prohibition of look-ahead bias via "T+1m" and absolute High/Low pessimistic execution masking.
+- `02_friction_and_funding_penalties.md` -> Quadratic transactional costs and Funding deduction to heavily penalize illusory projections.

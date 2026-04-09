@@ -31,13 +31,13 @@ If the Live Engine is concurrently executing 15 different Long/Short spreads and
 
 Every physical `.jsonl` log emitted in the V2 system **must** be dynamically injected with structured context fields.
 
-**Mandato de Binding (Contextualización Estricta):** 
-Queda estrictamente prohibido inyectar variables de contexto (como el par de trading o el ID de la orden) formateadas directamente dentro del string del mensaje (Ej. MAL: `logger.info(f"[{pair}] Calculando")`). Esto destruye la pureza del esquema JSONL al atrapar los metadatos. 
-El LLM tiene prohibido confiar en su memoria para la estructura del JSONL. Se DEBE crear un modelo Pydantic estricto llamado `LogContext`. Toda llamada a `.bind()` debe pasar previamente por la validación de ese modelo. Si se intenta loggear basura, Pydantic lanzará una excepción y lo detendrá durante el testing.
-*Ejemplo Obligatorio:* 
+**Binding Mandate (Strict Contextualization):** 
+It is strictly forbidden to inject context variables (like the trading pair or order ID) formatted directly into the message string (E.g., WRONG: `logger.info(f"[{pair}] Calculating")`). This destroys the purity of the JSONL schema by trapping metadata inside a plain string. 
+The LLM is forbidden from relying on its memory to structure the JSONL. A strict Pydantic model named `LogContext` MUST be created. Every call to `.bind()` must pass through this model's validation. If garbage logging attempts occur, Pydantic will throw an exception and block it during testing.
+*Mandatory Example:* 
 ```python
 context = LogContext(pair="BTC/USDT", trade_id="123")
-logger.bind(**context.model_dump(exclude_none=True)).info("Calculando Z-score")
+logger.bind(**context.model_dump(exclude_none=True)).info("Calculating Z-score")
 ```
 
 
@@ -87,7 +87,7 @@ No file in `src/screener`, `src/data`, or the Execution engine is allowed to use
 
 Loguru also natively captures Deep Exception Tracebacks, instantly injecting local variables into the `.jsonl` crash report if the math engine throws a zero-division error overnight.
 
-**Configuraciones Críticas de Seguridad (Anti-LLM Fallbacks):**
-1. **Escritura Segura en Concurrencia:** Todo archivo `.jsonl` configurado en `logger.add()` DEBE llevar flag `enqueue=True`. Esto fuerza a Loguru a usar una cola asíncrona segura (*thread/process safe*), eliminando las colisiones de escritura cuando la base de datos y el motor principal intentan fallar a la vez.
-2. **Drenaje de Cola (Graceful Exit):** Al usar `enqueue=True`, el logger despacha volcados en segundo plano. Si el script sufre aprietes de SIGTERM, las excepciones recientes que aguardan en la cola se perderán antes de impactar el JSONL físico. El motor DEBE integrar el comando estricto `logger.complete()` en las rutinas del try-finally/shutdown protocol.
-3. **Límite de Profundidad de Errores (OOM Shield):** En el entorno de producción, la configuración de rescate de Loguru DEBE llevar `diagnose=False`. Los LLMs suelen dejar en `True` la introspección completa. Al intentar subir a memoria RAM un pandas de 500MB crasheado para loggearlo, el servidor Linux sufre un Out-Of-Memory terminal.
+**Critical Safety Configurations (Anti-LLM Fallbacks):**
+1. **Thread-Safe Writing:** Every `.jsonl` file setup in `logger.add()` MUST carry the `enqueue=True` flag. This forces Loguru to use a thread/process safe asynchronous queue, eradicating write collisions when the database and main engine attempt to fail concurrently.
+2. **Core Queue Drain (Graceful Exit):** By utilizing `enqueue=True`, the logger pushes data in the background. If the script gets hit by SIGTERM squeezes, recent exceptions waiting in the queue will be lost before impacting the physical JSONL. The engine MUST integrate the strict `logger.complete()` command into the `try-finally`/shutdown protocol routines.
+3. **Error Depth Limit (OOM Shield):** In the production environment, Loguru's rescue configuration MUST use `diagnose=False`. LLMs constantly leave full introspection on `True`. Attempting to load a crashed 500MB pandas DataFrame into RAM just to log its traceback causes terminal Out-Of-Memory shutdowns on a Linux server.
