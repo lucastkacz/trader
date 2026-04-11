@@ -1,0 +1,23 @@
+name: "Pairs Trading (Classic Cointegration)"
+description: "Statistical Arbitrage strategy exploiting mean-reversion in rolling cointegrated spreads."
+author: "Quant"
+timeframe: "1h"
+
+parameters:
+  methodology:
+    mean_reversion_detection: "Classic Cointegration (OLS)"
+  cointegration_window: 672
+  cointegration_thresholds:
+    entry: 0.05
+    cutoff: 0.60
+  zscore_window: 96
+  zscore_thresholds:
+    entry: 2.00
+    exit: 0.50
+  execution:
+    capital: 10000.0
+    fee_rate_pct: 0.05     # displayed as % in UI, converted to decimal internally
+    slippage_pct: 0.02     # displayed as % in UI, converted to decimal internally
+    stop_loss_pct: 1.00    # 0 = disabled, e.g. 1.5 = close trade if it loses >1.5% of entry equity
+    long_leverage: 1.0     # Multiplier for Long Spread trades (Buy Asset A, Sell Asset B)
+    short_leverage: 1.0    # Multiplier for Short Spread trades (Sell Asset A, Buy Asset B)
