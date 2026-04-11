@@ -39,9 +39,9 @@ def test_parquet_metadata_injection(tmp_path):
     storage.save_ohlcv("BTC_USDT", "1h", df, custom_metadata)
     
     assert os.path.exists(test_filepath) == False
-    assert os.path.exists(tmp_path / "1h" / "BTC_USDT.parquet") == True
+    assert os.path.exists(tmp_path / "binanceusdm" / "1h" / "BTC_USDT.parquet") == True
     
-    written_file = str(tmp_path / "1h" / "BTC_USDT.parquet")
+    written_file = str(tmp_path / "binanceusdm" / "1h" / "BTC_USDT.parquet")
     
     # 3. Read STRICTLY the metadata (No pandas loading)
     read_metadata = storage.read_metadata("BTC_USDT", "1h")

@@ -44,21 +44,26 @@ async def fetch_usd_m_universe(min_volume: float = 20_000_000) -> List[str]:
     finally:
         await exchange.close()
 
-async def fetch_klines(symbol: str, timeframe: str = "4h", limit: int = 1000) -> pd.DataFrame:
+async def fetch_klines(symbol: str, timeframe: str = "4h", limit: int = 1000, since: int = None) -> pd.DataFrame:
     """
     Downloads bulk historical OHLCV data.
     If Binance returns a 502/Timeout, it intercepts the ccxt.NetworkError
     so the upstream engine can enact its Blackout Amnesty Protocol.
     """
     exchange = _get_exchange()
-    # Engine uses standard CCXT nomenclature but requires the ":" suffix to query USD-M explicit
-    ccxt_symbol = f"{symbol}:USDT" if ":" not in symbol else symbol
+    # Engine uses standard CCXT nomenclature but requires the colon suffix to query USD-M explicitly
+    # E.g., BTC/USDT -> BTC/USDT:USDT and ETH/USDC -> ETH/USDC:USDC
+    if ":" not in symbol:
+        quote_currency = symbol.split("/")[-1]
+        ccxt_symbol = f"{symbol}:{quote_currency}"
+    else:
+        ccxt_symbol = symbol
     
     ctx = LogContext(pair=symbol)
     logger.bind(**ctx.model_dump(exclude_none=True)).debug(f"Fetching {limit} candles for {timeframe}")
     
     try:
-        ohlcv = await exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
+        ohlcv = await exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit, since=since)
         
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
         # Cast to strict floats as per architectural manifesto
