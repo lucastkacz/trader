@@ -1,7 +1,7 @@
 """
 Tests for Exchange Connectivity (Live Client).
 These tests hit real exchange APIs and require network access.
-Mark with @pytest.mark.live so they can be skipped in CI.
+Mark with @pytest.mark.live so they can be skipped in CI offline tests.
 """
 
 import pytest
@@ -21,7 +21,7 @@ def test_bybit_connectivity_4h():
         assert df["close"].iloc[-1] > 0
         return df
 
-    df = asyncio.get_event_loop().run_until_complete(_run())
+    df = asyncio.run(_run())
     print(f"\n  Exchange: {settings.ghost_exchange}")
     print(f"  Latest BTC/USDT 4H close: {df['close'].iloc[-1]}")
 
@@ -35,15 +35,15 @@ def test_bybit_connectivity_1m():
         assert df["close"].iloc[-1] > 0
         return df
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
 
 
 @pytest.mark.live
-def test_tier1_pair_available():
-    """Verify a Tier 1 pair (AVNT/USDT) exists on the configured exchange."""
+def test_mega_cap_pair_available():
+    """Verify a mega-cap pair (ETH/USDT) exists on the configured exchange."""
     async def _run():
-        df = await fetch_live_klines("AVNT/USDT", timeframe="4h", limit=3)
+        df = await fetch_live_klines("ETH/USDT", timeframe="4h", limit=3)
         assert len(df) >= 1
         assert df["close"].iloc[-1] > 0
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())

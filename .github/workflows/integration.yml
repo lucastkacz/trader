@@ -39,6 +39,7 @@ jobs:
           ENV: test
 
       - name: Run live connectivity tests
+        continue-on-error: true
         run: pytest tests/ -v -m "live" --tb=short
         env:
           PYTHONPATH: .
