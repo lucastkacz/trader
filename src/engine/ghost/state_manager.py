@@ -6,6 +6,7 @@ Manages ghost orders and equity snapshots with WAL mode for crash safety.
 """
 
 import os
+import json
 import sqlite3
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
@@ -30,6 +31,7 @@ class GhostStateManager:
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("PRAGMA busy_timeout=5000;")
         self._create_tables()
+        self._migrate_schema()
 
     def _create_tables(self):
         self.conn.executescript("""
@@ -50,7 +52,9 @@ class GhostStateManager:
                 exit_price_a REAL,
                 exit_price_b REAL,
                 pnl_pct REAL,
-                status TEXT NOT NULL DEFAULT 'OPEN'
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                exit_z REAL,
+                holding_bars INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS equity_snapshots (
@@ -60,9 +64,42 @@ class GhostStateManager:
                 open_positions INTEGER NOT NULL,
                 realized_pnl_pct REAL NOT NULL,
                 unrealized_pnl_pct REAL NOT NULL,
-                notes TEXT
+                notes TEXT,
+                per_pair_pnl TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS tick_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                pair_label TEXT NOT NULL,
+                z_score REAL NOT NULL,
+                weight_a REAL NOT NULL,
+                weight_b REAL NOT NULL,
+                signal TEXT NOT NULL,
+                action TEXT NOT NULL,
+                price_a REAL NOT NULL,
+                price_b REAL NOT NULL
             );
         """)
+        self.conn.commit()
+
+    def _migrate_schema(self):
+        """
+        Backward-compatible schema migration for existing databases.
+        ALTER TABLE ADD COLUMN is idempotent — we catch 'duplicate column' errors.
+        This ensures pre-reporting DBs (turbo, production) upgrade automatically.
+        """
+        migrations = [
+            "ALTER TABLE ghost_orders ADD COLUMN exit_z REAL",
+            "ALTER TABLE ghost_orders ADD COLUMN holding_bars INTEGER",
+            "ALTER TABLE equity_snapshots ADD COLUMN per_pair_pnl TEXT",
+        ]
+        for sql in migrations:
+            try:
+                self.conn.execute(sql)
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
         self.conn.commit()
 
     def open_position(
@@ -102,6 +139,7 @@ class GhostStateManager:
         pair_label: str,
         exit_price_a: float,
         exit_price_b: float,
+        exit_z: Optional[float] = None,
     ) -> Optional[float]:
         """
         Close the open ghost order for a pair. Calculates realized PnL.
@@ -125,20 +163,46 @@ class GhostStateManager:
             pnl = -row["weight_a"] * ret_a + row["weight_b"] * ret_b
 
         now = datetime.now(timezone.utc).isoformat()
+
+        # Compute holding_bars from timestamp delta
+        holding_bars = self._compute_holding_bars(row["timestamp_open"], now)
+
         self.conn.execute(
             """UPDATE ghost_orders 
-               SET status='CLOSED', timestamp_close=?, exit_price_a=?, exit_price_b=?, pnl_pct=?
+               SET status='CLOSED', timestamp_close=?, exit_price_a=?, exit_price_b=?,
+                   pnl_pct=?, exit_z=?, holding_bars=?
                WHERE id=?""",
-            (now, exit_price_a, exit_price_b, pnl, row["id"]),
+            (now, exit_price_a, exit_price_b, pnl, exit_z, holding_bars, row["id"]),
         )
         self.conn.commit()
 
         ctx = LogContext(pair=pair_label, signal="EXIT")
         logger.bind(**ctx.model_dump(exclude_none=True)).info(
             f"GHOST EXIT | PnL: {pnl*100:.4f}% | "
+            f"Exit A={exit_price_a:.6f} B={exit_price_b:.6f} | "
+            f"Z={exit_z:.4f} | Bars={holding_bars}"
+            if exit_z is not None else
+            f"GHOST EXIT | PnL: {pnl*100:.4f}% | "
             f"Exit A={exit_price_a:.6f} B={exit_price_b:.6f}"
         )
         return pnl
+
+    @staticmethod
+    def _compute_holding_bars(open_ts: str, close_ts: str) -> int:
+        """
+        Compute holding duration in 4H bars from ISO timestamps.
+        Uses actual time delta, so it works for any candle interval.
+        Minimum 1 bar (even if closed within the same tick).
+        """
+        try:
+            # Handle both timezone-aware and naive timestamps
+            t_open = datetime.fromisoformat(open_ts.replace("Z", "+00:00"))
+            t_close = datetime.fromisoformat(close_ts.replace("Z", "+00:00"))
+            delta_hours = (t_close - t_open).total_seconds() / 3600.0
+            bars = max(1, int(round(delta_hours / 4.0)))
+            return bars
+        except (ValueError, TypeError):
+            return 1
 
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Returns all currently open ghost positions."""
@@ -162,6 +226,13 @@ class GhostStateManager:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_all_orders(self) -> List[Dict[str, Any]]:
+        """Returns ALL ghost orders (OPEN + CLOSED) for the report engine."""
+        rows = self.conn.execute(
+            "SELECT * FROM ghost_orders ORDER BY timestamp_open"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def snapshot_equity(
         self,
         total_equity_pct: float,
@@ -169,14 +240,17 @@ class GhostStateManager:
         realized_pnl_pct: float,
         unrealized_pnl_pct: float,
         notes: str = "",
+        per_pair_pnl: Optional[str] = None,
     ):
         """Record a periodic mark-to-market equity snapshot."""
         now = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
             """INSERT INTO equity_snapshots
-               (timestamp, total_equity_pct, open_positions, realized_pnl_pct, unrealized_pnl_pct, notes)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (now, total_equity_pct, open_positions, realized_pnl_pct, unrealized_pnl_pct, notes),
+               (timestamp, total_equity_pct, open_positions, realized_pnl_pct,
+                unrealized_pnl_pct, notes, per_pair_pnl)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (now, total_equity_pct, open_positions, realized_pnl_pct,
+             unrealized_pnl_pct, notes, per_pair_pnl),
         )
         self.conn.commit()
 
@@ -185,6 +259,40 @@ class GhostStateManager:
         rows = self.conn.execute(
             "SELECT * FROM equity_snapshots ORDER BY timestamp"
         ).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_tick_signal(
+        self,
+        pair_label: str,
+        z_score: float,
+        weight_a: float,
+        weight_b: float,
+        signal: str,
+        action: str,
+        price_a: float,
+        price_b: float,
+    ):
+        """Record a single signal evaluation from a tick. Called for EVERY pair on EVERY tick."""
+        now = datetime.now(timezone.utc).isoformat()
+        self.conn.execute(
+            """INSERT INTO tick_signals
+               (timestamp, pair_label, z_score, weight_a, weight_b, signal, action, price_a, price_b)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (now, pair_label, z_score, weight_a, weight_b, signal, action, price_a, price_b),
+        )
+        self.conn.commit()
+
+    def get_tick_signals(self, pair_label: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieve tick signals, optionally filtered by pair."""
+        if pair_label:
+            rows = self.conn.execute(
+                "SELECT * FROM tick_signals WHERE pair_label=? ORDER BY timestamp",
+                (pair_label,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM tick_signals ORDER BY timestamp"
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def close(self):

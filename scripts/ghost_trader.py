@@ -125,6 +125,59 @@ def calculate_unrealized_pnl(
     return total_unrealized
 
 
+def calculate_per_pair_pnl(
+    state: GhostStateManager,
+    pair_prices: Dict[str, tuple],
+) -> Dict[str, float]:
+    """
+    Calculate per-pair unrealized PnL for each open position.
+    Returns a dict of {pair_label: unrealized_pnl_pct}.
+    """
+    open_positions = state.get_open_positions()
+    per_pair = {}
+
+    for pos in open_positions:
+        label = pos["pair_label"]
+        if label not in pair_prices:
+            continue
+
+        current_a, current_b = pair_prices[label]
+        ret_a = (current_a - pos["entry_price_a"]) / pos["entry_price_a"]
+        ret_b = (current_b - pos["entry_price_b"]) / pos["entry_price_b"]
+
+        if pos["side"] == "LONG_SPREAD":
+            unrealized = pos["weight_a"] * ret_a - pos["weight_b"] * ret_b
+        else:
+            unrealized = -pos["weight_a"] * ret_a + pos["weight_b"] * ret_b
+
+        per_pair[label] = unrealized
+
+    return per_pair
+
+
+def determine_action(current_side, new_signal) -> str:
+    """
+    Determine the action taken for tick_signals logging.
+    ENTRY  — No position → opening one
+    EXIT   — Position exists → signal says close
+    HOLD   — Position exists → signal says keep same side
+    SKIP   — No position → signal says stay flat
+    FLIP   — Position exists → signal says opposite side (close + re-enter)
+    """
+    if current_side is None:
+        if new_signal == "FLAT":
+            return "SKIP"
+        else:
+            return "ENTRY"
+    else:
+        if new_signal == "FLAT":
+            return "EXIT"
+        elif new_signal == current_side:
+            return "HOLD"
+        else:
+            return "FLIP"
+
+
 async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
     """
     Execute a single 4H tick across all Tier 1 pairs.
@@ -169,6 +222,21 @@ async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
 
         pair_prices[pair_label] = (result.price_a, result.price_b)
 
+        # Determine action for tick_signals
+        action = determine_action(current_side, result.signal)
+
+        # Record tick signal for every pair on every tick
+        state.record_tick_signal(
+            pair_label=pair_label,
+            z_score=result.z_score,
+            weight_a=result.weight_a,
+            weight_b=result.weight_b,
+            signal=result.signal,
+            action=action,
+            price_a=result.price_a,
+            price_b=result.price_b,
+        )
+
         # State machine transitions
         if current_side is None and result.signal != "FLAT":
             # ENTRY: No position → open one
@@ -191,6 +259,7 @@ async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
                 pair_label=pair_label,
                 exit_price_a=result.price_a,
                 exit_price_b=result.price_b,
+                exit_z=result.z_score,
             )
 
         elif current_side is not None and result.signal != "FLAT" and result.signal != current_side:
@@ -199,6 +268,7 @@ async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
                 pair_label=pair_label,
                 exit_price_a=result.price_a,
                 exit_price_b=result.price_b,
+                exit_z=result.z_score,
             )
             state.open_position(
                 pair_label=pair_label,
@@ -214,6 +284,10 @@ async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
             )
         # else: HOLD — no action required
 
+    # Per-pair PnL for equity snapshot
+    per_pair_pnl = calculate_per_pair_pnl(state, pair_prices)
+    per_pair_pnl_json = json.dumps(per_pair_pnl) if per_pair_pnl else None
+
     # Equity Snapshot
     closed = state.get_all_closed()
     realized = sum(t["pnl_pct"] or 0.0 for t in closed)
@@ -225,6 +299,7 @@ async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
         open_positions=open_count,
         realized_pnl_pct=realized,
         unrealized_pnl_pct=unrealized,
+        per_pair_pnl=per_pair_pnl_json,
     )
 
     logger.info(

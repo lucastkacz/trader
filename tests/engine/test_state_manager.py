@@ -3,7 +3,9 @@ Tests for GhostStateManager.
 Uses in-memory SQLite to avoid filesystem side effects.
 """
 
+import json
 import pytest
+from datetime import datetime, timezone, timedelta
 from src.engine.ghost.state_manager import GhostStateManager
 
 
@@ -123,3 +125,133 @@ def test_multiple_positions_tracked(state):
     open_pos = state.get_open_positions()
     assert len(open_pos) == 1
     assert open_pos[0]["pair_label"] == "C|D"
+
+
+# ─── New Tests: Schema Enhancement ──────────────────────────────
+
+def test_close_position_with_exit_z(state):
+    """Closing with exit_z should store the Z-score at exit."""
+    state.open_position(
+        pair_label="X/USDT|Y/USDT",
+        asset_x="X/USDT",
+        asset_y="Y/USDT",
+        side="LONG_SPREAD",
+        entry_price_a=100.0,
+        entry_price_b=50.0,
+        weight_a=0.5,
+        weight_b=0.5,
+        entry_z=-2.5,
+        lookback_days=14,
+    )
+
+    pnl = state.close_position(
+        "X/USDT|Y/USDT",
+        exit_price_a=110.0,
+        exit_price_b=50.0,
+        exit_z=0.15,
+    )
+    assert pnl is not None
+
+    closed = state.get_all_closed()
+    assert len(closed) == 1
+    assert closed[0]["exit_z"] == 0.15
+
+
+def test_close_position_holding_bars(state):
+    """Closing a position should compute holding_bars from timestamp delta."""
+    state.open_position(
+        pair_label="X/USDT|Y/USDT",
+        asset_x="X/USDT",
+        asset_y="Y/USDT",
+        side="LONG_SPREAD",
+        entry_price_a=100.0,
+        entry_price_b=50.0,
+        weight_a=0.5,
+        weight_b=0.5,
+        entry_z=-2.0,
+        lookback_days=14,
+    )
+
+    pnl = state.close_position("X/USDT|Y/USDT", exit_price_a=110.0, exit_price_b=50.0)
+    assert pnl is not None
+
+    closed = state.get_all_closed()
+    assert len(closed) == 1
+    # Opened and closed nearly instantly → holding_bars should be 1 (minimum)
+    assert closed[0]["holding_bars"] >= 1
+
+
+def test_equity_snapshot_with_per_pair_pnl(state):
+    """Equity snapshot should persist per_pair_pnl JSON field."""
+    per_pair = {"AAA|BBB": 0.015, "CCC|DDD": -0.005}
+    state.snapshot_equity(
+        total_equity_pct=0.05,
+        open_positions=2,
+        realized_pnl_pct=0.03,
+        unrealized_pnl_pct=0.02,
+        per_pair_pnl=json.dumps(per_pair),
+    )
+
+    snapshots = state.get_equity_curve()
+    assert len(snapshots) == 1
+    assert snapshots[0]["per_pair_pnl"] is not None
+
+    recovered = json.loads(snapshots[0]["per_pair_pnl"])
+    assert recovered["AAA|BBB"] == 0.015
+    assert recovered["CCC|DDD"] == -0.005
+
+
+def test_record_tick_signal(state):
+    """Tick signals should be insertable and retrievable."""
+    state.record_tick_signal(
+        pair_label="X/USDT|Y/USDT",
+        z_score=-1.75,
+        weight_a=0.55,
+        weight_b=0.45,
+        signal="LONG_SPREAD",
+        action="ENTRY",
+        price_a=100.0,
+        price_b=50.0,
+    )
+
+    signals = state.get_tick_signals()
+    assert len(signals) == 1
+    assert signals[0]["pair_label"] == "X/USDT|Y/USDT"
+    assert signals[0]["z_score"] == -1.75
+    assert signals[0]["signal"] == "LONG_SPREAD"
+    assert signals[0]["action"] == "ENTRY"
+
+
+def test_tick_signals_filter_by_pair(state):
+    """get_tick_signals should filter by pair_label when specified."""
+    state.record_tick_signal("A|B", -1.5, 0.5, 0.5, "LONG_SPREAD", "ENTRY", 10, 5)
+    state.record_tick_signal("C|D", 2.1, 0.6, 0.4, "SHORT_SPREAD", "SKIP", 20, 10)
+    state.record_tick_signal("A|B", -0.3, 0.5, 0.5, "FLAT", "HOLD", 10.1, 5.05)
+
+    all_sigs = state.get_tick_signals()
+    assert len(all_sigs) == 3
+
+    ab_sigs = state.get_tick_signals(pair_label="A|B")
+    assert len(ab_sigs) == 2
+    assert all(s["pair_label"] == "A|B" for s in ab_sigs)
+
+
+def test_schema_migration_idempotent(state):
+    """Calling _migrate_schema multiple times should not crash."""
+    state._migrate_schema()
+    state._migrate_schema()
+    # If we get here without exception, the test passes
+
+
+def test_get_all_orders(state):
+    """get_all_orders should return both OPEN and CLOSED."""
+    state.open_position("A|B", "A", "B", "LONG_SPREAD", 10, 5, 0.5, 0.5, -2.0, 14)
+    state.open_position("C|D", "C", "D", "SHORT_SPREAD", 20, 10, 0.6, 0.4, 2.0, 7)
+    state.close_position("A|B", 11, 5)
+
+    all_orders = state.get_all_orders()
+    assert len(all_orders) == 2
+
+    statuses = {o["status"] for o in all_orders}
+    assert "OPEN" in statuses
+    assert "CLOSED" in statuses
