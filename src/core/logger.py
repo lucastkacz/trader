@@ -16,6 +16,7 @@ class LogContext(BaseModel):
 
     pair: Optional[str] = None
     trade_id: Optional[str] = None
+    signal: Optional[str] = None
     # Add other rigidly allowed telemetry fields here over time
 
 # Expose a clean configured logger module-wide

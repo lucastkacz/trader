@@ -13,20 +13,20 @@ class ParquetStorage:
         self.base_dir = base_dir
         os.makedirs(self.base_dir, exist_ok=True)
         
-    def _get_path(self, symbol: str, timeframe: str) -> str:
-        # E.g. data/parquet/4h/BTC_USDT.parquet
-        tf_dir = os.path.join(self.base_dir, timeframe)
+    def _get_path(self, symbol: str, timeframe: str, exchange: str = "binanceusdm") -> str:
+        # E.g. data/parquet/binance/4h/BTC_USDT.parquet
+        tf_dir = os.path.join(self.base_dir, exchange.lower(), timeframe)
         os.makedirs(tf_dir, exist_ok=True)
         clean_symbol = symbol.replace("/", "_").replace(":", "_")
         return os.path.join(tf_dir, f"{clean_symbol}.parquet")
 
-    def save_ohlcv(self, symbol: str, timeframe: str, df: pd.DataFrame, custom_metadata: Dict[str, str]):
+    def save_ohlcv(self, symbol: str, timeframe: str, df: pd.DataFrame, custom_metadata: Dict[str, str], exchange: str = "binanceusdm"):
         """
         Takes a Pandas DataFrame, converts it to an Arrow Table,
         injects string-value metadata dictionaries directly into the internal schema,
         and serializes to disk. 
         """
-        filepath = self._get_path(symbol, timeframe)
+        filepath = self._get_path(symbol, timeframe, exchange)
         
         # 1. Convert to native Arrow Table
         table = pa.Table.from_pandas(df)
@@ -47,12 +47,12 @@ class ParquetStorage:
         # 4. Flush to disk (using aggressive Snappy compression by default)
         pq.write_table(new_table, filepath)
 
-    def read_metadata(self, symbol: str, timeframe: str) -> Dict[str, str]:
+    def read_metadata(self, symbol: str, timeframe: str, exchange: str = "binanceusdm") -> Dict[str, str]:
         """
         Reads STRICTLY the binary header of a Parquet file natively using PyArrow.
         Does NOT load the internal Dataframe Payload. Zero risk of RAM OOM.
         """
-        filepath = self._get_path(symbol, timeframe)
+        filepath = self._get_path(symbol, timeframe, exchange)
         if not os.path.exists(filepath):
             return {}
             
@@ -73,11 +73,11 @@ class ParquetStorage:
             
         return decoded_map
 
-    def load_ohlcv(self, symbol: str, timeframe: str) -> pd.DataFrame:
+    def load_ohlcv(self, symbol: str, timeframe: str, exchange: str = "binanceusdm") -> pd.DataFrame:
         """
         Standard operational read method. Loads the file fully into a Pandas Context.
         """
-        filepath = self._get_path(symbol, timeframe)
+        filepath = self._get_path(symbol, timeframe, exchange)
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Parquet cache missing for {symbol} @ {timeframe}")
             
