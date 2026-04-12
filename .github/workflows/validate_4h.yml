@@ -49,14 +49,7 @@ jobs:
           ENV: test
 
       - name: Create data directories
-        run: mkdir -p data/ghost data/universes
-
-      - name: Copy surviving pairs
-        run: |
-          if [ ! -f data/universes/surviving_pairs.json ]; then
-            echo "ERROR: surviving_pairs.json not found"
-            exit 1
-          fi
+        run: mkdir -p data/ghost logs
 
       - name: Run 4H validation (${{ github.event.inputs.ticks }} ticks)
         run: python -m scripts.ghost_trader --ticks ${{ github.event.inputs.ticks }}

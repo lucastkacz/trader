@@ -47,14 +47,7 @@ jobs:
           GHOST_EXCHANGE: bybit
 
       - name: Create data directories
-        run: mkdir -p data/ghost data/universes
-
-      - name: Copy surviving pairs for turbo
-        run: |
-          if [ ! -f data/universes/surviving_pairs.json ]; then
-            echo "surviving_pairs.json not found — turbo will skip signal generation"
-            exit 1
-          fi
+        run: mkdir -p data/ghost logs
 
       - name: Run turbo mode (5 ticks)
         run: python -m scripts.ghost_trader --turbo

@@ -37,12 +37,42 @@ TURBO_TIMEFRAME = "1m"
 TURBO_MAX_TICKS = 5  # Auto-stop after N ticks in turbo mode
 PRODUCTION_TIMEFRAME = "4h"
 
+# Hardcoded mega-cap pairs for CI/integration testing.
+# Used when surviving_pairs.json doesn't exist (e.g. GitHub Actions).
+# These are always liquid on every exchange — the signals are meaningless
+# but the pipeline (fetch → signal → SQLite → report) is validated.
+CI_FALLBACK_PAIRS = [
+    {
+        "Asset_X": "BTC/USDT", "Asset_Y": "ETH/USDT",
+        "Best_Params": {"lookback_days": 14, "entry_z": 2.0},
+        "Performance": {"sharpe_ratio": 99.0, "final_pnl_pct": 0.0},
+    },
+    {
+        "Asset_X": "SOL/USDT", "Asset_Y": "LINK/USDT",
+        "Best_Params": {"lookback_days": 14, "entry_z": 2.0},
+        "Performance": {"sharpe_ratio": 99.0, "final_pnl_pct": 0.0},
+    },
+    {
+        "Asset_X": "XRP/USDT", "Asset_Y": "ADA/USDT",
+        "Best_Params": {"lookback_days": 14, "entry_z": 2.0},
+        "Performance": {"sharpe_ratio": 99.0, "final_pnl_pct": 0.0},
+    },
+]
+
 
 def load_tier1_pairs() -> List[Dict[str, Any]]:
-    """Load surviving pairs and filter to Tier 1 (Sharpe >= configured threshold)."""
+    """Load surviving pairs and filter to Tier 1 (Sharpe >= configured threshold).
+    Falls back to hardcoded mega-cap pairs when the file doesn't exist (CI)."""
     path = "data/universes/surviving_pairs.json"
-    with open(path, "r") as f:
-        all_pairs = json.load(f)
+    try:
+        with open(path, "r") as f:
+            all_pairs = json.load(f)
+    except FileNotFoundError:
+        logger.warning(
+            f"surviving_pairs.json not found — using {len(CI_FALLBACK_PAIRS)} "
+            f"CI fallback pairs (mega-caps for pipeline testing only)"
+        )
+        return CI_FALLBACK_PAIRS
 
     min_sharpe = settings.ghost_min_sharpe
     tier1 = [p for p in all_pairs if p["Performance"]["sharpe_ratio"] >= min_sharpe]
