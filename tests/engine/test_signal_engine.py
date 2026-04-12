@@ -3,7 +3,6 @@ Tests for the Ghost Signal Engine.
 Injects synthetic DataFrames to verify Z-score signals match expected behavior.
 """
 
-import pytest
 import numpy as np
 import pandas as pd
 

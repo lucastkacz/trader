@@ -11,16 +11,14 @@ in .env (GHOST_EXCHANGE=bybit or binance).
 Designed for deployment via systemd on a VPS or launchd locally.
 """
 
-import os
 import json
 import asyncio
 import argparse
-import numpy as np
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
 
-from src.core.logger import logger, LogContext
+from src.core.logger import logger
 from src.core.config import settings
 from src.data.fetcher.live_client import fetch_live_klines
 from src.engine.ghost.state_manager import GhostStateManager
@@ -317,10 +315,23 @@ async def main():
         "--turbo", action="store_true",
         help="Turbo mode: 1m candles, 60s sleep, auto-stop after 5 ticks. For integration testing only."
     )
+    parser.add_argument(
+        "--ticks", type=int, default=None,
+        help="Auto-stop after N ticks. Works in both turbo and production mode. "
+             "If omitted: turbo defaults to 5, production runs forever."
+    )
     args = parser.parse_args()
     TURBO_MODE = args.turbo
 
-    mode_label = "TURBO (1m candles, 60s cycle)" if TURBO_MODE else "PRODUCTION (4H candles)"
+    # Determine max ticks: explicit --ticks > turbo default (5) > unlimited (None)
+    max_ticks = args.ticks if args.ticks is not None else (TURBO_MAX_TICKS if TURBO_MODE else None)
+
+    if TURBO_MODE:
+        mode_label = "TURBO (1m candles, 60s cycle)"
+    elif max_ticks is not None:
+        mode_label = f"VALIDATION (4H candles, {max_ticks} ticks)"
+    else:
+        mode_label = "PRODUCTION (4H candles)"
     db_path = "data/ghost/trades_turbo.db" if TURBO_MODE else None  # None = use default from config
 
     logger.info("═══════════════════════════════════════════════════════════")
@@ -340,26 +351,28 @@ async def main():
         logger.info(f"Resuming with {len(open_pos)} open ghost positions from previous session.")
 
     tick_count = 0
+    ticks_label = f"/{max_ticks}" if max_ticks else ""
 
     try:
         while True:
             if TURBO_MODE:
                 sleep_seconds = TURBO_SLEEP_SECONDS
-                logger.info(f"[TURBO] Sleeping {sleep_seconds}s before tick {tick_count + 1}/{TURBO_MAX_TICKS}...")
+                logger.info(f"[TURBO] Sleeping {sleep_seconds}s before tick {tick_count + 1}{ticks_label}...")
             else:
                 sleep_seconds = seconds_until_next_candle()
                 next_wake = datetime.now(timezone.utc) + timedelta(seconds=sleep_seconds)
                 logger.info(
                     f"Sleeping {sleep_seconds:.0f}s until next 4H candle "
-                    f"(wake @ {next_wake.strftime('%Y-%m-%d %H:%M:%S')} UTC)"
+                    f"(wake @ {next_wake.strftime('%Y-%m-%d %H:%M:%S')} UTC) "
+                    f"[tick {tick_count + 1}{ticks_label}]"
                 )
 
             await asyncio.sleep(sleep_seconds)
             await execute_tick(pairs, state)
             tick_count += 1
 
-            if TURBO_MODE and tick_count >= TURBO_MAX_TICKS:
-                logger.info(f"[TURBO] Completed {TURBO_MAX_TICKS} ticks. Auto-stopping.")
+            if max_ticks is not None and tick_count >= max_ticks:
+                logger.info(f"Completed {max_ticks} ticks. Auto-stopping.")
                 break
 
     except KeyboardInterrupt:

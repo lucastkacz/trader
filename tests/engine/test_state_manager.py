@@ -5,7 +5,6 @@ Uses in-memory SQLite to avoid filesystem side effects.
 
 import json
 import pytest
-from datetime import datetime, timezone, timedelta
 from src.engine.ghost.state_manager import GhostStateManager
 
 

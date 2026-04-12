@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────
+# Pipeline 1: Test Gate
+# Runs on every push to any branch.
+# Lint + all offline tests (auto-discovered, not hardcoded).
+# ─────────────────────────────────────────────────────────────
+name: Test Gate
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: ruff check src/ scripts/ tests/
+
+      - name: Run offline tests
+        run: pytest tests/ -v -m "not live" --tb=short
+        env:
+          PYTHONPATH: .
+          ENV: test

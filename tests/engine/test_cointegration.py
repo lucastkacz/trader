@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 import pandas as pd
 
@@ -33,12 +32,12 @@ def test_bidirectional_adf_and_halflife():
     
     # Test 1: Rejection of divergence
     result_fail = engine.evaluate(df_divergent["X"], df_divergent["Y"])
-    assert result_fail["is_cointegrated"] == False
+    assert not result_fail["is_cointegrated"]
     assert result_fail["p_value"] > 0.05
     
     # Test 2: Acceptance of architectural tether
     result_pass = engine.evaluate(df_cointegrated["X"], df_cointegrated["Y"])
-    assert result_pass["is_cointegrated"] == True
+    assert result_pass["is_cointegrated"]
     assert result_pass["p_value"] < 0.05
     assert result_pass["hedge_ratio"] > 0.0  # Beta exists
     

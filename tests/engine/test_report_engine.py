@@ -3,7 +3,6 @@ Tests for the Ghost Report Engine.
 Uses in-memory SQLite with synthetic data to verify metric computations.
 """
 
-import json
 import math
 import pytest
 from datetime import datetime, timezone, timedelta

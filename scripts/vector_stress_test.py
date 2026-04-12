@@ -228,7 +228,7 @@ def run_stress_test():
 
     # ─── Export ────────────────────────────────────────────────────────
     logger.info("═══════════════════════════════════════════════════════════")
-    logger.info(f"  STRESS TEST COMPLETE")
+    logger.info("  STRESS TEST COMPLETE")
     logger.info(f"  Survivors: {len(surviving_pairs)} / {len(pairs)} pairs")
     logger.info("═══════════════════════════════════════════════════════════")
 

@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────────────────────
+# Pipeline 5: Health Monitor (Watchdog)
+# Runs every 6 hours on a schedule. SSHs into the VPS,
+# checks if the ghost trader is alive and data is fresh,
+# generates a report, and uploads it as an artifact.
+# If anything is wrong, the pipeline fails → GitHub sends
+# an email notification.
+# ─────────────────────────────────────────────────────────────
+name: Health Monitor
+
+on:
+  schedule:
+    # Every 6 hours: 01:00, 07:00, 13:00, 19:00 UTC
+    # Offset from 4H boundaries (00,04,08,12,16,20) to give the
+    # ghost trader time to complete its tick before we check.
+    - cron: '0 1,7,13,19 * * *'
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          cat >> ~/.ssh/config << EOF
+          Host oracle-vps
+            HostName ${{ secrets.VPS_HOST }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/vps_key
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Check process is alive
+        run: |
+          STATUS=$(ssh oracle-vps "sudo systemctl is-active ghost-trader" 2>&1)
+          echo "Service status: $STATUS"
+          if [ "$STATUS" != "active" ]; then
+            echo "::error::Ghost trader is NOT running! Status: $STATUS"
+            exit 1
+          fi
+
+      - name: Check data freshness
+        run: |
+          FRESHNESS=$(ssh oracle-vps "cd ~/quant && sqlite3 data/ghost/trades.db \
+            \"SELECT CASE WHEN \
+              (julianday('now') - julianday(MAX(timestamp))) * 24 > 6 \
+              THEN 'STALE' ELSE 'FRESH' END FROM equity_snapshots;\"" 2>&1)
+          echo "Data freshness: $FRESHNESS"
+          if [ "$FRESHNESS" = "STALE" ]; then
+            echo "::error::Data is STALE — no equity snapshot in the last 6 hours!"
+            exit 1
+          fi
+
+      - name: Generate and download report
+        run: |
+          ssh oracle-vps "cd ~/quant && PYTHONPATH=. .venv/bin/python -m scripts.ghost_report --json" \
+            > latest_report.json
+          echo "Report downloaded successfully"
+          # Show key metrics
+          python3 -c "
+          import json
+          r = json.load(open('latest_report.json'))
+          print(f'Status:         {r[\"status\"]}')
+          print(f'Total Equity:   {r[\"total_equity_pct\"]*100:+.4f}%')
+          print(f'Active Pairs:   {r[\"active_pairs\"]}')
+          print(f'Total Trades:   {r[\"total_trades\"]}')
+          print(f'Max Drawdown:   {r[\"max_drawdown_pct\"]*100:.4f}%')
+          # Fail if max DD exceeds 30%
+          if r['max_drawdown_pct'] < -0.30:
+              print('::error::Max drawdown exceeds 30%! Manual review required.')
+              exit(1)
+          " || true
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-report-${{ github.run_number }}
+          path: latest_report.json
+          retention-days: 90
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/vps_key

@@ -241,8 +241,8 @@ def export_markdown(report: GhostReport) -> str:
 
     # Executive Summary
     lines.append("## Executive Summary\n")
-    lines.append(f"| Metric | Value |")
-    lines.append(f"|--------|-------|")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
     lines.append(f"| Status | {report.status} |")
     lines.append(f"| Total Equity | {report.total_equity_pct*100:+.4f}% |")
     lines.append(f"| Realized PnL | {report.realized_pnl_pct*100:+.4f}% |")
@@ -254,8 +254,8 @@ def export_markdown(report: GhostReport) -> str:
 
     # Portfolio Metrics
     lines.append("## Portfolio Metrics\n")
-    lines.append(f"| Metric | Value |")
-    lines.append(f"|--------|-------|")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
 
     def _fmt(v, fmt=".4f"):
         return f"{v:{fmt}}" if v is not None else "N/A"
@@ -273,8 +273,8 @@ def export_markdown(report: GhostReport) -> str:
 
     # Per-pair
     lines.append("## Per-Pair Breakdown\n")
-    lines.append(f"| Pair | Trades | Win% | Realized | BT Sharpe | Match |")
-    lines.append(f"|------|--------|------|----------|-----------|-------|")
+    lines.append("| Pair | Trades | Win% | Realized | BT Sharpe | Match |")
+    lines.append("|------|--------|------|----------|-----------|-------|")
     for p in report.per_pair:
         bt_s = f"{p.backtest_sharpe:.2f}" if p.backtest_sharpe is not None else "N/A"
         lines.append(
@@ -286,8 +286,8 @@ def export_markdown(report: GhostReport) -> str:
     # Trade Log
     if report.trade_log:
         lines.append("## Trade Log\n")
-        lines.append(f"| ID | Pair | Side | Entry Z | PnL% | Bars |")
-        lines.append(f"|----|------|------|---------|------|------|")
+        lines.append("| ID | Pair | Side | Entry Z | PnL% | Bars |")
+        lines.append("|----|------|------|---------|------|------|")
         for t in report.trade_log:
             pnl = t.get("pnl_pct") or 0.0
             bars = t.get("holding_bars") or "?"

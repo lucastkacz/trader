@@ -2,7 +2,7 @@ import os
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict
 
 class ParquetStorage:
     """

@@ -6,7 +6,6 @@ Manages ghost orders and equity snapshots with WAL mode for crash safety.
 """
 
 import os
-import json
 import sqlite3
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone

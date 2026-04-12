@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import adfuller
-from src.core.logger import LogContext, logger
 
 class CointegrationEngine:
     """

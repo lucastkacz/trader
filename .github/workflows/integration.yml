@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────
+# Pipeline 2: Turbo Integration Test
+# Manual trigger or nightly schedule.
+# Runs turbo mode (1m candles, 5 ticks) against live exchange
+# to verify the full pipeline works mechanically.
+# ─────────────────────────────────────────────────────────────
+name: Turbo Integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly at 03:00 UTC (midnight Argentina)
+    - cron: '0 3 * * *'
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run offline tests
+        run: pytest tests/ -v -m "not live" --tb=short
+        env:
+          PYTHONPATH: .
+          ENV: test
+
+      - name: Run live connectivity tests
+        run: pytest tests/ -v -m "live" --tb=short
+        env:
+          PYTHONPATH: .
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+          GHOST_EXCHANGE: bybit
+
+      - name: Create data directories
+        run: mkdir -p data/ghost data/universes
+
+      - name: Copy surviving pairs for turbo
+        run: |
+          if [ ! -f data/universes/surviving_pairs.json ]; then
+            echo "surviving_pairs.json not found — turbo will skip signal generation"
+            exit 1
+          fi
+
+      - name: Run turbo mode (5 ticks)
+        run: python -m scripts.ghost_trader --turbo
+        env:
+          PYTHONPATH: .
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+          GHOST_EXCHANGE: bybit
+
+      - name: Generate turbo report (JSON)
+        run: python -m scripts.ghost_report --turbo --json > turbo_report.json
+        env:
+          PYTHONPATH: .
+
+      - name: Generate turbo report (export)
+        run: python -m scripts.ghost_report --turbo --export
+        env:
+          PYTHONPATH: .
+
+      - name: Upload turbo artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: turbo-results-${{ github.run_number }}
+          path: |
+            turbo_report.json
+            data/ghost/trades_turbo.db
+            data/ghost/reports/
+          retention-days: 30

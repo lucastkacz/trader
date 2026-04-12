@@ -1,6 +1,6 @@
 import ccxt.async_support as ccxt
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List
 
 from src.core.logger import logger, LogContext
 from src.core.config import settings

@@ -1,7 +1,5 @@
-import pytest
 import pandas as pd
 import numpy as np
-import networkx as nx
 
 try:
     from src.screener.clustering.returns_matrix import MatrixBuilder
@@ -55,4 +53,4 @@ def test_winsorization_and_clustering():
             assert "C/USDT" not in members
             found_correlation = True
             
-    assert found_correlation == True
+    assert found_correlation

@@ -10,11 +10,14 @@ ARCHITECTURAL RULE: This module does math. Formatting belongs in scripts/ghost_r
 
 import json
 import math
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 
 from src.core.logger import logger
+
+if TYPE_CHECKING:
+    from src.engine.ghost.state_manager import GhostStateManager
 
 
 # ─── Data Classes ────────────────────────────────────────────────

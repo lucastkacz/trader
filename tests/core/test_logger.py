@@ -1,5 +1,4 @@
 import json
-import logging
 import pytest
 from pydantic import ValidationError
 from typing import Dict, Any

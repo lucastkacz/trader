@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
 
-from src.core.logger import logger, LogContext
+from src.core.logger import logger
 from src.data.storage.local_parquet import ParquetStorage
 from src.screener.filters.data_maturity import DataMaturityFilter
 from src.screener.clustering.returns_matrix import MatrixBuilder
@@ -83,7 +83,7 @@ def discover_alpha():
     logger.info(f"Phase 3 Complete. Clusters exported to {cluster_path}")
     
     # 5. Cointegration Edge Processing
-    logger.info(f"Entering Phase 4: Cointegration Alpha Core Generation...")
+    logger.info("Entering Phase 4: Cointegration Alpha Core Generation...")
     # Max Half-Life of 14 Days on a 4H Timeframe = 14 * 6 = 84 Bars
     cointegration_engine = CointegrationEngine(p_value_threshold=0.05, max_half_life=84.0)
     

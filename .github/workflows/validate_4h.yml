@@ -1,0 +1,103 @@
+# ─────────────────────────────────────────────────────────────
+# Pipeline 3: Local 4H Validation
+# Manual trigger only. Runs ghost trader with real 4H candles
+# for a configurable number of ticks (default 2 = ~8 hours).
+# This is the pre-deploy gate that validates real signal quality.
+#
+# NOTE: This is a long-running workflow (8+ hours for 2 ticks).
+# It runs directly in GitHub Actions. If you prefer to run
+# locally, use: PYTHONPATH=. python -m scripts.ghost_trader --ticks 2
+# ─────────────────────────────────────────────────────────────
+name: Local 4H Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      ticks:
+        description: 'Number of 4H ticks to run (each tick = ~4 hours)'
+        required: true
+        default: '2'
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    # 2 ticks × 4h + buffer = ~10h. GitHub free tier allows up to 6h per job.
+    # For >1 tick, run locally or on a self-hosted runner.
+    # Single tick validation (--ticks 1) fits within the 6h limit.
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run offline tests first
+        run: pytest tests/ -v -m "not live" --tb=short
+        env:
+          PYTHONPATH: .
+          ENV: test
+
+      - name: Create data directories
+        run: mkdir -p data/ghost data/universes
+
+      - name: Copy surviving pairs
+        run: |
+          if [ ! -f data/universes/surviving_pairs.json ]; then
+            echo "ERROR: surviving_pairs.json not found"
+            exit 1
+          fi
+
+      - name: Run 4H validation (${{ github.event.inputs.ticks }} ticks)
+        run: python -m scripts.ghost_trader --ticks ${{ github.event.inputs.ticks }}
+        env:
+          PYTHONPATH: .
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+          GHOST_EXCHANGE: bybit
+
+      - name: Generate validation report
+        run: |
+          python -m scripts.ghost_report --json > validation_report.json
+          python -m scripts.ghost_report --export
+          python -m scripts.ghost_report --detailed
+        env:
+          PYTHONPATH: .
+
+      - name: Validate report quality
+        run: |
+          python3 -c "
+          import json, sys
+          r = json.load(open('validation_report.json'))
+          bpy = r['bars_per_year']
+          bar_hours = 24*365/bpy if bpy > 0 else 0
+          print(f'Status: {r[\"status\"]}')
+          print(f'Open positions: {r[\"active_pairs\"]}')
+          print(f'Tick signals: {r[\"signal_quality\"][\"total_signals_recorded\"]}')
+          print(f'Bar interval: {bar_hours:.1f}h')
+          # Fail if bar interval is not ~4h (sanity check)
+          if bar_hours < 3.0 or bar_hours > 5.0:
+              print(f'WARNING: Bar interval {bar_hours:.1f}h is not ~4h — expected 4H candles')
+          "
+        env:
+          PYTHONPATH: .
+
+      - name: Upload validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-4h-${{ github.run_number }}
+          path: |
+            validation_report.json
+            data/ghost/trades.db
+            data/ghost/reports/
+          retention-days: 90
