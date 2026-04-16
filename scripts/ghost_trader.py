@@ -23,6 +23,7 @@ from src.core.config import settings
 from src.data.fetcher.live_client import fetch_live_klines
 from src.engine.ghost.state_manager import GhostStateManager
 from src.engine.ghost.signal_engine import evaluate_signal, BARS_PER_DAY
+from src.core.notifier import TelegramNotifier
 
 # ─── Mode Configuration ──────────────────────────────────────────
 # Set by CLI --turbo flag. Controls timeframe, sleep, and DB path.
@@ -206,11 +207,89 @@ def determine_action(current_side, new_signal) -> str:
             return "FLIP"
 
 
-async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
+SYSTEM_PAUSED = False
+
+async def execute_emergency_liquidation(state: GhostStateManager, pairs: List[Dict], notifier: TelegramNotifier, target: Optional[str] = None):
+    """Fetch live prices and force-close open positions."""
+    open_positions = state.get_open_positions()
+    
+    if target:
+        open_positions = [p for p in open_positions if p["pair_label"] == target]
+        
+    if not open_positions:
+        if notifier:
+            await notifier.send(f"⚠️ Liquidation requested but no positions found for <b>{target or 'ALL'}</b>.")
+        return
+
+    if notifier:
+        await notifier.send(f"🚨 <b>EXECUTING EMERGENCY LIQUIDATION</b> for {len(open_positions)} pair(s)...")
+        
+    total_exit_pnl = 0.0
+    for pos in open_positions:
+        pair_label = pos["pair_label"]
+        asset_x = pos["asset_x"]
+        asset_y = pos["asset_y"]
+        # Fetch 1 bar just to get current price
+        try:
+            df_x = await fetch_live_klines(symbol=asset_x, timeframe="1m", limit=1)
+            df_y = await fetch_live_klines(symbol=asset_y, timeframe="1m", limit=1)
+            price_x = df_x['close'].iloc[-1]
+            price_y = df_y['close'].iloc[-1]
+            
+            pnl = state.close_position(
+                pair_label=pair_label,
+                exit_price_a=price_x,
+                exit_price_b=price_y,
+                exit_z=None  # manual exit
+            )
+            total_exit_pnl += pnl or 0.0
+            if notifier:
+                await notifier.send(f"✅ <b>EMERGENCY EXIT:</b> {pair_label}\nPNL: <b>{pnl*100:.2f}%</b>")
+        except Exception as e:
+            logger.error(f"Liquidation failed for {pair_label}: {e}")
+            if notifier:
+                await notifier.send(f"❌ LIQUIDATION FAILED for {pair_label}: {e}")
+
+async def process_user_commands(state: GhostStateManager, pairs: List[Dict], notifier: TelegramNotifier):
+    """Poll DB for Telegram commands and execute them."""
+    global SYSTEM_PAUSED
+    commands = state.pop_pending_commands()
+    for cmd in commands:
+        action = cmd["command"]
+        target = cmd["target_pair"]
+        logger.info(f"Processing UI Command: {action} on {target}")
+        
+        try:
+            if action == "/stop_all":
+                await execute_emergency_liquidation(state, pairs, notifier, target=None)
+            elif action == "/stop":
+                await execute_emergency_liquidation(state, pairs, notifier, target=target)
+            elif action == "/pause":
+                SYSTEM_PAUSED = True
+                if notifier:
+                    await notifier.send("⏸️ <b>SYSTEM PAUSED</b>\nNo new trades will be executed.")
+            elif action == "/resume":
+                SYSTEM_PAUSED = False
+                if notifier:
+                    await notifier.send("▶️ <b>SYSTEM RESUMED</b>\nTick execution restored.")
+            else:
+                logger.warning(f"Unknown command {action}")
+        except Exception as e:
+            logger.error(f"Failed executing command {action}: {e}")
+            if notifier:
+                await notifier.send(f"⚠️ COMMAND FAILED: {action} ({e})")
+
+
+async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager, notifier: TelegramNotifier):
     """
     Execute a single 4H tick across all Tier 1 pairs.
     This is the core processing loop called once per candle close.
     """
+    global SYSTEM_PAUSED
+    if SYSTEM_PAUSED:
+        logger.info("Tick skipped — System is PAUSED.")
+        return
+
     tick_time = datetime.now(timezone.utc).isoformat()
     logger.info(f"═══ GHOST TICK @ {tick_time} ═══")
 
@@ -280,19 +359,30 @@ async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
                 entry_z=result.z_score,
                 lookback_days=lookback_days,
             )
+            await notifier.send(
+                f"🚀 <b>ENTRY SIGNAL: {pair_label}</b>\n"
+                f"• Z-Score: {result.z_score:.2f}\n"
+                f"• Action: {result.signal}"
+            )
 
         elif current_side is not None and result.signal == "FLAT":
             # EXIT: Position open → close it
-            state.close_position(
+            pnl = state.close_position(
                 pair_label=pair_label,
                 exit_price_a=result.price_a,
                 exit_price_b=result.price_b,
                 exit_z=result.z_score,
             )
+            await notifier.send(
+                f"🏁 <b>EXIT SIGNAL: {pair_label}</b>\n"
+                f"• Z-Score: {result.z_score:.2f}\n"
+                f"• PNL: <b>{pnl*100:.2f}%</b> if pnl else 'N/A'\n"
+                f"• Action: CLOSE Spread"
+            )
 
         elif current_side is not None and result.signal != "FLAT" and result.signal != current_side:
             # FLIP: Signal reversed → close then re-enter
-            state.close_position(
+            pnl = state.close_position(
                 pair_label=pair_label,
                 exit_price_a=result.price_a,
                 exit_price_b=result.price_b,
@@ -309,6 +399,12 @@ async def execute_tick(pairs: List[Dict[str, Any]], state: GhostStateManager):
                 weight_b=result.weight_b,
                 entry_z=result.z_score,
                 lookback_days=lookback_days,
+            )
+            await notifier.send(
+                f"🔄 <b>FLIP SIGNAL: {pair_label}</b>\n"
+                f"• Old Side Closed | PNL: <b>{pnl*100:.2f}%</b> if pnl else 'N/A'\n"
+                f"• New Side: {result.signal}\n"
+                f"• Z-Score: {result.z_score:.2f}"
             )
         # else: HOLD — no action required
 
@@ -368,9 +464,13 @@ async def main():
     logger.info(f"  EPOCH 3: Ghost Trader Starting [{mode_label}]")
     logger.info("═══════════════════════════════════════════════════════════")
 
+    notifier = TelegramNotifier()
+    await notifier.send(f"🟢 <b>System Boot:</b> Engine Synchronized on {mode_label}")
+
     pairs = load_tier1_pairs()
     if not pairs:
         logger.error("No Tier 1 pairs found. Aborting.")
+        await notifier.send("⚠️ <b>Fatal Error:</b> No Tier 1 pairs found.")
         return
 
     state = GhostStateManager(db_path=db_path)
@@ -378,27 +478,36 @@ async def main():
     # Report existing state on boot
     open_pos = state.get_open_positions()
     if open_pos:
-        logger.info(f"Resuming with {len(open_pos)} open ghost positions from previous session.")
+        logger.info(f"Resuming with {len(open_pos)} open ghost positions.")
 
     tick_count = 0
     ticks_label = f"/{max_ticks}" if max_ticks else ""
 
     try:
         while True:
+            # Set target wake time
             if TURBO_MODE:
                 sleep_seconds = TURBO_SLEEP_SECONDS
-                logger.info(f"[TURBO] Sleeping {sleep_seconds}s before tick {tick_count + 1}{ticks_label}...")
+                target_time = datetime.now(timezone.utc) + timedelta(seconds=sleep_seconds)
             else:
                 sleep_seconds = seconds_until_next_candle()
-                next_wake = datetime.now(timezone.utc) + timedelta(seconds=sleep_seconds)
-                logger.info(
-                    f"Sleeping {sleep_seconds:.0f}s until next 4H candle "
-                    f"(wake @ {next_wake.strftime('%Y-%m-%d %H:%M:%S')} UTC) "
-                    f"[tick {tick_count + 1}{ticks_label}]"
-                )
+                target_time = datetime.now(timezone.utc) + timedelta(seconds=sleep_seconds)
+                
+            wake_fmt = target_time.strftime('%Y-%m-%d %H:%M:%S')
+            logger.info(f"Next tick scheduled for {wake_fmt} UTC. Entering polling loop.")
+            
+            # Polling loop (Wait in 10-second chunks to process commands)
+            while True:
+                await process_user_commands(state, pairs, notifier)
+                
+                now = datetime.now(timezone.utc)
+                if now >= target_time:
+                    break
+                    
+                await asyncio.sleep(min(10.0, (target_time - now).total_seconds()))
 
-            await asyncio.sleep(sleep_seconds)
-            await execute_tick(pairs, state)
+            # Execution
+            await execute_tick(pairs, state, notifier)
             tick_count += 1
 
             if max_ticks is not None and tick_count >= max_ticks:
@@ -409,6 +518,7 @@ async def main():
         logger.info("Ghost Trader shut down by user (KeyboardInterrupt).")
     except Exception as e:
         logger.critical(f"Ghost Trader crashed: {e}")
+        await notifier.send(f"⚠️ <b>FATAL ERROR:</b> Ghost Trader crashed:\n<pre>{e}</pre>")
         raise
     finally:
         state.close()

@@ -58,11 +58,13 @@ jobs:
             git reset --hard origin/main
             echo "=== Installing dependencies ==="
             .venv/bin/pip install -r requirements.txt --quiet
-            echo "=== Restarting ghost trader ==="
+            echo "=== Restarting services ==="
             sudo systemctl restart ghost-trader
+            sudo systemctl restart ghost-telegram
             sleep 10
-            echo "=== Checking service status ==="
+            echo "=== Checking service statuses ==="
             sudo systemctl is-active ghost-trader
+            sudo systemctl is-active ghost-telegram
           DEPLOY
 
       - name: Post-deploy health check

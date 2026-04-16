@@ -87,8 +87,30 @@ jobs:
             echo "[Install]" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
             echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
 
+            echo "--- Telegram Daemon ---"
+            sudo rm -f /etc/systemd/system/ghost-telegram.service
+            echo "[Unit]" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "Description=Stat-Arb Telegram Controller" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "After=network-online.target" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "Wants=network-online.target" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "[Service]" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "Type=simple" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "User=ubuntu" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "WorkingDirectory=/home/ubuntu/quant" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "Environment=\"PYTHONPATH=/home/ubuntu/quant\"" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "ExecStart=/home/ubuntu/quant/.venv/bin/python -m scripts.telegram_bot" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "Restart=on-failure" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "RestartSec=30" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "StandardOutput=append:/home/ubuntu/quant/logs/tg_stdout.log" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "StandardError=append:/home/ubuntu/quant/logs/tg_stderr.log" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "[Install]" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+
             sudo systemctl daemon-reload
             sudo systemctl enable ghost-trader
+            sudo systemctl enable ghost-telegram
             
             echo "=== BOOTSTRAP COMPLETE ==="
           SETUP

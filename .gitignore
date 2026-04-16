@@ -1,10 +1,16 @@
+# Environment and Cache
 .venv/
 __pycache__/
 *.pyc
-.DS_Store
-/data/
 .pytest_cache/
-src2logs/
+.ruff_cache/
 .env
+
+# MacOS
+.DS_Store
+*.DS_Store
+
+# Logs and Data
+data/
 logs/
-.ruff_cache
+src2logs/

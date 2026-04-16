@@ -1,96 +1,82 @@
-# Telegram Integration Architecture
+# Telegram Integration Architecture (Two-Way Interactive)
 
-As the Epoch 3 Ghost Trader and Epoch 4 Production Trader operate autonomously in the cloud, human visibility becomes paramount. SSHing into the VPS or checking GitHub Actions logs is sufficient for debugging, but unacceptable for active monitoring.
+As the Epoch 3 Ghost Trader and Epoch 4 Production Trader operate autonomously in the cloud, human visibility and manual override intervention become paramount. SSHing into the VPS is sufficient for debugging, but unacceptable for active monitoring or emergency liquidation.
 
-We will integrate a **One-Way Telegram Notifier** to push critical events, trade executions, and system health status directly to your phone.
+We will integrate a **Two-Way Telegram Interactive Bot** capable of pushing notifications and receiving manual override commands (e.g., `/status`, `/stop_all`).
 
-## Strategy: Asynchronous, Non-Blocking Webhooks
+## Strategy: The Decoupled Database Pipeline
 
-The **Golden Rule** of trading infrastructure: *Secondary systems (like logging and notifications) must NEVER crash or block the primary execution engine.*
+The **Golden Rule** of trading infrastructure: *The UI (Telegram) must NEVER block or crash the execution backend.*
 
-If the Telegram API is down, the trading engine must continue executing trades without hesitation. Therefore, our Telegram Integration will use pure REST webhooks (`requests.post`) wrapped in non-blocking `asyncio.create_task` or short `timeout` blocks to prevent network hangups.
+If we run the complex Telegram Long-Polling listener inside our core 4H trading loop, any network drop or Telegram API crash will take down the entire trading engine. 
 
----
+To solve this, we will implement **Option A: Decoupled SQLite Polling**:
+1. **The Executive Engine (`ghost_trader.py`)**: Runs the quantitative logic. Instead of sleeping for 4 hours straight, it sleeps in 10-second micro-chunks. Every 10 seconds, it checks a local SQLite table (`user_commands`) for emergency overrides.
+2. **The Telegram UI (`telegram_bot.py`)**: A totally separate background daemon. It handles all the messy networking with Telegram. When you send `/status`, it reads the SQLite database locally and replies. When you send `/stop_all`, it simply writes `COMMAND: STOP_ALL` to the database and lets the Executive Engine handle the actual trading closure.
 
-## 1. Environment & Infrastructure Setup
-
-You will need to create a Telegram Bot via the "BotFather" on Telegram. 
-
-### Variables required:
-1. `TELEGRAM_BOT_TOKEN`: The API key provided by BotFather.
-2. `TELEGRAM_CHAT_ID`: Your personal chat ID, ensuring the bot only messages you.
-
-### CI/CD Security Segregation:
-These variables will be added directly to the **GitHub Environments** (`ghost-trader` and later `production-trader`). The Bootstrap action will inject them securely into the `.env` file just like our exchange API keys.
-
-By segregating these across environments, we can even have the bot prefix its messages depending on where it lives (e.g., `[👻 GHOST]` vs `[💰 LIVE]`).
-
----
-
-## 2. Code Implementation Blueprint
-
-### `src/core/notifier.py`
-We will introduce a lightweight `TelegramNotifier` class handling the raw requests.
-
-```python
-import requests
-import asyncio
-from src.core.config import settings
-from src.core.logger import logger
-
-class TelegramNotifier:
-    def __init__(self):
-        self.token = settings.telegram_bot_token
-        self.chat_id = settings.telegram_chat_id
-        self.prefix_tag = "[👻 PAPER]" if settings.env == "production" else "[💻 DEV]"
-
-    def _send_sync(self, message: str):
-        if not self.token or not self.chat_id:
-            return
-            
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        payload = {"chat_id": self.chat_id, "text": f"{self.prefix_tag}\n{message}", "parse_mode": "HTML"}
-        
-        try:
-            # 2-second timeout so a dead Telegram API doesn't freeze our trading loop!
-            requests.post(url, json=payload, timeout=2.0)
-        except Exception as e:
-            logger.error(f"Failed to send Telegram notification: {e}")
-
-    async def send(self, message: str):
-        """Asynchronously dispatches the webhook to keep the main thread unblocked."""
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, self._send_sync, message)
+```mermaid
+graph TD
+    A[You via Telegram] -->|/stop_all| B(telegram_bot.py Daemon)
+    B -->|Writes Command| C[(SQLite DB)]
+    D(ghost_trader.py Daemon) -->|Wakes every 10s| C
+    D -->|Sees STOP_ALL| E[Executes Trade on Exchange]
+    E -->|Writes EXITED| C
+    B -->|Reads EXITED| A
 ```
 
 ---
 
-## 3. Notification Triggers (When do we alert?)
+## 1. Supported Interactive Commands
 
-We do not want alert fatigue. If the bot alerts on every tiny standard tick, you will stop reading the message. We only alert on events that require human awareness.
+The bot will respond elegantly to the following slash-commands:
 
-### A. Lifecycle Events
-- **System Boot:** Generated when `ghost_trader.py` initializes successfully. Proves the `systemd` daemon restarted properly.
-  - *Example: "🟢 System Boot: Engine Synchronized on Oracle VPS. Monitoring 13 Tier 1 Pairs."*
-- **Cron Check Failure:** Generated heavily by the GitHub `health.yml` pipeline if it detects stale data.
-
-### B. Trade Execution
-- **Entry Pulse:** Sent immediately when the Z-Score crosses the threshold.
-  - *Example: "🚀 ENTRY SIGNAL: SOL/USDT\n• Z-Score: -3.42\n• Hedge Ratio: 0.125\n• Action: LONG Spread"*
-- **Exit Pulse:** Sent immediately when Z-Score safely crosses 0 or the stop-loss is triggered.
-  - *Example: "🏁 EXIT SIGNAL: SOL/USDT\n• Duration: 14h\n• Action: CLOSE Spread"*
-
-### C. Critical Exceptions (The Watchdog)
-- **API Disconnections or Fatal Errors** caught in the global `try...catch` block.
-  - *Example: "⚠️ FATAL ERROR: Bybit Rate Limit Exceeded. Engine isolating..."*
+* `/status` — Instantly returns 1) System Uptime, 2) Total PNL, 3) Count of Open Spreads.
+* `/positions` — Returns a cleanly formatted list of every actively held spread and its *current* Unrealized PNL.
+* `/stop <PAIR>` — Forces an emergency market liquidation of a specific spread (e.g., `/stop BTC/USDT`).
+* `/stop_all` — The nuclear option. Liquidates the entire portfolio to USD instantly.
+* `/pause` - Temporarily halts the bot from taking *new* trades at the next 4H candle, but maintains current ones.
+* `/resume` - Lifts the pause.
 
 ---
 
-## 4. Rollout Plan (Next Steps for You)
+## 2. Infrastructure Setup
 
-1. Open Telegram, search for `@BotFather`, and type `/newbot`.
-2. Name it something awesome (e.g., `Lucas Quant System`).
-3. Save the HTTP API Token it gives you.
-4. Search for `@userinfobot` to get your exact `Chat ID`.
-5. We will add those parameters to `src/core/config.py`.
-6. Inject the Notifier inside the main tick loop in `scripts/ghost_trader.py`!
+### Variables required:
+1. `TELEGRAM_BOT_TOKEN`: The API key provided by BotFather.
+2. `TELEGRAM_CHAT_ID`: Your personal chat ID, ensuring the bot *ignores* commands from anyone else!
+
+### CI/CD Segregation:
+These variables will be added to the **GitHub Environments** (`ghost-trader`). The Bootstrap action injects them securely into the `.env` file. We will update the Bootstrap script to launch *two* systemd services: `ghost-trader` and `ghost-telegram`.
+
+---
+
+## 3. Code Implementation Blueprint
+
+### `src/engine/ghost/state_manager.py` (The Bridge)
+We will add a new table `user_commands` to the existing SQLite trades database.
+The `GhostStateManager` will gain methods to `write_command()` and `pop_pending_commands()`.
+
+### `scripts/telegram_bot.py` (The Interactive Daemon)
+We will introduce `python-telegram-bot` to handle the interactive loops.
+- Runs infinitely as a separate process.
+- Strictly verifies `if message.chat_id != TELEGRAM_CHAT_ID: return` to prevent malicious strangers from controlling your bot!
+
+### `scripts/ghost_trader.py` (The Executive Daemon)
+We will restructure the `await asyncio.sleep(seconds_until_next_candle)` logic:
+```python
+while True:
+    seconds_left = seconds_until_next_candle()
+    
+    # 1. Did we hit the 4H candle boundary?
+    if seconds_left <= 0:
+        await execute_tick(pairs, state)
+        
+    # 2. Did the user issue an emergency command?
+    commands = state.pop_pending_commands()
+    for cmd in commands:
+        if cmd == "STOP_ALL":
+            await execute_emergency_liquidation(state)
+            
+    # 3. Sleep in safe 10-second chunks instead of 4-hour chunks
+    await asyncio.sleep(min(10, seconds_left))
+```

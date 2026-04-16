@@ -79,6 +79,14 @@ class GhostStateManager:
                 price_a REAL NOT NULL,
                 price_b REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS user_commands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                command TEXT NOT NULL,
+                target_pair TEXT,
+                status TEXT NOT NULL DEFAULT 'PENDING'
+            );
         """)
         self.conn.commit()
 
@@ -92,6 +100,9 @@ class GhostStateManager:
             "ALTER TABLE ghost_orders ADD COLUMN exit_z REAL",
             "ALTER TABLE ghost_orders ADD COLUMN holding_bars INTEGER",
             "ALTER TABLE equity_snapshots ADD COLUMN per_pair_pnl TEXT",
+            # We don't need ALTER TABLE for user_commands because we added it directly to CREATE TABLE,
+            # but if it didn't exist in older DBs, the next line creates it:
+            "CREATE TABLE IF NOT EXISTS user_commands (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, command TEXT NOT NULL, target_pair TEXT, status TEXT NOT NULL DEFAULT 'PENDING')"
         ]
         for sql in migrations:
             try:
@@ -297,3 +308,32 @@ class GhostStateManager:
     def close(self):
         """Cleanly close the database connection."""
         self.conn.close()
+
+    # ─── Commands Interface ──────────────────────────────────────────
+
+    def write_command(self, command: str, target_pair: Optional[str] = None):
+        """Write a new pending command from the UI."""
+        now = datetime.now(timezone.utc).isoformat()
+        self.conn.execute(
+            "INSERT INTO user_commands (timestamp, command, target_pair) VALUES (?, ?, ?)",
+            (now, command, target_pair)
+        )
+        self.conn.commit()
+
+    def pop_pending_commands(self) -> List[Dict[str, Any]]:
+        """Fetch all pending commands and mark them as executed."""
+        rows = self.conn.execute(
+            "SELECT * FROM user_commands WHERE status='PENDING' ORDER BY timestamp"
+        ).fetchall()
+        
+        commands = [dict(r) for r in rows]
+        if commands:
+            ids = tuple(c['id'] for c in commands)
+            placeholders = ",".join("?" for _ in ids)
+            self.conn.execute(
+                f"UPDATE user_commands SET status='EXECUTED' WHERE id IN ({placeholders})",
+                ids
+            )
+            self.conn.commit()
+            
+        return commands

@@ -32,6 +32,8 @@ class Settings(BaseSettings):
 
     # Discord/Telegram Webhooks natively here
     webhook_url: Optional[str] = None
+    telegram_bot_token: Optional[str] = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: Optional[str] = Field(default=None, alias="TELEGRAM_CHAT_ID")
 
 
 # Instantiated globally for injection elsewhere
