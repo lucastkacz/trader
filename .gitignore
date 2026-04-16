@@ -7,3 +7,4 @@ __pycache__/
 src2logs/
 .env
 logs/
+.ruff_cache
