@@ -443,17 +443,28 @@ VPS_USER                 ← opc (Oracle Linux) or ubuntu
 
 Nowhere close to limits.
 
-### Secrets Management
+### Secrets & Environments Management
 
-GitHub Secrets are encrypted and never exposed in logs. They're injected as environment variables at runtime:
+To prevent variable collisions between Epoch 3 and Epoch 4 (e.g., trying to name things `GHOST_VPS_HOST` vs `PROD_VPS_HOST`), we utilize **GitHub Environments**.
+
+Instead of storing server-specific keys as generic Repository Secrets, we compartmentalize them into specific Environments:
+
+1. **`ghost-trader` Environment:** Contains `VPS_HOST`, `VPS_USER`, and `VPS_SSH_KEY` for the paper-trading Oracle VPS.
+2. **`production-trader` Environment:** Will contain the exact same variable names, but populated with the IP and Keys for the Epoch 4 real-money server.
+
+Our GitHub Actions workflows (`deploy.yml` and `health.yml`) include the `environment: ghost-trader` parameter, dynamically routing to the right variables without explicitly prefixing secret names in our code:
 
 ```yaml
-env:
-  BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
-  BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ghost-trader
+    steps:
+      - run: echo "${{ secrets.VPS_HOST }}" # Automatically points to the Ghost IP!
 ```
 
-The `.env` file is never committed to git. In CI, secrets come from GitHub. On the VPS, they come from a `.env` file created during initial setup.
+> [!IMPORTANT]
+> The `BYBIT_API_KEY` and `BYBIT_API_SECRET` remain as **Repository Secrets** since they are safely shared across integration pipelines. For production (Epoch 4), we can utilize Environment-level secrets to securely isolate the real-money sub-account API keys.
 
 ---
 
