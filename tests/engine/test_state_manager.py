@@ -254,3 +254,22 @@ def test_get_all_orders(state):
     statuses = {o["status"] for o in all_orders}
     assert "OPEN" in statuses
     assert "CLOSED" in statuses
+
+
+def test_user_commands_lifecycle(state):
+    """Writing a command should log it as PENDING. Popping retrieves it and marks it EXECUTED."""
+    # Write some commands
+    state.write_command("/stop_all")
+    state.write_command("/stop", target_pair="BTC/USDT")
+    
+    # 1. Verify retrieval logic
+    commands = state.pop_pending_commands()
+    assert len(commands) == 2
+    assert commands[0]["command"] == "/stop_all"
+    assert commands[0]["target_pair"] is None
+    assert commands[1]["command"] == "/stop"
+    assert commands[1]["target_pair"] == "BTC/USDT"
+    
+    # 2. Verify state manipulation logic: A second pop should yield nothing!
+    commands_again = state.pop_pending_commands()
+    assert len(commands_again) == 0

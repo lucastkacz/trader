@@ -16,7 +16,7 @@ import asyncio
 import argparse
 import pandas as pd
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from src.core.logger import logger
 from src.core.config import settings
