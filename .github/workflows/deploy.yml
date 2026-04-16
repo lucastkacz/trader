@@ -12,6 +12,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ghost-trader
     timeout-minutes: 10
 
     steps:
@@ -38,12 +39,12 @@ jobs:
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.GHOST_VPS_SSH_KEY }}" > ~/.ssh/vps_key
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
           cat >> ~/.ssh/config << EOF
           Host oracle-vps
-            HostName ${{ secrets.GHOST_VPS_HOST }}
-            User ${{ secrets.GHOST_VPS_USER }}
+            HostName ${{ secrets.VPS_HOST }}
+            User ${{ secrets.VPS_USER }}
             IdentityFile ~/.ssh/vps_key
             StrictHostKeyChecking no
           EOF
