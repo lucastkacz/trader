@@ -60,35 +60,32 @@ jobs:
             mkdir -p data/ghost logs
             
             # Securely inject GitHub Secrets into the server's .env file
-            cat > .env << 'ENV_EOF'
-GHOST_EXCHANGE=bybit
-ENV=production
-BYBIT_READONLY_API_KEY=${{ secrets.BYBIT_READONLY_API_KEY }}
-BYBIT_READONLY_API_SECRET=${{ secrets.BYBIT_READONLY_API_SECRET }}
-ENV_EOF
+            echo "GHOST_EXCHANGE=bybit" > .env
+            echo "ENV=production" >> .env
+            echo "BYBIT_READONLY_API_KEY=${{ secrets.BYBIT_READONLY_API_KEY }}" >> .env
+            echo "BYBIT_READONLY_API_SECRET=${{ secrets.BYBIT_READONLY_API_SECRET }}" >> .env
             chmod 600 .env
 
             echo "=== 5. SystemD Service Config ==="
-            sudo tee /etc/systemd/system/ghost-trader.service << SERVICE_EOF
-            [Unit]
-            Description=Stat-Arb Trading Engine
-            After=network-online.target
-            Wants=network-online.target
-
-            [Service]
-            Type=simple
-            User=${USER}
-            WorkingDirectory=/home/${USER}/quant
-            Environment="PYTHONPATH=/home/${USER}/quant"
-            ExecStart=/home/${USER}/quant/.venv/bin/python -m scripts.ghost_trader
-            Restart=on-failure
-            RestartSec=30
-            StandardOutput=append:/home/${USER}/quant/logs/ghost_stdout.log
-            StandardError=append:/home/${USER}/quant/logs/ghost_stderr.log
-
-            [Install]
-            WantedBy=multi-user.target
-            SERVICE_EOF
+            sudo rm -f /etc/systemd/system/ghost-trader.service
+            echo "[Unit]" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "Description=Stat-Arb Trading Engine" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "After=network-online.target" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "Wants=network-online.target" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "[Service]" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "Type=simple" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "User=ubuntu" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "WorkingDirectory=/home/ubuntu/quant" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "Environment=\"PYTHONPATH=/home/ubuntu/quant\"" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "ExecStart=/home/ubuntu/quant/.venv/bin/python -m scripts.ghost_trader" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "Restart=on-failure" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "RestartSec=30" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "StandardOutput=append:/home/ubuntu/quant/logs/ghost_stdout.log" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "StandardError=append:/home/ubuntu/quant/logs/ghost_stderr.log" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "[Install]" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
 
             sudo systemctl daemon-reload
             sudo systemctl enable ghost-trader
