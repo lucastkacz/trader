@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     binance_api_secret: Optional[str] = None
 
     # API Keys (Bybit — used for live ghost trading in Epoch 3+)
-    bybit_api_key: Optional[str] = None
-    bybit_api_secret: Optional[str] = None
+    bybit_readonly_api_key: Optional[str] = None
+    bybit_readonly_api_secret: Optional[str] = None
 
     # Ghost Trader (Epoch 3)
     ghost_exchange: str = Field(default="bybit", description="Exchange for live price feeds: 'bybit' or 'binance'")

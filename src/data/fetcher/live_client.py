@@ -26,8 +26,8 @@ def _get_exchange() -> ccxt.Exchange:
         return ccxt.bybit({
             "enableRateLimit": True,
             "options": {"defaultType": "linear"},  # USDT perpetuals
-            "apiKey": settings.bybit_api_key,
-            "secret": settings.bybit_api_secret,
+            "apiKey": settings.bybit_readonly_api_key,
+            "secret": settings.bybit_readonly_api_secret,
         })
     elif exchange_id == "binance":
         return ccxt.binance({

@@ -22,6 +22,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    environment: ghost-trader
     # 2 ticks × 4h + buffer = ~10h. GitHub free tier allows up to 6h per job.
     # For >1 tick, run locally or on a self-hosted runner.
     # Single tick validation (--ticks 1) fits within the 6h limit.
@@ -55,8 +56,8 @@ jobs:
         run: python -m scripts.ghost_trader --ticks ${{ github.event.inputs.ticks }}
         env:
           PYTHONPATH: .
-          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
-          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
+          BYBIT_READONLY_API_KEY: ${{ secrets.BYBIT_READONLY_API_KEY }}
+          BYBIT_READONLY_API_SECRET: ${{ secrets.BYBIT_READONLY_API_SECRET }}
           GHOST_EXCHANGE: bybit
 
       - name: Generate validation report
