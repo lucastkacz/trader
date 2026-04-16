@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────────
+# Server Bootstrap (One-Time Execution)
+# Use this action to provision a brand-new bare Linux VPS.
+# It installs Python, Git, SQLite, clones the repository,
+# dynamically injects GitHub Secrets into the .env file,
+# and configures the systemd service.
+# ─────────────────────────────────────────────────────────────
+name: Bootstrap Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment (e.g., ghost-trader, production-trader)'
+        required: true
+        type: environment
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          cat >> ~/.ssh/config << EOF
+          Host target-vps
+            HostName ${{ vars.VPS_HOST }}
+            User ${{ vars.VPS_USER }}
+            IdentityFile ~/.ssh/vps_key
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Provision Server
+        run: |
+          ssh target-vps << 'SETUP'
+            echo "=== 1. System Updates & Dependencies ==="
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv git sqlite3
+
+            echo "=== 2. Cloning Repository ==="
+            if [ ! -d "$HOME/quant" ]; then
+              git clone https://github.com/lucastkacz/trader.git ~/quant
+            fi
+            
+            cd ~/quant
+            git fetch origin
+            git reset --hard origin/main
+
+            echo "=== 3. Python Virtual Environment ==="
+            python3 -m venv .venv
+            .venv/bin/pip install --upgrade pip
+            .venv/bin/pip install -r requirements.txt
+
+            echo "=== 4. Directory & Environment Config ==="
+            mkdir -p data/ghost logs
+            
+            # Securely inject GitHub Secrets into the server's .env file
+            cat > .env << 'ENV_EOF'
+GHOST_EXCHANGE=bybit
+ENV=production
+BYBIT_READONLY_API_KEY=${{ secrets.BYBIT_READONLY_API_KEY }}
+BYBIT_READONLY_API_SECRET=${{ secrets.BYBIT_READONLY_API_SECRET }}
+ENV_EOF
+            chmod 600 .env
+
+            echo "=== 5. SystemD Service Config ==="
+            sudo tee /etc/systemd/system/ghost-trader.service << SERVICE_EOF
+            [Unit]
+            Description=Stat-Arb Trading Engine
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            Type=simple
+            User=${USER}
+            WorkingDirectory=/home/${USER}/quant
+            Environment="PYTHONPATH=/home/${USER}/quant"
+            ExecStart=/home/${USER}/quant/.venv/bin/python -m scripts.ghost_trader
+            Restart=on-failure
+            RestartSec=30
+            StandardOutput=append:/home/${USER}/quant/logs/ghost_stdout.log
+            StandardError=append:/home/${USER}/quant/logs/ghost_stderr.log
+
+            [Install]
+            WantedBy=multi-user.target
+            SERVICE_EOF
+
+            sudo systemctl daemon-reload
+            sudo systemctl enable ghost-trader
+            
+            echo "=== BOOTSTRAP COMPLETE ==="
+          SETUP
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/vps_key
