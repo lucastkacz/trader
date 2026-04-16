@@ -43,8 +43,8 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           cat >> ~/.ssh/config << EOF
           Host oracle-vps
-            HostName ${{ secrets.VPS_HOST }}
-            User ${{ secrets.VPS_USER }}
+            HostName ${{ vars.VPS_HOST }}
+            User ${{ vars.VPS_USER }}
             IdentityFile ~/.ssh/vps_key
             StrictHostKeyChecking no
           EOF
