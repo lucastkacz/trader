@@ -128,7 +128,7 @@ async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/positions - Detailed layout of active pairs\n"
         "/pause - Skip new trades (Holds existing)\n"
         "/resume - Revert pause mechanism\n"
-        "/stop <PAIR> - Closes one pair immediately\n"
+        "/stop [PAIR] - Closes one pair immediately\n"
         "/stop_all - Closes EVERYTHING immediately"
     )
     await update.message.reply_text(msg, parse_mode="HTML")
