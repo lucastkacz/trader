@@ -80,3 +80,31 @@ while True:
     # 3. Sleep in safe 10-second chunks instead of 4-hour chunks
     await asyncio.sleep(min(10, seconds_left))
 ```
+
+---
+
+## 4. Multi-Environment Bot Isolation Strategy
+
+To ensure zero-crossover risk between testing environments and live capital, the architecture strictly mandates **Environment Isolation**. Under no circumstances should a single Telegram Bot interact with multiple trading environments. 
+
+The strategy utilizes a dedicated Telegram Bot token per environment, ensuring absolute safety:
+
+### 🌱 DEV: Local Turbo Bot (`@Lucas_TurboBot`)
+- **Environment:** Local Mac (Developer Machine).
+- **Execution:** `python -m scripts.ghost_trader --turbo`
+- **Data Source:** `data/ghost/turbo_trades.db` (1-Minute Candles).
+- **Purpose:** Fast prototyping, testing code refactors, and confirming system stability without affecting production databases. Any `/stop_all` command sent here never impacts the VPS.
+
+### 👻 UAT: VPS Ghost Bot (`@Lucas_GhostBot`)
+- **Environment:** Oracle Cloud VPS (Quarantined Sandbox).
+- **Execution:** Managed by `systemd` daemon `ghost-trader.service`
+- **Data Source:** `data/ghost/trades.db` (4-Hour Candles).
+- **Purpose:** Epoch 3 Paper-Trading validation. The system simulates exact capital fluctuations over a 1-month forward test proving strategy alpha. 
+
+### 💰 PROD: VPS Capital Bot (`@Lucas_CapitalBot`)
+- **Environment:** Secure Oracle Cloud VPS.
+- **Execution:** Live Bybit Trading Engine (Epoch 4).
+- **Data Source:** Live Exchange API + Real Capital SQLite logs.
+- **Purpose:** Real-money execution. This bot holds exclusive permissions to trigger physical `/stop_all` liquidate market orders across Live Bybit API connections.
+
+Each environment is configured by passing the specific bot's `TELEGRAM_BOT_TOKEN` into the local `.env` or GitHub Secrets variables corresponding to the deployment layer.
