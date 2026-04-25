@@ -37,6 +37,8 @@ Do not reinvent the wheel. The engine relies exclusively on these battle-tested,
 5. **State Auditing:** `loguru` (JSON Lines Dual-Sink architecture).
 6. **SQLite Degradation (Append-Only Log):** `active_trades.db` has immediately lost its transactional status and is relegated passively. Using the local DB as a synchronously active manager promotes "Database is Locked" fatalities and thread interference (Main Thread vs Auditor Thread). State routing will happen inside a **Shared Volatile Dictionary in RAM**. SQLite is strictly a silent layer of historical, append-only logging required for retroactive AI Audit joins.
 7. **`asyncio` Abstraction Restriction:** Prioritizing *Solopreneur* technical sanity, the use of abstractly complex concurrent paradigms is strictly restricted. Broker transactions must be explicitly routed in a "Sequential Iterative Single-Thread" format. The `asyncio.gather()` method is permitted ONLY when capturing massive static reads against the Binance API to evade REST congestion; when opening or chasing stat-arb legs, sequential execution guarantees traceability.
+8. **Workflow Data Orchestrator:** `prefect` (Native Python E2E DAG execution, handling state dependencies and Dirty Runs seamlessly).
+9. **Configuration Engine:** `pyyaml` (External strategy blueprint and hyperparameter ingestion to decouple hardcoded script execution flags).
 
 ---
 
@@ -45,3 +47,11 @@ To guarantee the system is hyper-scalable, the modules are strictly isolated.
 * **The Brain (`src/screener/`, `src/stats/`):** Purely mathematical. These modules must NEVER import an API network library. They accept raw matrices or generic DataFrames, crunch numbers, and return boolean flags or vectors.
 * **The Muscle (`src/data/`):** The only system allowed to make I/O internet connections via `ccxt`. It is completely oblivious to trading strategy physics. It only fetches raw candles and saves them to local Parquet nodes.
 * **The Spokesperson (`src/core/logger.py`):** The sole entity allowed to write out to the console or disk. The usage of the base `print()` function is globally and permanently banned.
+
+---
+
+## 6. The Agnostic Architecture Mandate
+The quantitative framework must be completely oblivious to specific configurations and parameters. The engine relies on the user's YAML files as the **Absolute Single Source of Truth**.
+* **Strict Dictionary Lookups (The "No Default" Rule):** The usage of `.get("key", default_value)` is permanently banned across the entire codebase. Configurations must be strictly parsed via `cfg["key"]`. If the user omits a vital execution parameter in their YAML, the bot **MUST explicitly crash on boot** with a `KeyError`. Silent fallbacks cause catastrophic logical errors in live execution.
+* **Timeframe Oblivion:** The codebase is forbidden from making assumptions about timeframes (e.g., `if timeframe == '3h'` or `BARS_PER_DAY = 6`). All timeframe-related operations must mathematically deduce the number of bars dynamically utilizing centralized agnostic utility modules (e.g., parsing `'15m'` or `'4h'` strictly). 
+* **Eradication of 'Days':** The core live trading loop and mathematics operate on the purest raw metric: **"Bars"**. All execution loops must refer to `lookback_bars` rather than `lookback_days` to prevent calculation mismatch across disparate timeframe environments.

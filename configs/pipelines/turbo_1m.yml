@@ -1,0 +1,9 @@
+pipeline:
+  name: "Turbo 1M Sandbox"
+  timeframe: "1m"
+  historical_days: 1
+  max_symbols: 100
+  execution:
+    max_ticks: null
+    heartbeat_seconds: 60
+    sync_to_boundary: false

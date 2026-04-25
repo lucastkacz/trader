@@ -15,3 +15,7 @@ statsmodels==0.14.4
 # Telegram UI
 python-telegram-bot>=21.0
 requests>=2.31.0
+
+# Workflow & Config Automation
+prefect>=3.0.0
+PyYAML>=6.0.3

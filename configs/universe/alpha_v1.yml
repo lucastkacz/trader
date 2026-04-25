@@ -1,0 +1,14 @@
+universe:
+  name: "Top 100 Liquid Ex-MegaCaps"
+  filters:
+    exclude_top_n_mega_caps: 5
+    volume_lookback_bars: 1440
+    min_volume_liquidity: 20000000
+    max_volume_liquidity: 2000000000
+    min_data_maturity_bars: 1080
+  clustering:
+    returns_clip_percentile: 0.01
+    louvain_correlation_threshold: 0.5
+  cointegration:
+    p_value_threshold: 0.05
+    max_half_life_bars: 84

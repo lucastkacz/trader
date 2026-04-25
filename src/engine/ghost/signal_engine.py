@@ -15,8 +15,6 @@ from typing import Optional
 
 from src.core.logger import logger, LogContext
 
-BARS_PER_DAY = 6  # 4H candles
-
 
 @dataclass
 class SignalResult:
@@ -35,8 +33,8 @@ def evaluate_signal(
     df_b: pd.DataFrame,
     entry_z: float,
     exit_z: float,
-    lookback_days: int,
-    vol_lookback_days: int = 14,
+    lookback_bars: int,
+    vol_lookback_bars: int,
     current_side: Optional[str] = None,
 ) -> SignalResult:
     """
@@ -56,9 +54,6 @@ def evaluate_signal(
     -------
     SignalResult with the computed signal, Z-score, and weights.
     """
-    lookback_bars = lookback_days * BARS_PER_DAY
-    vol_bars = vol_lookback_days * BARS_PER_DAY
-
     # Align on timestamps via inner join
     merged = pd.merge(
         df_a[["timestamp", "close"]].rename(columns={"close": "A_close"}),
@@ -92,8 +87,8 @@ def evaluate_signal(
     ret_a = np.log(merged["A_close"] / merged["A_close"].shift(1))
     ret_b = np.log(merged["B_close"] / merged["B_close"].shift(1))
 
-    vol_a = ret_a.rolling(window=vol_bars).std().iloc[-1]
-    vol_b = ret_b.rolling(window=vol_bars).std().iloc[-1]
+    vol_a = ret_a.rolling(window=vol_lookback_bars).std().iloc[-1]
+    vol_b = ret_b.rolling(window=vol_lookback_bars).std().iloc[-1]
 
     if vol_a > 0 and vol_b > 0:
         inv_a = 1.0 / vol_a

@@ -1,0 +1,9 @@
+backtest:
+  name: "Vector Stress Engine"
+  grid_search:
+    entry_z_scores: [1.5, 2.0, 2.5]
+    lookback_bars: [60, 120, 180] 
+  friction:
+    maker_fee: 0.0002
+    taker_fee: 0.0006
+    annual_fund_rate: 0.10

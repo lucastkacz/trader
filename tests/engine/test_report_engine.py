@@ -66,7 +66,7 @@ def _inject_trade(state, pair_label, side, entry_a, entry_b, exit_a, exit_b,
     state.conn.execute(
         """INSERT INTO ghost_orders
            (pair_label, asset_x, asset_y, side, entry_price_a, entry_price_b,
-            weight_a, weight_b, entry_z, lookback_days, timestamp_open,
+            weight_a, weight_b, entry_z, lookback_bars, timestamp_open,
             timestamp_close, exit_price_a, exit_price_b, pnl_pct, status,
             exit_z, holding_bars)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CLOSED', ?, ?)""",

@@ -28,7 +28,7 @@ def test_open_and_retrieve_position(state):
         weight_a=0.6,
         weight_b=0.4,
         entry_z=-2.5,
-        lookback_days=14,
+        lookback_bars=14,
     )
 
     assert row_id == 1
@@ -51,7 +51,7 @@ def test_close_position_calculates_pnl(state):
         weight_a=0.5,
         weight_b=0.5,
         entry_z=-2.0,
-        lookback_days=21,
+        lookback_bars=21,
     )
 
     # A goes up 10%, B stays flat → net PnL = 0.5 * 0.10 - 0.5 * 0.0 = +5%
@@ -80,7 +80,7 @@ def test_close_short_spread_pnl(state):
         weight_a=0.5,
         weight_b=0.5,
         entry_z=2.0,
-        lookback_days=7,
+        lookback_bars=7,
     )
 
     # A goes down 10% (good for short A), B goes up 10% (good for long B)
@@ -140,7 +140,7 @@ def test_close_position_with_exit_z(state):
         weight_a=0.5,
         weight_b=0.5,
         entry_z=-2.5,
-        lookback_days=14,
+        lookback_bars=14,
     )
 
     pnl = state.close_position(
@@ -168,7 +168,7 @@ def test_close_position_holding_bars(state):
         weight_a=0.5,
         weight_b=0.5,
         entry_z=-2.0,
-        lookback_days=14,
+        lookback_bars=14,
     )
 
     pnl = state.close_position("X/USDT|Y/USDT", exit_price_a=110.0, exit_price_b=50.0)

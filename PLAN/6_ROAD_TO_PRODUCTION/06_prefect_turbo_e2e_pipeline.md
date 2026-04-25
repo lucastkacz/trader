@@ -37,7 +37,29 @@ graph TD
     E --> F[Prefect Task 4: launch_ghost_bot]
 ```
 
-## 4. Strict Environment Directory Scopes
+## 4. Strategy YAML Blueprints
+
+Hardcoding parameters directly into terminal commands introduces execution failure risk. The orchestration engine now dynamically ingests parameters through decoupled YAML configuration files residing securely in the `/strategies` directory.
+
+### Run an End-To-End Master Sync (The Nuclear Option)
+If you want to validate the strategy purely on the current last 24 Hours of Data from Scratch:
+```bash
+python -m scripts.run_turbo_workflow --config strategies/turbo_1m_sandbox.yml
+```
+*1. Parses the YAML to extract timeframe (1m) and historical horizons (1 day).*
+*2. Mines 1 day of 1m Bybit data.*
+*3. Runs Cointegration Mathematics.*
+*4. Verifies Volatility Parity.*
+*5. Spins up Ghost Trader live against the custom data.*
+
+### Run a Local Engine "Dirty Start"
+If you already fetched your custom parquet data and successfully built your Sandbox cointegration files, but simply want to relaunch the Execution Loop to test Code Refactors instantly:
+```bash
+python -m scripts.run_turbo_workflow --config strategies/turbo_1m_sandbox.yml --skip-fetch
+```
+*Prefect beautifully bypasses the API wait natively using `--skip-fetch`, and drops seamlessly right into taxonomic calculations or direct execution bridging.*
+
+## 5. Strict Environment Directory Scopes
 
 With multi-environment capabilities introduced via Telegram, Data Pollution locally needs immediate quarantine. Any testing artifacts must never be tracked by GitHub or crash the Cloud execution layer.
 

@@ -45,7 +45,7 @@ class GhostStateManager:
                 weight_a REAL NOT NULL,
                 weight_b REAL NOT NULL,
                 entry_z REAL NOT NULL,
-                lookback_days INTEGER NOT NULL,
+                lookback_bars INTEGER NOT NULL,
                 timestamp_open TEXT NOT NULL,
                 timestamp_close TEXT,
                 exit_price_a REAL,
@@ -123,17 +123,17 @@ class GhostStateManager:
         weight_a: float,
         weight_b: float,
         entry_z: float,
-        lookback_days: int,
+        lookback_bars: int,
     ) -> int:
         """Insert a new ghost order. Returns the row ID."""
         now = datetime.now(timezone.utc).isoformat()
         cursor = self.conn.execute(
             """INSERT INTO ghost_orders 
                (pair_label, asset_x, asset_y, side, entry_price_a, entry_price_b,
-                weight_a, weight_b, entry_z, lookback_days, timestamp_open, status)
+                weight_a, weight_b, entry_z, lookback_bars, timestamp_open, status)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')""",
             (pair_label, asset_x, asset_y, side, entry_price_a, entry_price_b,
-             weight_a, weight_b, entry_z, lookback_days, now),
+             weight_a, weight_b, entry_z, lookback_bars, now),
         )
         self.conn.commit()
 
