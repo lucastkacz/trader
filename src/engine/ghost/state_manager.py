@@ -11,7 +11,6 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 
 from src.core.logger import logger, LogContext
-from src.core.config import settings
 
 
 class GhostStateManager:
@@ -20,8 +19,8 @@ class GhostStateManager:
     WAL mode ensures no corruption on process kill mid-write.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path or settings.ghost_db_path
+    def __init__(self, db_path: str):
+        self.db_path = db_path
         db_dir = os.path.dirname(self.db_path)
         if db_dir:  # Skip for in-memory SQLite (":memory:")
             os.makedirs(db_dir, exist_ok=True)
@@ -94,7 +93,7 @@ class GhostStateManager:
         """
         Backward-compatible schema migration for existing databases.
         ALTER TABLE ADD COLUMN is idempotent — we catch 'duplicate column' errors.
-        This ensures pre-reporting DBs (turbo, production) upgrade automatically.
+        This ensures pre-reporting DBs (dev, production) upgrade automatically.
         """
         migrations = [
             "ALTER TABLE ghost_orders ADD COLUMN exit_z REAL",

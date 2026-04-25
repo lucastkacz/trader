@@ -1,16 +1,15 @@
 """
-Epoch 3: Ghost Trader Report CLI
+Epoch 3: Paper Trader Report CLI
 ==================================
-Comprehensive reporting interface for the ghost trading system.
+Comprehensive reporting interface for the paper trading system.
 Calls report_engine.py for computation → renders to terminal, JSON, or Markdown.
 
 Usage:
-    PYTHONPATH=. python -m scripts.ghost_report                         # Quick summary
-    PYTHONPATH=. python -m scripts.ghost_report --detailed              # Full trade log + signals
-    PYTHONPATH=. python -m scripts.ghost_report --pair "MET/USDT|LTC/USDT"  # Single pair deep-dive
-    PYTHONPATH=. python -m scripts.ghost_report --json                  # JSON to stdout
-    PYTHONPATH=. python -m scripts.ghost_report --export                # Save JSON + Markdown to files
-    PYTHONPATH=. python -m scripts.ghost_report --turbo                 # Use turbo DB
+    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0
+    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/uat/trades_4h.db --min-sharpe 1.0 --detailed
+    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --pair "MET/USDT|LTC/USDT"
+    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --json
+    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --export
 """
 
 import os
@@ -236,7 +235,7 @@ def export_markdown(report: GhostReport) -> str:
     path = f"data/ghost/reports/weekly_report_week{week_num:02d}.md"
 
     lines = []
-    lines.append(f"# Ghost Trader Report — Week {week_num}")
+    lines.append(f"# Paper Trader Report — Week {week_num}")
     lines.append(f"*Generated: {report.report_timestamp[:19]} UTC*\n")
 
     # Executive Summary
@@ -306,19 +305,19 @@ def export_markdown(report: GhostReport) -> str:
 # ─── Main ────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Epoch 3: Ghost Trader Report")
+    parser = argparse.ArgumentParser(description="Paper Trader Report")
+    parser.add_argument("--db-path", type=str, required=True, help="Path to the SQLite database (e.g. data/dev/trades_1m.db)")
+    parser.add_argument("--min-sharpe", type=float, required=True, help="Minimum Sharpe ratio for Tier 1 filtering")
     parser.add_argument("--detailed", action="store_true", help="Show full trade log and signal quality")
     parser.add_argument("--pair", type=str, default=None, help='Single pair deep-dive (e.g. "MET/USDT|LTC/USDT")')
     parser.add_argument("--json", action="store_true", help="Output full report as JSON to stdout")
     parser.add_argument("--export", action="store_true", help="Save JSON + Markdown reports to data/ghost/reports/")
-    parser.add_argument("--turbo", action="store_true", help="Read from turbo database instead of production")
     args = parser.parse_args()
 
-    db_path = "data/ghost/trades_turbo.db" if args.turbo else None
-    state = GhostStateManager(db_path=db_path)
+    state = GhostStateManager(db_path=args.db_path)
 
     try:
-        report = generate_report(state)
+        report = generate_report(state, min_sharpe=args.min_sharpe)
 
         if args.json:
             print(json.dumps(report.to_dict(), indent=2, default=str))

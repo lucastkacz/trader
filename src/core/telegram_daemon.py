@@ -45,7 +45,7 @@ async def bot_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = (
         f"📊 <b>GHOST TRADER STATUS</b>\n"
-        f"Mode: {settings.env.upper()}\n\n"
+        f"Mode: {settings.log_level.upper()}\n\n"
         f"<b>Portfolio:</b>\n{eq_str}\n\n"
         f"<b>Open Spreads:</b> {len(open_pos)}"
     )

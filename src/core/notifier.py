@@ -11,7 +11,7 @@ class TelegramNotifier:
     def __init__(self):
         self.token = settings.telegram_bot_token
         self.chat_id = settings.telegram_chat_id
-        self.prefix_tag = "[👻 PAPER]" if settings.env != "production" else "[💰 LIVE]"
+        self.prefix_tag = "[👻 PAPER]" if settings.log_level != "info" else "[💰 LIVE]"
 
     def _send_sync(self, message: str):
         """Synchronous HTTP dispatch with strict strict timeouts to prevent freezing."""

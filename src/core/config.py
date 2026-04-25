@@ -1,12 +1,14 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
+
 class Settings(BaseSettings):
     """
-    Core Configuration Settings.
-    Secret credentials are read strictly from the .env file.
-    Hyperparameters can safely reside here.
+    Core Secrets Configuration.
+    Read strictly from the .env file via pydantic-settings.
+    Contains ONLY credentials and behavior toggles — zero hyperparameters.
+    Hyperparameters belong exclusively in configs/pipelines/*.yml.
     """
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -14,24 +16,26 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    # Base settings
-    env: str = Field(default="production", description="Environment: dev, test, production")
+    # Controls Loguru dual-sink behavior (see PLAN/10_environment_and_secrets_strategy.md)
+    # debug  = verbose console + JSON sink (local development)
+    # info   = quiet console + JSON sink (VPS deployment)
+    # silent = JSON sink only, no console (pytest Airplane Mode)
+    log_level: Literal["debug", "info", "silent"] = Field(
+        default="info",
+        description="Logger verbosity mode: debug | info | silent"
+    )
 
-    # API Keys (Binance — used for historical data mining in Epoch 1)
-    binance_api_key: Optional[str] = None
-    binance_api_secret: Optional[str] = None
+    # Exchange credentials — exchange-agnostic slots.
+    # The exchange adapter (bybit, kucoin, etc.) is declared in pipeline YAML.
+    # Read-Only key: used by DEV (local) and UAT (VPS paper trading).
+    exchange_readonly_api_key: Optional[str] = None
+    exchange_readonly_api_secret: Optional[str] = None
 
-    # API Keys (Bybit — used for live ghost trading in Epoch 3+)
-    bybit_readonly_api_key: Optional[str] = None
-    bybit_readonly_api_secret: Optional[str] = None
+    # Live-Trading key: used by PROD only. Must be empty in all other environments.
+    exchange_live_api_key: Optional[str] = None
+    exchange_live_api_secret: Optional[str] = None
 
-    # Ghost Trader (Epoch 3)
-    ghost_exchange: str = Field(default="bybit", description="Exchange for live price feeds: 'bybit' or 'binance'")
-    ghost_db_path: str = Field(default="data/ghost/trades.db", description="SQLite path for ghost trading state")
-    ghost_min_sharpe: float = Field(default=1.0, description="Minimum Sharpe ratio cutoff for Tier 1 pairs")
-
-    # Discord/Telegram Webhooks natively here
-    webhook_url: Optional[str] = None
+    # Telegram notification credentials
     telegram_bot_token: Optional[str] = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: Optional[str] = Field(default=None, alias="TELEGRAM_CHAT_ID")
 
