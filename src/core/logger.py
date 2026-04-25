@@ -5,6 +5,7 @@ from loguru import logger as _logger
 
 from src.core.config import settings
 
+
 class LogContext(BaseModel):
     """
     Strict validation model to guarantee that the JSONL logs
@@ -19,24 +20,31 @@ class LogContext(BaseModel):
     signal: Optional[str] = None
     # Add other rigidly allowed telemetry fields here over time
 
+
 # Expose a clean configured logger module-wide
 logger = _logger
 
-def configure_logger(log_path: str = "logs/engine.jsonl", env: str = settings.env) -> None:
+
+def configure_logger(log_path: str = "logs/engine.jsonl", log_level: str = settings.log_level) -> None:
     """
     Mounts the Dual-Sink (Console + JSONLines) architected in PLAN 01_dual_sink_logging.
     Must be called exactly once during boot or testing.
+
+    log_level values:
+        debug  — verbose console + JSON sink (local development)
+        info   — quiet console + JSON sink (VPS deployment)
+        silent — JSON sink only, no console (pytest Airplane Mode)
     """
     # Clean default handlers
     logger.remove()
 
-    if env != "test":
-        # Sink A: Console (For local debugging)
+    if log_level != "silent":
+        # Sink A: Console (For local debugging and VPS monitoring)
         logger.add(
             sys.stdout,
             colorize=True,
             format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
-            level="DEBUG" if env == "dev" else "INFO"
+            level="DEBUG" if log_level == "debug" else "INFO"
         )
 
     # Sink B: JSON Lines output (For AI Parsers and auditing)
@@ -49,11 +57,11 @@ def configure_logger(log_path: str = "logs/engine.jsonl", env: str = settings.en
         retention="30 days",# Retention policy
         enqueue=True,       # Background thread (Safety wrapper)
         backtrace=True,     # Show standard error path
-        diagnose=False,      # (OOM SHIELD) Never dump full variable context into RAM!
+        diagnose=False,     # (OOM SHIELD) Never dump full variable context into RAM!
         level="DEBUG"
     )
 
-# Optionally auto-configure the logger safely upon loading the module, 
-# although manual initialization is better for tests.
-if settings.env != "test":
+
+# Auto-configure on module load — skipped only in silent (pytest) mode.
+if settings.log_level != "silent":
     configure_logger()

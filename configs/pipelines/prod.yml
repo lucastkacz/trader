@@ -1,0 +1,12 @@
+pipeline:
+  name: "PROD 4H Live Trading"
+  timeframe: "4h"
+  historical_days: 365
+  max_symbols: 100
+  execution:
+    exchange: "bybit"
+    db_path: "data/prod/trades_4h.db"
+    min_sharpe: 1.0
+    max_ticks: null
+    heartbeat_seconds: 14400
+    sync_to_boundary: true

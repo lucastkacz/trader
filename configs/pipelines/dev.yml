@@ -1,9 +1,12 @@
 pipeline:
-  name: "Turbo 1M Sandbox"
+  name: "DEV 1M Sandbox"
   timeframe: "1m"
   historical_days: 1
   max_symbols: 100
   execution:
+    exchange: "bybit"
+    db_path: "data/dev/trades_1m.db"
+    min_sharpe: 1.0
     max_ticks: null
     heartbeat_seconds: 60
     sync_to_boundary: false

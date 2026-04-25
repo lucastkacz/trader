@@ -562,6 +562,7 @@ def _load_backtest_lookup(surviving_pairs_path: str) -> Dict[str, Dict[str, Any]
 
 def generate_report(
     state: "GhostStateManager",
+    min_sharpe: float,
     surviving_pairs_path: str = "data/universes/surviving_pairs.json",
 ) -> GhostReport:
     """
@@ -619,10 +620,9 @@ def generate_report(
     risk = _compute_risk(open_positions, closed_trades, equity_curve)
 
     # Backtest averages (Tier 1 only)
-    from src.core.config import settings as cfg
     tier1_bt = [
         v for v in backtest_lookup.values()
-        if v["Performance"]["sharpe_ratio"] >= cfg.ghost_min_sharpe
+        if v["Performance"]["sharpe_ratio"] >= min_sharpe
     ]
     bt_avg_sharpe = (
         sum(p["Performance"]["sharpe_ratio"] for p in tier1_bt) / len(tier1_bt)

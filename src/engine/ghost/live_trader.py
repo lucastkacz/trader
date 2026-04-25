@@ -5,7 +5,6 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 from src.core.logger import logger
-from src.core.config import settings
 from src.data.fetcher.live_client import fetch_live_klines
 from src.engine.ghost.state_manager import GhostStateManager
 from src.engine.ghost.signal_engine import evaluate_signal
@@ -15,12 +14,11 @@ class LiveGhostTrader:
     def __init__(self):
         pass
 
-    def load_tier1_pairs(self, timeframe: str) -> List[Dict[str, Any]]:
+    def load_tier1_pairs(self, timeframe: str, min_sharpe: float) -> List[Dict[str, Any]]:
         path = f"data/universes/{timeframe}/surviving_pairs.json"
         with open(path, "r") as f:
             all_pairs = json.load(f)
 
-        min_sharpe = settings.ghost_min_sharpe
         tier1 = [p for p in all_pairs if p.get("Performance", {}).get("sharpe_ratio", 0) >= min_sharpe]
 
         logger.info(
@@ -331,8 +329,8 @@ class LiveGhostTrader:
         max_ticks = execution_cfg.get("max_ticks", None) # Optional loop limit
         heartbeat_seconds = execution_cfg["heartbeat_seconds"]
         sync_to_boundary = execution_cfg["sync_to_boundary"]
-
-        db_path = f"data/ghost/trades_{timeframe}.db"
+        db_path = execution_cfg["db_path"]
+        min_sharpe = execution_cfg["min_sharpe"]
 
         logger.info("═══════════════════════════════════════════════════════════")
         logger.info(f"  EPOCH 3: Ghost Trader Starting [{timeframe}]")
@@ -344,7 +342,7 @@ class LiveGhostTrader:
             
         await notifier.send(f"🟢 <b>System Boot:</b> Engine Synchronized on {timeframe}")
 
-        pairs = self.load_tier1_pairs(timeframe)
+        pairs = self.load_tier1_pairs(timeframe, min_sharpe)
         if not pairs:
             logger.error("No Tier 1 pairs found. Aborting.")
             await notifier.send("⚠️ <b>Fatal Error:</b> No Tier 1 pairs found.")
