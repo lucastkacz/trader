@@ -1,4 +1,4 @@
-"""Import-compatible facade for trader signal evaluation."""
+"""Signal evaluation package for the trader engine."""
 
 from src.engine.trader.signals.evaluator import evaluate_signal
 from src.engine.trader.signals.models import SignalResult

@@ -79,7 +79,7 @@ async def test_execute_emergency_liquidation(live_trader, memory_state, mock_not
     memory_state.open_position("SOL|ADA", "SOL", "ADA", "SHORT_SPREAD", 100, 0.5, 0.5, 0.5, 2.5, 14)
     
     # Mock the live fetcher!
-    with patch("src.engine.trader.live_trader.fetch_live_klines", new_callable=AsyncMock) as mock_fetch:
+    with patch("src.engine.trader.execution.market_data.fetch_live_klines", new_callable=AsyncMock) as mock_fetch:
         # Create a tiny mock dataframe
         mock_df = pd.DataFrame({'close': [60000]}) 
         mock_fetch.return_value = mock_df

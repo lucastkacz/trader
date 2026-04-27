@@ -1,5 +1,51 @@
 # The Ghost-to-Trader Refactoring & Mature Environment Architecture
 
+> # MAJOR STATUS WARNING — HISTORICAL REFACTOR DOCUMENT
+>
+> This document is **not** an instruction to preserve, recreate, or continue using
+> any `ghost` names.
+>
+> The Ghost-to-Trader refactor described here is **already complete** and is now
+> canonical repository history. It exists so future humans and AI agents
+> understand why the old naming was removed.
+>
+> Current code and future work must use:
+>
+> ```text
+> trader
+> LiveTrader
+> TradeStateManager
+> TradeReport
+> spread_positions
+> data/{dev,uat,prod}/...
+> src.engine.trader.*
+> src.interfaces.telegram.*
+> ```
+>
+> Current code and future work must **not** use:
+>
+> ```text
+> ghost
+> LiveGhostTrader
+> GhostStateManager
+> GhostReport
+> ghost_orders
+> data/ghost/...
+> scripts.ghost_*
+> src.engine.ghost.*
+> ```
+>
+> If any older plan, journal entry, deployment guide, TODO, stale branch, old DB,
+> generated report, or copied prompt contradicts this, the older artifact is
+> obsolete. Do **not** add compatibility layers for old ghost names. Do **not**
+> revive old script entrypoints. Do **not** preserve old database tables.
+>
+> The correct interpretation of this document is:
+>
+> ```text
+> "This rename already happened. Keep moving forward with trader-neutral names."
+> ```
+
 ## 1. Background: Why "Ghost" No Longer Fits
 
 The term **Ghost Trading** was introduced during Epoch 3 planning to describe forward-testing against live market data without committing real capital — the bot would "ghost" through the order book, logging simulated fills into a local SQLite database. This was accurate at the time: the engine only had one mode, and that mode was paper trading.
