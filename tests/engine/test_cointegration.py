@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 try:
     from src.engine.analysis.cointegration import CointegrationEngine
@@ -28,7 +29,7 @@ def test_bidirectional_adf_and_halflife():
     cointegrated_y = 0.8 * random_walk_x + np.random.normal(0, 0.5, n) + 50
     df_cointegrated = pd.DataFrame({"X": random_walk_x, "Y": cointegrated_y})
     
-    engine = CointegrationEngine()
+    engine = CointegrationEngine(max_half_life=30.0)
     
     # Test 1: Rejection of divergence
     result_fail = engine.evaluate(df_divergent["X"], df_divergent["Y"])
@@ -44,3 +45,19 @@ def test_bidirectional_adf_and_halflife():
     # Test 3: Half-Life should be realistic (not extremely high or 0)
     assert result_pass["half_life"] > 0
     assert result_pass["half_life"] < 30 # Since noise is small, mean reversion is fast
+
+
+def test_cointegration_returns_canonical_x_on_y_hedge_ratio():
+    """Stored hedge ratio should match downstream spread: X - beta * Y."""
+    np.random.seed(7)
+    n = 500
+    y = np.cumsum(np.random.normal(0, 0.01, n)) + 4.0
+    x = 1.7 * y + np.random.normal(0, 0.001, n)
+
+    result = CointegrationEngine(max_half_life=1000.0).evaluate(
+        pd.Series(x),
+        pd.Series(y),
+    )
+
+    assert result["is_cointegrated"]
+    assert result["hedge_ratio"] == pytest.approx(1.7, rel=0.02)

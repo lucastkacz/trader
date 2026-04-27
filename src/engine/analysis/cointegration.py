@@ -3,6 +3,8 @@ import numpy as np
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import adfuller
 
+from src.engine.analysis.spread_math import build_hedged_log_spread
+
 class CointegrationEngine:
     """
     Mathematical Core for evaluating pairs.
@@ -35,12 +37,8 @@ class CointegrationEngine:
         # Select the direction with the tightest co-movement
         if pval_1 <= pval_2:
             p_value = pval_1
-            dependent = series_y
-            independent = series_x
         else:
             p_value = pval_2
-            dependent = series_x
-            independent = series_y
             
         # 1. Cointegration Check
         if p_value > self.p_value_threshold:
@@ -51,17 +49,18 @@ class CointegrationEngine:
                 "half_life": 0.0
             }
             
-        # 2. EW-OLS Beta calculation
-        # We use a decaying weight matrix to favor the recent drift (last 48 bars).
+        # 2. Canonical EW-OLS Beta calculation.
+        # Downstream strategy code defines spread as X - beta * Y, so the
+        # stored hedge ratio is always the beta from X ~ Y, even though the
+        # cointegration pass/fail test above remains bidirectional.
         alpha = 2.0 / (self.ewma_span + 1)
-        weights = np.array([(1 - alpha)**(len(dependent) - i - 1) for i in range(len(dependent))])
-        
-        ew_ols = sm.WLS(dependent, sm.add_constant(independent), weights=weights).fit()
+        weights = np.array([(1 - alpha)**(len(series_x) - i - 1) for i in range(len(series_x))])
+
+        ew_ols = sm.WLS(series_x, sm.add_constant(series_y), weights=weights).fit()
         hedge_ratio = ew_ols.params.iloc[1]
-        
-        # 3. Half-Life (Ornstein-Uhlenbeck)
-        # We calculate the residual of the standard OLS to model the raw physics of the spread
-        residuals = dependent - (ew_ols.params.iloc[0] + hedge_ratio * independent)
+
+        # 3. Half-Life (Ornstein-Uhlenbeck) on the canonical downstream spread.
+        residuals = build_hedged_log_spread(series_x, series_y, hedge_ratio) - ew_ols.params.iloc[0]
         z = residuals.values
         
         z_lag = z[:-1]

@@ -1,13 +1,13 @@
 pipeline:
-  name: "DEV 1M Sandbox"
+  name: "CI 1M Integration"
   timeframe: "1m"
   historical_days: 1
   max_symbols: 100
   execution:
     exchange: "bybit"
     credential_tier: "readonly"
-    db_path: "data/dev/trades_1m.db"
+    db_path: "data/ci/trades_1m.db"
     min_sharpe: 1.0
-    max_ticks: null
+    max_ticks: 5
     heartbeat_seconds: 60
     sync_to_boundary: false

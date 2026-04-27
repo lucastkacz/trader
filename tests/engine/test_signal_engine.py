@@ -1,12 +1,12 @@
 """
-Tests for the Ghost Signal Engine.
+Tests for the Signal Engine.
 Injects synthetic DataFrames to verify Z-score signals match expected behavior.
 """
 
 import numpy as np
 import pandas as pd
 
-from src.engine.ghost.signal_engine import evaluate_signal
+from src.engine.trader.signal_engine import evaluate_signal
 
 
 def _make_df(prices, symbol="TEST/USDT"):
@@ -35,7 +35,8 @@ def test_flat_signal_when_zscore_inside_threshold():
     df_b = _make_df(np.exp(base + noise), "B/USDT")
 
     result = evaluate_signal(
-        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6, vol_lookback_bars=14*6, current_side=None
+        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6,
+        vol_lookback_bars=14*6, hedge_ratio=1.0, current_side=None
     )
 
     assert result.signal == "FLAT"
@@ -58,7 +59,8 @@ def test_long_spread_when_spread_is_deeply_negative():
     df_b = _make_df(prices_b, "B/USDT")
 
     result = evaluate_signal(
-        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6, vol_lookback_bars=14*6, current_side=None
+        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6,
+        vol_lookback_bars=14*6, hedge_ratio=1.0, current_side=None
     )
 
     assert result.signal == "LONG_SPREAD"
@@ -80,7 +82,8 @@ def test_short_spread_when_spread_is_deeply_positive():
     df_b = _make_df(prices_b, "B/USDT")
 
     result = evaluate_signal(
-        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6, vol_lookback_bars=14*6, current_side=None
+        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6,
+        vol_lookback_bars=14*6, hedge_ratio=1.0, current_side=None
     )
 
     assert result.signal == "SHORT_SPREAD"
@@ -100,7 +103,8 @@ def test_hold_when_already_in_position():
 
     result = evaluate_signal(
         df_a, df_b, entry_z=2.0, exit_z=0.0,
-        lookback_bars=14 * 6, vol_lookback_bars=14 * 6, current_side="LONG_SPREAD"
+        lookback_bars=14 * 6, vol_lookback_bars=14 * 6,
+        hedge_ratio=1.0, current_side="LONG_SPREAD"
     )
 
     # Should hold the existing position (z_score still deeply negative)
@@ -120,7 +124,8 @@ def test_exit_when_zscore_reverts_to_zero():
 
     result = evaluate_signal(
         df_a, df_b, entry_z=2.0, exit_z=0.5,
-        lookback_bars=14 * 6, vol_lookback_bars=14 * 6, current_side="LONG_SPREAD"
+        lookback_bars=14 * 6, vol_lookback_bars=14 * 6,
+        hedge_ratio=1.0, current_side="LONG_SPREAD"
     )
 
     # Z-score should be near zero with tightly coupled assets → triggers exit
@@ -138,7 +143,8 @@ def test_volatility_parity_weights_sum_to_one():
     df_b = _make_df(prices_b, "B/USDT")
 
     result = evaluate_signal(
-        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6, vol_lookback_bars=14*6
+        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6,
+        vol_lookback_bars=14*6, hedge_ratio=1.0
     )
 
     assert abs(result.weight_a + result.weight_b - 1.0) < 1e-10
@@ -154,7 +160,8 @@ def test_insufficient_data_returns_flat():
     df_b = _make_df(prices, "B/USDT")
 
     result = evaluate_signal(
-        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6, vol_lookback_bars=14*6
+        df_a, df_b, entry_z=2.0, exit_z=0.0, lookback_bars=14*6,
+        vol_lookback_bars=14*6, hedge_ratio=1.0
     )
 
     assert result.signal == "FLAT"

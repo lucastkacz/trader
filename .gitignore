@@ -11,6 +11,8 @@ __pycache__/
 *.DS_Store
 
 # Logs and Data
-data/
-logs/
-src2logs/
+/data/
+/logs/
+/src2logs/
+
+.vscode

@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Target Environment (e.g., ghost-trader, production-trader)'
+        description: 'Target Environment (e.g., trader, production-trader)'
         required: true
         type: environment
 
@@ -57,60 +57,63 @@ jobs:
             .venv/bin/pip install -r requirements.txt
 
             echo "=== 4. Directory & Environment Config ==="
-            mkdir -p data/ghost logs
+            mkdir -p data/prod data/reports logs
             
             # Securely inject GitHub Secrets into the server's .env file
-            echo "GHOST_EXCHANGE=bybit" > .env
-            echo "ENV=production" >> .env
-            echo "BYBIT_READONLY_API_KEY=${{ secrets.BYBIT_READONLY_API_KEY }}" >> .env
-            echo "BYBIT_READONLY_API_SECRET=${{ secrets.BYBIT_READONLY_API_SECRET }}" >> .env
+            echo "LOG_LEVEL=info" > .env
+            echo "EXCHANGE_READONLY_API_KEY=${{ secrets.EXCHANGE_READONLY_API_KEY }}" >> .env
+            echo "EXCHANGE_READONLY_API_SECRET=${{ secrets.EXCHANGE_READONLY_API_SECRET }}" >> .env
+            echo "EXCHANGE_LIVE_API_KEY=${{ secrets.EXCHANGE_LIVE_API_KEY }}" >> .env
+            echo "EXCHANGE_LIVE_API_SECRET=${{ secrets.EXCHANGE_LIVE_API_SECRET }}" >> .env
+            echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
+            echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> .env
             chmod 600 .env
 
             echo "=== 5. SystemD Service Config ==="
-            sudo rm -f /etc/systemd/system/ghost-trader.service
-            echo "[Unit]" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "Description=Stat-Arb Trading Engine" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "After=network-online.target" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "Wants=network-online.target" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "[Service]" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "Type=simple" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "User=ubuntu" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "WorkingDirectory=/home/ubuntu/quant" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "Environment=\"PYTHONPATH=/home/ubuntu/quant\"" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "ExecStart=/home/ubuntu/quant/.venv/bin/python -m scripts.ghost_trader" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "Restart=on-failure" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "RestartSec=30" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "StandardOutput=append:/home/ubuntu/quant/logs/ghost_stdout.log" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "StandardError=append:/home/ubuntu/quant/logs/ghost_stderr.log" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "[Install]" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
-            echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/ghost-trader.service > /dev/null
+            sudo rm -f /etc/systemd/system/trader-engine.service
+            echo "[Unit]" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "Description=Stat-Arb Trading Engine" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "After=network-online.target" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "Wants=network-online.target" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "[Service]" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "Type=simple" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "User=ubuntu" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "WorkingDirectory=/home/ubuntu/quant" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "Environment=\"PYTHONPATH=/home/ubuntu/quant\"" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "ExecStart=/home/ubuntu/quant/.venv/bin/python main.py execute --pipeline configs/pipelines/prod.yml --strategy configs/strategy/alpha_v1.yml" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "Restart=on-failure" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "RestartSec=30" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "StandardOutput=append:/home/ubuntu/quant/logs/trader_stdout.log" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "StandardError=append:/home/ubuntu/quant/logs/trader_stderr.log" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "[Install]" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
 
             echo "--- Telegram Daemon ---"
-            sudo rm -f /etc/systemd/system/ghost-telegram.service
-            echo "[Unit]" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "Description=Stat-Arb Telegram Controller" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "After=network-online.target" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "Wants=network-online.target" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "[Service]" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "Type=simple" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "User=ubuntu" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "WorkingDirectory=/home/ubuntu/quant" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "Environment=\"PYTHONPATH=/home/ubuntu/quant\"" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "ExecStart=/home/ubuntu/quant/.venv/bin/python -m scripts.telegram_bot" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "Restart=on-failure" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "RestartSec=30" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "StandardOutput=append:/home/ubuntu/quant/logs/tg_stdout.log" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "StandardError=append:/home/ubuntu/quant/logs/tg_stderr.log" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "[Install]" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
-            echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/ghost-telegram.service > /dev/null
+            sudo rm -f /etc/systemd/system/trader-telegram.service
+            echo "[Unit]" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "Description=Stat-Arb Telegram Controller" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "After=network-online.target" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "Wants=network-online.target" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "[Service]" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "Type=simple" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "User=ubuntu" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "WorkingDirectory=/home/ubuntu/quant" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "Environment=\"PYTHONPATH=/home/ubuntu/quant\"" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "ExecStart=/home/ubuntu/quant/.venv/bin/python -m src.interfaces.telegram.daemon --config configs/telegram/prod.yml" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "Restart=on-failure" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "RestartSec=30" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "StandardOutput=append:/home/ubuntu/quant/logs/telegram_stdout.log" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "StandardError=append:/home/ubuntu/quant/logs/telegram_stderr.log" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "[Install]" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
+            echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/trader-telegram.service > /dev/null
 
             sudo systemctl daemon-reload
-            sudo systemctl enable ghost-trader
-            sudo systemctl enable ghost-telegram
+            sudo systemctl enable trader-engine
+            sudo systemctl enable trader-telegram
             
             echo "=== BOOTSTRAP COMPLETE ==="
           SETUP

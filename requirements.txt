@@ -1,16 +1,13 @@
-loguru==0.7.3
-pydantic==2.10.1
-pydantic-settings==2.6.1
-pytest==8.3.3
-ccxt==4.4.19
-pandas==2.2.3
-pyarrow==18.1.0
-pytest-asyncio==0.24.0
-scipy==1.13.1
-scikit-learn==1.6.1
-networkx==3.2.1
-python-louvain==0.16
-statsmodels==0.14.4
+loguru>=0.7.3
+pydantic>=2.10.1
+pydantic-settings>=2.6.1
+ccxt>=4.4.19
+pandas>=2.2.3
+numpy>=1.26.4
+pyarrow>=18.1.0
+networkx>=3.2.1
+python-louvain>=0.16
+statsmodels>=0.14.4
 
 # Telegram UI
 python-telegram-bot>=21.0
@@ -19,3 +16,7 @@ requests>=2.31.0
 # Workflow & Config Automation
 prefect>=3.0.0
 PyYAML>=6.0.3
+
+# Testing
+pytest>=8.3.3
+pytest-asyncio>=0.24.0

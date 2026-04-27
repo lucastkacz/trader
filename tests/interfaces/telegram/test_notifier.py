@@ -8,7 +8,7 @@ import requests
 from unittest.mock import patch, MagicMock
 
 from src.core.config import settings
-from src.core.notifier import TelegramNotifier
+from src.interfaces.telegram.notifier import TelegramNotifier
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def notifier():
     """Returns a notifier with mock credentials."""
     settings.telegram_bot_token = "mock_token"
     settings.telegram_chat_id = "mock_chat_id"
-    settings.env = "test"
+    settings.log_level = "debug"
     return TelegramNotifier()
 
 
@@ -39,7 +39,7 @@ def test_notifier_requests_success(notifier):
         assert "botmock_token/sendMessage" in args[0]
         assert kwargs["json"]["chat_id"] == "mock_chat_id"
         assert "Test message" in kwargs["json"]["text"]
-        assert "[👻 PAPER]" in kwargs["json"]["text"]
+        assert "[TRADER PAPER]" in kwargs["json"]["text"]
 
 
 def test_notifier_network_hang(notifier):

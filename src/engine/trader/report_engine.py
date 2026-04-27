@@ -1,11 +1,11 @@
 """
-Ghost Report Engine
+Trade Report Engine
 ====================
 Pure computation module for institutional-grade reporting.
-Reads the SQLite database via GhostStateManager → returns a GhostReport dataclass
+Reads the SQLite database via TradeStateManager → returns a TradeReport dataclass
 with all metrics pre-computed. No terminal printing, no file I/O formatting.
 
-ARCHITECTURAL RULE: This module does math. Formatting belongs in scripts/ghost_report.py.
+ARCHITECTURAL RULE: This module does math. Formatting belongs in report_generator.py.
 """
 
 import json
@@ -17,7 +17,7 @@ from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from src.core.logger import logger
 
 if TYPE_CHECKING:
-    from src.engine.ghost.state_manager import GhostStateManager
+    from src.engine.trader.state_manager import TradeStateManager
 
 
 # ─── Data Classes ────────────────────────────────────────────────
@@ -62,7 +62,17 @@ class RiskSnapshot:
 
 
 @dataclass
-class GhostReport:
+class StateLedgerSnapshot:
+    """Current ledger/audit state counts for operator reporting."""
+    total_order_events: int
+    leg_targets_by_status_role: Dict[str, Dict[str, int]]
+    user_commands_by_status: Dict[str, int]
+    latest_reconciliation_run_status: Optional[str]
+    reconciliation_delta_count: int
+
+
+@dataclass
+class TradeReport:
     """Complete report output — every metric the system can produce."""
     # Executive Summary
     total_equity_pct: float
@@ -88,6 +98,7 @@ class GhostReport:
     per_pair: List[PairMetrics]
     signal_quality: SignalQuality
     risk: RiskSnapshot
+    state_ledger: StateLedgerSnapshot
 
     # Backtest comparison
     backtest_avg_sharpe: Optional[float]
@@ -241,14 +252,14 @@ def _compute_trade_stats(closed_trades: List[Dict[str, Any]]) -> Dict[str, Any]:
             "avg_holding_bars": 0.0,
         }
 
-    wins = [t for t in closed_trades if (t.get("pnl_pct") or 0.0) > 0]
-    losses = [t for t in closed_trades if (t.get("pnl_pct") or 0.0) <= 0]
+    wins = [t for t in closed_trades if (t.get("realized_pnl_pct") or 0.0) > 0]
+    losses = [t for t in closed_trades if (t.get("realized_pnl_pct") or 0.0) <= 0]
 
     win_rate = len(wins) / len(closed_trades) if closed_trades else 0.0
     loss_rate = 1.0 - win_rate
 
-    gross_profit = sum(t["pnl_pct"] for t in wins) if wins else 0.0
-    gross_loss = abs(sum(t["pnl_pct"] for t in losses)) if losses else 0.0
+    gross_profit = sum(t["realized_pnl_pct"] for t in wins) if wins else 0.0
+    gross_loss = abs(sum(t["realized_pnl_pct"] for t in losses)) if losses else 0.0
 
     profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else None
 
@@ -359,9 +370,9 @@ def _compute_per_pair(
     results = []
     for label in sorted(all_labels):
         closed = pair_trades.get(label, [])
-        wins = [t for t in closed if (t.get("pnl_pct") or 0.0) > 0]
+        wins = [t for t in closed if (t.get("realized_pnl_pct") or 0.0) > 0]
         trade_count = len(closed)
-        realized = sum(t.get("pnl_pct") or 0.0 for t in closed)
+        realized = sum(t.get("realized_pnl_pct") or 0.0 for t in closed)
 
         # Current position state
         open_pos = open_lookup.get(label)
@@ -447,14 +458,14 @@ def _compute_signal_quality(
             total_signals_recorded=total_signals,
         )
 
-    wins = [t for t in closed_trades if (t.get("pnl_pct") or 0.0) > 0]
+    wins = [t for t in closed_trades if (t.get("realized_pnl_pct") or 0.0) > 0]
     signal_accuracy = len(wins) / len(closed_trades) if closed_trades else 0.0
 
     # Average entry Z-score (absolute)
     entry_zs = [abs(t.get("entry_z") or 0.0) for t in closed_trades]
     avg_entry_z = sum(entry_zs) / len(entry_zs) if entry_zs else 0.0
 
-    # Average exit Z-score (absolute) — may be None for pre-migration trades
+    # Average exit Z-score (absolute) — may be None for still-open or emergency-closed positions.
     exit_zs = [abs(t["exit_z"]) for t in closed_trades if t.get("exit_z") is not None]
     avg_exit_z = sum(exit_zs) / len(exit_zs) if exit_zs else None
 
@@ -509,7 +520,7 @@ def _compute_risk(
     if closed_trades:
         try:
             last_close = datetime.fromisoformat(
-                closed_trades[-1]["timestamp_close"].replace("Z", "+00:00")
+                closed_trades[-1]["closed_at"].replace("Z", "+00:00")
             )
             days_since = (datetime.now(timezone.utc) - last_close).total_seconds() / 86400.0
         except (ValueError, KeyError, TypeError, AttributeError):
@@ -518,7 +529,7 @@ def _compute_risk(
     # Consecutive losses (trailing streak)
     consecutive_losses = 0
     for trade in reversed(closed_trades):
-        if (trade.get("pnl_pct") or 0.0) <= 0:
+        if (trade.get("realized_pnl_pct") or 0.0) <= 0:
             consecutive_losses += 1
         else:
             break
@@ -534,6 +545,55 @@ def _compute_risk(
         days_since_last_trade=days_since,
         consecutive_losses=consecutive_losses,
         data_freshness=freshness,
+    )
+
+
+# ─── State Ledger Snapshot ───────────────────────────────────────
+
+def _count_by_key(rows: List[Dict[str, Any]], key: str) -> Dict[str, int]:
+    """Return deterministic counts for a single row field."""
+    counts: Dict[str, int] = {}
+    for row in rows:
+        value = row.get(key) or "UNKNOWN"
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _count_leg_targets_by_status_role(
+    leg_fills: List[Dict[str, Any]],
+) -> Dict[str, Dict[str, int]]:
+    """Count leg target/fill rows by status, then role."""
+    counts: Dict[str, Dict[str, int]] = {}
+    for row in leg_fills:
+        status = row.get("status") or "UNKNOWN"
+        role = row.get("leg_role") or "UNKNOWN"
+        role_counts = counts.setdefault(status, {})
+        role_counts[role] = role_counts.get(role, 0) + 1
+
+    return {
+        status: dict(sorted(role_counts.items()))
+        for status, role_counts in sorted(counts.items())
+    }
+
+
+def _compute_state_ledger(
+    order_events: List[Dict[str, Any]],
+    leg_fills: List[Dict[str, Any]],
+    user_commands: List[Dict[str, Any]],
+    reconciliation_runs: List[Dict[str, Any]],
+    reconciliation_deltas: List[Dict[str, Any]],
+) -> StateLedgerSnapshot:
+    """Summarize state-ledger tables without changing trader state."""
+    latest_run_status = None
+    if reconciliation_runs:
+        latest_run_status = reconciliation_runs[-1].get("status")
+
+    return StateLedgerSnapshot(
+        total_order_events=len(order_events),
+        leg_targets_by_status_role=_count_leg_targets_by_status_role(leg_fills),
+        user_commands_by_status=_count_by_key(user_commands, "status"),
+        latest_reconciliation_run_status=latest_run_status,
+        reconciliation_delta_count=len(reconciliation_deltas),
     )
 
 
@@ -561,21 +621,21 @@ def _load_backtest_lookup(surviving_pairs_path: str) -> Dict[str, Dict[str, Any]
 # ─── Main Entry Point ────────────────────────────────────────────
 
 def generate_report(
-    state: "GhostStateManager",
+    state: "TradeStateManager",
     min_sharpe: float,
     surviving_pairs_path: str = "data/universes/surviving_pairs.json",
-) -> GhostReport:
+) -> TradeReport:
     """
     Generate a complete report from the current database state.
 
     Parameters
     ----------
-    state : GhostStateManager — connected to the target database
+    state : TradeStateManager — connected to the target database
     surviving_pairs_path : str — path to backtest results for comparison
 
     Returns
     -------
-    GhostReport dataclass with all metrics computed.
+    TradeReport dataclass with all metrics computed.
     """
     # Gather raw data
     all_orders = state.get_all_orders()
@@ -583,13 +643,18 @@ def generate_report(
     open_positions = state.get_open_positions()
     equity_curve = state.get_equity_curve()
     tick_signals = state.get_tick_signals()
+    order_events = state.get_order_events()
+    leg_fills = state.get_leg_fills()
+    user_commands = state.get_commands()
+    reconciliation_runs = state.get_reconciliation_runs()
+    reconciliation_deltas = state.get_reconciliation_deltas()
     backtest_lookup = _load_backtest_lookup(surviving_pairs_path)
 
     # Auto-detect annualization factor
     bars_per_year = _detect_bars_per_year(equity_curve)
 
     # Equity
-    realized = sum(t.get("pnl_pct") or 0.0 for t in closed_trades)
+    realized = sum(t.get("realized_pnl_pct") or 0.0 for t in closed_trades)
     unrealized = 0.0
     if equity_curve:
         unrealized = equity_curve[-1].get("unrealized_pnl_pct", 0.0)
@@ -619,6 +684,15 @@ def generate_report(
     # Risk
     risk = _compute_risk(open_positions, closed_trades, equity_curve)
 
+    # State ledger
+    state_ledger = _compute_state_ledger(
+        order_events=order_events,
+        leg_fills=leg_fills,
+        user_commands=user_commands,
+        reconciliation_runs=reconciliation_runs,
+        reconciliation_deltas=reconciliation_deltas,
+    )
+
     # Backtest averages (Tier 1 only)
     tier1_bt = [
         v for v in backtest_lookup.values()
@@ -633,7 +707,7 @@ def generate_report(
         if tier1_bt else None
     )
 
-    return GhostReport(
+    return TradeReport(
         # Executive Summary
         total_equity_pct=total_equity,
         realized_pnl_pct=realized,
@@ -656,6 +730,7 @@ def generate_report(
         per_pair=per_pair,
         signal_quality=sig_quality,
         risk=risk,
+        state_ledger=state_ledger,
         # Backtest
         backtest_avg_sharpe=bt_avg_sharpe,
         backtest_avg_pnl=bt_avg_pnl,

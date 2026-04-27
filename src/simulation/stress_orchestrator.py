@@ -10,6 +10,7 @@ from src.data.storage.local_parquet import ParquetStorage
 from src.simulation.vectorized_engine import Simulator
 from src.simulation.friction_model import FrictionEngine
 from src.utils.timeframe_math import get_bars_per_year
+from src.engine.analysis.spread_math import build_hedged_log_spread, build_rolling_zscore
 
 class StressTestOrchestrator:
     def __init__(self, storage: ParquetStorage):
@@ -22,10 +23,10 @@ class StressTestOrchestrator:
         with open(path, "r") as f:
             return json.load(f)
 
-    def build_unified_df(self, symbol_a: str, symbol_b: str, timeframe: str) -> Optional[pd.DataFrame]:
+    def build_unified_df(self, symbol_a: str, symbol_b: str, timeframe: str, exchange: str) -> Optional[pd.DataFrame]:
         try:
-            df_a = self.storage.load_ohlcv(symbol_a, timeframe, exchange="bybit")
-            df_b = self.storage.load_ohlcv(symbol_b, timeframe, exchange="bybit")
+            df_a = self.storage.load_ohlcv(symbol_a, timeframe, exchange=exchange)
+            df_b = self.storage.load_ohlcv(symbol_b, timeframe, exchange=exchange)
         except Exception as e:
             logger.warning(f"Failed loading parquet for {symbol_a}/{symbol_b}: {e}")
             return None
@@ -57,21 +58,17 @@ class StressTestOrchestrator:
 
         return df
 
-    def build_zscore(self, df: pd.DataFrame, lookback_bars: int) -> pd.DataFrame:
-        log_a = np.log(df["A_close"])
-        log_b = np.log(df["B_close"])
-
-        spread = log_a - log_b
-
-        rolling_mean = spread.rolling(window=lookback_bars, min_periods=lookback_bars).mean()
-        rolling_std = spread.rolling(window=lookback_bars, min_periods=lookback_bars).std()
-
-        rolling_std = rolling_std.replace(0.0, np.nan)
-        df["z_score"] = (spread - rolling_mean) / rolling_std
+    def build_zscore(self, df: pd.DataFrame, lookback_bars: int, hedge_ratio: float) -> pd.DataFrame:
+        spread = build_hedged_log_spread(df["A_close"], df["B_close"], hedge_ratio)
+        df["z_score"] = build_rolling_zscore(
+            spread,
+            lookback_bars,
+            min_periods=lookback_bars,
+        )
 
         return df
 
-    def run(self, timeframe: str, backtest_cfg: dict, strategy_cfg: dict):
+    def run(self, timeframe: str, exchange: str, backtest_cfg: dict, strategy_cfg: dict):
         logger.info("═══════════════════════════════════════════════════════════")
         logger.info("  EPOCH 2: Vectorized Stress Test Orchestrator")
         logger.info("═══════════════════════════════════════════════════════════")
@@ -105,11 +102,12 @@ class StressTestOrchestrator:
         for pair_idx, pair in enumerate(pairs):
             asset_x = pair["Asset_X"]
             asset_y = pair["Asset_Y"]
+            hedge_ratio = pair["Hedge_Ratio"]
             pair_label = f"{asset_x} / {asset_y}"
 
             logger.info(f"[{pair_idx+1}/{len(pairs)}] Stress-testing: {pair_label}")
 
-            unified = self.build_unified_df(asset_x, asset_y, timeframe)
+            unified = self.build_unified_df(asset_x, asset_y, timeframe, exchange)
             if unified is None:
                 continue
 
@@ -122,7 +120,7 @@ class StressTestOrchestrator:
             for lookback_bars, entry_z in grid:
 
                 df = unified.copy()
-                df = self.build_zscore(df, lookback_bars)
+                df = self.build_zscore(df, lookback_bars, hedge_ratio)
 
                 df = df.dropna(subset=["z_score"]).reset_index(drop=True)
                 if len(df) < 200:

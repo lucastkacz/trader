@@ -1,5 +1,5 @@
 """
-Tests for the Ghost Report Engine.
+Tests for the Trade Report Engine.
 Uses in-memory SQLite with synthetic data to verify metric computations.
 """
 
@@ -7,8 +7,8 @@ import math
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from src.engine.ghost.state_manager import GhostStateManager
-from src.engine.ghost.report_engine import (
+from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.report_engine import (
     generate_report,
     _detect_bars_per_year,
     _compute_sharpe,
@@ -16,12 +16,13 @@ from src.engine.ghost.report_engine import (
     _compute_max_drawdown,
     _compute_returns,
 )
+from src.engine.trader.report_generator import render_state_ledger
 
 
 @pytest.fixture
 def state():
     """Create a fresh in-memory state manager for each test."""
-    mgr = GhostStateManager(db_path=":memory:")
+    mgr = TradeStateManager(db_path=":memory:")
     yield mgr
     mgr.close()
 
@@ -64,15 +65,15 @@ def _inject_trade(state, pair_label, side, entry_a, entry_b, exit_a, exit_b,
     asset_y = parts[1] if len(parts) > 1 else "B"
 
     state.conn.execute(
-        """INSERT INTO ghost_orders
+        """INSERT INTO spread_positions
            (pair_label, asset_x, asset_y, side, entry_price_a, entry_price_b,
-            weight_a, weight_b, entry_z, lookback_bars, timestamp_open,
-            timestamp_close, exit_price_a, exit_price_b, pnl_pct, status,
-            exit_z, holding_bars)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CLOSED', ?, ?)""",
+            weight_a, weight_b, entry_z, lookback_bars, opened_at,
+            closed_at, exit_price_a, exit_price_b, realized_pnl_pct, status,
+            exit_z, holding_bars, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CLOSED', ?, ?, ?, ?)""",
         (pair_label, asset_x, asset_y, side, entry_a, entry_b,
          weight_a, weight_b, entry_z, 14, t_open, t_close,
-         exit_a, exit_b, pnl, exit_z, holding_bars),
+         exit_a, exit_b, pnl, exit_z, holding_bars, t_open, t_close),
     )
     state.conn.commit()
 
@@ -82,7 +83,7 @@ def _inject_trade(state, pair_label, side, entry_a, entry_b, exit_a, exit_b,
 def test_empty_database_report(state):
     """Empty database should produce a valid report with zero/default values."""
     # Use a non-existent path for surviving_pairs to test graceful fallback
-    report = generate_report(state, surviving_pairs_path="/nonexistent/path.json")
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
 
     assert report.total_equity_pct == 0.0
     assert report.total_trades == 0
@@ -94,6 +95,11 @@ def test_empty_database_report(state):
     assert report.status == "HEALTHY"
     assert report.per_pair == []
     assert report.trade_log == []
+    assert report.state_ledger.total_order_events == 0
+    assert report.state_ledger.leg_targets_by_status_role == {}
+    assert report.state_ledger.user_commands_by_status == {}
+    assert report.state_ledger.latest_reconciliation_run_status is None
+    assert report.state_ledger.reconciliation_delta_count == 0
 
 
 def test_sharpe_ratio_calculation(state):
@@ -156,7 +162,7 @@ def test_win_rate_and_profit_factor(state):
     _inject_trade(state, "A|B", "LONG_SPREAD", 100, 50, 95, 50, pnl=-0.025)
     _inject_trade(state, "C|D", "SHORT_SPREAD", 100, 50, 105, 45, pnl=-0.05)
 
-    report = generate_report(state, surviving_pairs_path="/nonexistent/path.json")
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
 
     assert report.total_trades == 5
     assert abs(report.win_rate - 0.6) < 1e-10  # 3/5
@@ -172,7 +178,7 @@ def test_per_pair_breakdown(state):
     _inject_trade(state, "A|B", "LONG_SPREAD", 100, 50, 108, 50, pnl=0.04)
     _inject_trade(state, "C|D", "SHORT_SPREAD", 200, 100, 180, 110, pnl=0.15)
 
-    report = generate_report(state, surviving_pairs_path="/nonexistent/path.json")
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
 
     assert len(report.per_pair) == 2
 
@@ -185,6 +191,72 @@ def test_per_pair_breakdown(state):
     assert abs(cd.realized_pnl - 0.15) < 1e-10
     assert ab.win_rate == 1.0
     assert cd.win_rate == 1.0
+
+
+def test_state_ledger_snapshot_counts_current_schema(state):
+    """Report should surface basic state-ledger counts and latest reconciliation status."""
+    spread_id = state.open_position(
+        "X|Y", "X", "Y", "LONG_SPREAD", 100.0, 50.0, 0.6, 0.4, -2.0, 21
+    )
+    state.close_position("X|Y", 101.0, 50.0)
+
+    state.write_command("/pause")
+    commands = state.claim_pending_commands()
+    state.mark_command_executed(commands[0]["id"])
+
+    state.write_command("/stop_all")
+    commands = state.claim_pending_commands()
+    state.mark_command_failed(commands[0]["id"], "exchange unavailable")
+
+    state.write_command("/resume")
+
+    run_id = state.start_reconciliation_run(
+        exchange_snapshot={"positions": []},
+        local_open_positions=state.get_open_positions(),
+    )
+    state.record_reconciliation_delta(
+        run_id=run_id,
+        delta_type="LOCAL_ONLY_POSITION",
+        spread_id=spread_id,
+        payload={"reason": "closed before exchange check"},
+    )
+    state.finish_reconciliation_run(run_id, status="DELTA_FOUND")
+
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
+
+    assert report.state_ledger.total_order_events == 2
+    assert report.state_ledger.leg_targets_by_status_role == {
+        "TARGET_RECORDED": {
+            "CLOSE": 2,
+            "OPEN": 2,
+        }
+    }
+    assert report.state_ledger.user_commands_by_status == {
+        "EXECUTED": 1,
+        "FAILED": 1,
+        "PENDING": 1,
+    }
+    assert report.state_ledger.latest_reconciliation_run_status == "DELTA_FOUND"
+    assert report.state_ledger.reconciliation_delta_count == 1
+
+
+def test_state_ledger_terminal_renderer_outputs_counts(state, capsys):
+    """Terminal reports should expose state-ledger status for operators."""
+    state.open_position(
+        "X|Y", "X", "Y", "LONG_SPREAD", 100.0, 50.0, 0.6, 0.4, -2.0, 21
+    )
+    state.write_command("/pause")
+
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
+
+    render_state_ledger(report)
+    output = capsys.readouterr().out
+
+    assert "STATE LEDGER" in output
+    assert "Order Events" in output
+    assert "TARGET_RECORDED" in output
+    assert "OPEN: 2" in output
+    assert "PENDING" in output
 
 
 def test_status_healthy_when_positive(state):
@@ -201,7 +273,7 @@ def test_status_healthy_when_positive(state):
         )
     state.conn.commit()
 
-    report = generate_report(state, surviving_pairs_path="/nonexistent/path.json")
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
     assert report.status == "HEALTHY"
 
 
@@ -211,7 +283,7 @@ def test_status_failing_on_large_drawdown(state):
     equities = [0.0, 0.10, -0.20, -0.50]
     _inject_snapshots(state, equities)
 
-    report = generate_report(state, surviving_pairs_path="/nonexistent/path.json")
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
     assert report.status == "FAILING"
 
 

@@ -15,7 +15,7 @@ on:
 jobs:
   integration:
     runs-on: ubuntu-latest
-    environment: ghost-trader
+    environment: trader
     timeout-minutes: 20
 
     steps:
@@ -44,37 +44,42 @@ jobs:
         run: pytest tests/ -v -m "live" --tb=short
         env:
           PYTHONPATH: .
-          BYBIT_READONLY_API_KEY: ${{ secrets.BYBIT_READONLY_API_KEY }}
-          BYBIT_READONLY_API_SECRET: ${{ secrets.BYBIT_READONLY_API_SECRET }}
-          GHOST_EXCHANGE: bybit
+          EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
+          EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
       - name: Create data directories
-        run: mkdir -p data/ghost logs
+        run: mkdir -p data/ci data/reports logs
 
-      - name: Run turbo mode (5 ticks)
-        run: python -m scripts.ghost_trader --turbo
+      - name: Build CI 1M universe
+        run: python main.py research --pipeline configs/pipelines/ci_1m.yml --universe configs/universe/alpha_v1.yml --backtest configs/backtest/stress_test.yml --strategy configs/strategy/alpha_v1.yml
         env:
           PYTHONPATH: .
-          BYBIT_READONLY_API_KEY: ${{ secrets.BYBIT_READONLY_API_KEY }}
-          BYBIT_READONLY_API_SECRET: ${{ secrets.BYBIT_READONLY_API_SECRET }}
-          GHOST_EXCHANGE: bybit
+          EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
+          EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
-      - name: Generate turbo report (JSON)
-        run: python -m scripts.ghost_report --turbo --json > turbo_report.json
+      - name: Run CI 1M integration (5 ticks)
+        run: python main.py execute --pipeline configs/pipelines/ci_1m.yml --strategy configs/strategy/alpha_v1.yml
+        env:
+          PYTHONPATH: .
+          EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
+          EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
+
+      - name: Generate CI report (JSON)
+        run: python -m src.engine.trader.report_generator --db-path data/ci/trades_1m.db --min-sharpe 1.0 --json > ci_report.json
         env:
           PYTHONPATH: .
 
-      - name: Generate turbo report (export)
-        run: python -m scripts.ghost_report --turbo --export
+      - name: Generate CI report (export)
+        run: python -m src.engine.trader.report_generator --db-path data/ci/trades_1m.db --min-sharpe 1.0 --export
         env:
           PYTHONPATH: .
 
-      - name: Upload turbo artifacts
+      - name: Upload CI artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: turbo-results-${{ github.run_number }}
+          name: ci-results-${{ github.run_number }}
           path: |
-            turbo_report.json
-            data/ghost/trades_turbo.db
-            data/ghost/reports/
+            ci_report.json
+            data/ci/trades_1m.db
+            data/reports/
           retention-days: 30

@@ -1,4 +1,4 @@
 telegram:
   environment: "DEV"
   bot_name: "@DevBot"
-  db_path: "data/db/dev_user_commands.db"
+  db_path: "data/dev/trades_1m.db"

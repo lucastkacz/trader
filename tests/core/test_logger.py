@@ -34,7 +34,7 @@ def test_jsonl_output_format(tmp_path):
     log_file = tmp_path / "test.jsonl"
     
     # Needs to configure the logger locally for testing
-    configure_logger(log_path=str(log_file), env="test")
+    configure_logger(log_path=str(log_file), log_level="silent")
     
     # Execute a bound log
     context = LogContext(pair="SOL/USDT")

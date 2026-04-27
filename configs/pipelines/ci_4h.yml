@@ -1,13 +1,13 @@
 pipeline:
-  name: "PROD 4H Live Trading"
+  name: "CI 4H Validation"
   timeframe: "4h"
   historical_days: 365
   max_symbols: 100
   execution:
     exchange: "bybit"
-    credential_tier: "live"
-    db_path: "data/prod/trades_4h.db"
+    credential_tier: "readonly"
+    db_path: "data/ci/trades_4h.db"
     min_sharpe: 1.0
-    max_ticks: null
+    max_ticks: 1
     heartbeat_seconds: 14400
     sync_to_boundary: true

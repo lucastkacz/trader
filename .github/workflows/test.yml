@@ -31,7 +31,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Lint with ruff
-        run: ruff check src/ scripts/ tests/
+        run: ruff check src tests
 
       - name: Run offline tests
         run: pytest tests/ -v -m "not live" --tb=short

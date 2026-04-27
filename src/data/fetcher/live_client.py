@@ -1,89 +1,50 @@
 """
-Exchange-Agnostic Live Fetcher
-================================
-Provides a single async interface for fetching live OHLCV candles
-from any CCXT-supported exchange. Used by the Ghost Trader (Epoch 3+)
-to decouple live price feeds from the historical data mining layer.
+Live Data Client
+==================
+Async interface for fetching live OHLCV candles from any CCXT-supported exchange.
+Used by the Trader Engine to get real-time price feeds.
 
-The exchange is selected via the GHOST_EXCHANGE setting in .env.
+Delegates all exchange logic to the unified exchange_client module.
+
+ARCHITECTURAL RULE: No default values for config-driven parameters.
 """
 
-import ccxt.async_support as ccxt
 import pandas as pd
 
-from src.core.logger import logger, LogContext
-from src.core.config import settings
-
-
-def _get_exchange() -> ccxt.Exchange:
-    """
-    Factory that returns the configured exchange instance.
-    Supports: bybit, binance.
-    """
-    exchange_id = settings.ghost_exchange.lower()
-
-    if exchange_id == "bybit":
-        return ccxt.bybit({
-            "enableRateLimit": True,
-            "options": {"defaultType": "linear"},  # USDT perpetuals
-            "apiKey": settings.bybit_readonly_api_key,
-            "secret": settings.bybit_readonly_api_secret,
-        })
-    elif exchange_id == "binance":
-        return ccxt.binance({
-            "enableRateLimit": True,
-            "options": {"defaultType": "future"},  # USD-M perpetuals
-            "apiKey": settings.binance_api_key,
-            "secret": settings.binance_api_secret,
-        })
-    else:
-        raise ValueError(f"Unsupported ghost exchange: {exchange_id}")
+from src.data.fetcher.exchange_client import create_exchange, fetch_klines
 
 
 async def fetch_live_klines(
+    exchange_id: str,
+    api_key: str,
+    api_secret: str,
     symbol: str,
-    timeframe: str = "4h",
-    limit: int = 200,
+    timeframe: str,
+    limit: int,
 ) -> pd.DataFrame:
     """
     Fetches recent OHLCV candles from the configured live exchange.
 
-    Symbol format: 'BTC/USDT' (standard CCXT, no colon suffix needed).
-    The function handles exchange-specific symbol resolution internally.
+    Parameters
+    ----------
+    exchange_id : str — raw CCXT exchange ID (e.g., "bybit", "binanceusdm")
+    api_key : str — API key credential
+    api_secret : str — API secret credential
+    symbol : str — standardized pair (e.g., "BTC/USDT")
+    timeframe : str — candle interval (e.g., "1m", "4h")
+    limit : int — number of candles to fetch
+
+    Returns
+    -------
+    pd.DataFrame with columns: timestamp, open, high, low, close, volume
     """
-    exchange = _get_exchange()
-    exchange_id = settings.ghost_exchange.lower()
-
-    # Resolve the CCXT market symbol with the correct settlement suffix
-    if ":" not in symbol:
-        quote = symbol.split("/")[-1]
-        ccxt_symbol = f"{symbol}:{quote}"
-    else:
-        ccxt_symbol = symbol
-
-    ctx = LogContext(pair=symbol)
-
+    exchange = create_exchange(exchange_id, api_key, api_secret)
     try:
-        ohlcv = await exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
-
-        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-        for col in ["open", "high", "low", "close", "volume"]:
-            df[col] = df[col].astype(float)
-
-        logger.bind(**ctx.model_dump(exclude_none=True)).debug(
-            f"[{exchange_id}] Fetched {len(df)} candles for {symbol}"
+        return await fetch_klines(
+            exchange=exchange,
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=limit,
         )
-        return df
-
-    except ccxt.NetworkError as ne:
-        logger.bind(**ctx.model_dump(exclude_none=True)).error(
-            f"[{exchange_id}] Network error: {ne}"
-        )
-        raise RuntimeError(f"NetworkError on {exchange_id}: {ne}")
-    except Exception as e:
-        logger.bind(**ctx.model_dump(exclude_none=True)).critical(
-            f"[{exchange_id}] FATAL: {e}"
-        )
-        raise
     finally:
         await exchange.close()

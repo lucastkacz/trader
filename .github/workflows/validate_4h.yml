@@ -1,12 +1,12 @@
 # ─────────────────────────────────────────────────────────────
 # Pipeline 3: Local 4H Validation
-# Manual trigger only. Runs ghost trader with real 4H candles
+# Manual trigger only. Runs trader with real 4H candles
 # for a configurable number of ticks (default 2 = ~8 hours).
 # This is the pre-deploy gate that validates real signal quality.
 #
 # NOTE: This is a long-running workflow (8+ hours for 2 ticks).
 # It runs directly in GitHub Actions. If you prefer to run
-# locally, use: PYTHONPATH=. python -m scripts.ghost_trader --ticks 2
+# locally, update configs/pipelines/ci_4h.yml and run main.py execute.
 # ─────────────────────────────────────────────────────────────
 name: Local 4H Validation
 
@@ -22,7 +22,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    environment: ghost-trader
+    environment: trader
     # 2 ticks × 4h + buffer = ~10h. GitHub free tier allows up to 6h per job.
     # For >1 tick, run locally or on a self-hosted runner.
     # Single tick validation (--ticks 1) fits within the 6h limit.
@@ -50,21 +50,42 @@ jobs:
           ENV: test
 
       - name: Create data directories
-        run: mkdir -p data/ghost logs
+        run: mkdir -p data/ci data/reports logs
 
-      - name: Run 4H validation (${{ github.event.inputs.ticks }} ticks)
-        run: python -m scripts.ghost_trader --ticks ${{ github.event.inputs.ticks }}
+      - name: Prepare validation config
+        run: |
+          python3 - <<'PY'
+          import yaml
+
+          path = "configs/pipelines/ci_4h.yml"
+          with open(path, "r") as f:
+              data = yaml.safe_load(f)
+
+          data["pipeline"]["execution"]["max_ticks"] = int("${{ github.event.inputs.ticks }}")
+
+          with open("ci_4h_runtime.yml", "w") as f:
+              yaml.safe_dump(data, f, sort_keys=False)
+          PY
+
+      - name: Build CI 4H universe
+        run: python main.py research --pipeline ci_4h_runtime.yml --universe configs/universe/alpha_v1.yml --backtest configs/backtest/stress_test.yml --strategy configs/strategy/alpha_v1.yml
         env:
           PYTHONPATH: .
-          BYBIT_READONLY_API_KEY: ${{ secrets.BYBIT_READONLY_API_KEY }}
-          BYBIT_READONLY_API_SECRET: ${{ secrets.BYBIT_READONLY_API_SECRET }}
-          GHOST_EXCHANGE: bybit
+          EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
+          EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
+
+      - name: Run 4H validation (${{ github.event.inputs.ticks }} ticks)
+        run: python main.py execute --pipeline ci_4h_runtime.yml --strategy configs/strategy/alpha_v1.yml
+        env:
+          PYTHONPATH: .
+          EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
+          EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
       - name: Generate validation report
         run: |
-          python -m scripts.ghost_report --json > validation_report.json
-          python -m scripts.ghost_report --export
-          python -m scripts.ghost_report --detailed
+          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --json > validation_report.json
+          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --export
+          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --detailed
         env:
           PYTHONPATH: .
 
@@ -92,6 +113,6 @@ jobs:
           name: validation-4h-${{ github.run_number }}
           path: |
             validation_report.json
-            data/ghost/trades.db
-            data/ghost/reports/
+            data/ci/trades_4h.db
+            data/reports/
           retention-days: 90

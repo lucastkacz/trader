@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────
 # Pipeline 5: Health Monitor (Watchdog)
 # Runs every 6 hours on a schedule. SSHs into the VPS,
-# checks if the ghost trader is alive and data is fresh,
+# checks if the trader is alive and data is fresh,
 # generates a report, and uploads it as an artifact.
 # If anything is wrong, the pipeline fails → GitHub sends
 # an email notification.
@@ -12,14 +12,14 @@ on:
   schedule:
     # Every 6 hours: 01:00, 07:00, 13:00, 19:00 UTC
     # Offset from 4H boundaries (00,04,08,12,16,20) to give the
-    # ghost trader time to complete its tick before we check.
+    # trader time to complete its tick before we check.
     - cron: '0 1,7,13,19 * * *'
   workflow_dispatch:
 
 jobs:
   health:
     runs-on: ubuntu-latest
-    environment: ghost-trader
+    environment: trader
     timeout-minutes: 5
 
     steps:
@@ -38,16 +38,16 @@ jobs:
 
       - name: Check process is alive
         run: |
-          STATUS=$(ssh oracle-vps "sudo systemctl is-active ghost-trader" 2>&1)
+          STATUS=$(ssh oracle-vps "sudo systemctl is-active trader-engine" 2>&1)
           echo "Service status: $STATUS"
           if [ "$STATUS" != "active" ]; then
-            echo "::error::Ghost trader is NOT running! Status: $STATUS"
+            echo "::error::Trader engine is NOT running! Status: $STATUS"
             exit 1
           fi
 
       - name: Check data freshness
         run: |
-          FRESHNESS=$(ssh oracle-vps "cd ~/quant && sqlite3 data/ghost/trades.db \
+          FRESHNESS=$(ssh oracle-vps "cd ~/quant && sqlite3 data/prod/trades_4h.db \
             \"SELECT CASE WHEN \
               (julianday('now') - julianday(MAX(timestamp))) * 24 > 6 \
               THEN 'STALE' ELSE 'FRESH' END FROM equity_snapshots;\"" 2>&1)
@@ -59,7 +59,7 @@ jobs:
 
       - name: Generate and download report
         run: |
-          ssh oracle-vps "cd ~/quant && PYTHONPATH=. .venv/bin/python -m scripts.ghost_report --json" \
+          ssh oracle-vps "cd ~/quant && PYTHONPATH=. .venv/bin/python -m src.engine.trader.report_generator --db-path data/prod/trades_4h.db --min-sharpe 1.0 --json" \
             > latest_report.json
           echo "Report downloaded successfully"
           # Show key metrics

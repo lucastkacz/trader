@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────
 # Pipeline 4: Deploy to VPS
 # Manual trigger only. Deploys latest main to Oracle Cloud VPS
-# via SSH, restarts the ghost trader systemd service, and
+# via SSH, restarts the trader systemd services, and
 # verifies the process is alive.
 # ─────────────────────────────────────────────────────────────
 name: Deploy
@@ -12,7 +12,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ghost-trader
+    environment: trader
     timeout-minutes: 10
 
     steps:
@@ -59,12 +59,12 @@ jobs:
             echo "=== Installing dependencies ==="
             .venv/bin/pip install -r requirements.txt --quiet
             echo "=== Restarting services ==="
-            sudo systemctl restart ghost-trader
-            sudo systemctl restart ghost-telegram
+            sudo systemctl restart trader-engine
+            sudo systemctl restart trader-telegram
             sleep 10
             echo "=== Checking service statuses ==="
-            sudo systemctl is-active ghost-trader
-            sudo systemctl is-active ghost-telegram
+            sudo systemctl is-active trader-engine
+            sudo systemctl is-active trader-telegram
           DEPLOY
 
       - name: Post-deploy health check
@@ -72,10 +72,10 @@ jobs:
           ssh oracle-vps << 'CHECK'
             cd ~/quant
             echo "=== Database state ==="
-            sqlite3 data/ghost/trades.db "SELECT COUNT(*) || ' equity snapshots' FROM equity_snapshots;"
-            sqlite3 data/ghost/trades.db "SELECT COUNT(*) || ' open positions' FROM ghost_orders WHERE status='OPEN';"
+            sqlite3 data/prod/trades_4h.db "SELECT COUNT(*) || ' equity snapshots' FROM equity_snapshots;"
+            sqlite3 data/prod/trades_4h.db "SELECT COUNT(*) || ' open positions' FROM spread_positions WHERE status='OPEN';"
             echo "=== Quick report ==="
-            PYTHONPATH=. .venv/bin/python -m scripts.ghost_report 2>&1 | head -20
+            PYTHONPATH=. .venv/bin/python -m src.engine.trader.report_generator --db-path data/prod/trades_4h.db --min-sharpe 1.0 2>&1 | head -20
           CHECK
 
       - name: Cleanup SSH key

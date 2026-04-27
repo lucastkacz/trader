@@ -1,0 +1,4 @@
+telegram:
+  environment: "UAT"
+  bot_name: "@UatBot"
+  db_path: "data/uat/trades_4h.db"

@@ -5,12 +5,13 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 from src.core.logger import logger
+from src.core.config import settings
 from src.data.fetcher.live_client import fetch_live_klines
-from src.engine.ghost.state_manager import GhostStateManager
-from src.engine.ghost.signal_engine import evaluate_signal
-from src.core.notifier import TelegramNotifier
+from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.signal_engine import evaluate_signal
+from src.interfaces.telegram.notifier import TelegramNotifier
 
-class LiveGhostTrader:
+class LiveTrader:
     def __init__(self):
         pass
 
@@ -51,12 +52,22 @@ class LiveGhostTrader:
         delta = (next_candle - now).total_seconds() + CANDLE_BUFFER_SECONDS
         return max(delta, 0)
 
-    async def fetch_recent_candles(self, symbol: str, bars_needed: int, timeframe: str) -> pd.DataFrame:
-        df = await fetch_live_klines(symbol=symbol, timeframe=timeframe, limit=bars_needed)
+    async def fetch_recent_candles(
+        self, symbol: str, bars_needed: int, timeframe: str,
+        exchange_id: str, api_key: str, api_secret: str,
+    ) -> pd.DataFrame:
+        df = await fetch_live_klines(
+            exchange_id=exchange_id,
+            api_key=api_key,
+            api_secret=api_secret,
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=bars_needed,
+        )
         df.attrs["symbol"] = symbol
         return df
 
-    def calculate_unrealized_pnl(self, state: GhostStateManager, pair_prices: Dict[str, tuple]) -> float:
+    def calculate_unrealized_pnl(self, state: TradeStateManager, pair_prices: Dict[str, tuple]) -> float:
         open_positions = state.get_open_positions()
         total_unrealized = 0.0
 
@@ -78,7 +89,7 @@ class LiveGhostTrader:
 
         return total_unrealized
 
-    def calculate_per_pair_pnl(self, state: GhostStateManager, pair_prices: Dict[str, tuple]) -> Dict[str, float]:
+    def calculate_per_pair_pnl(self, state: TradeStateManager, pair_prices: Dict[str, tuple]) -> Dict[str, float]:
         open_positions = state.get_open_positions()
         per_pair = {}
 
@@ -114,7 +125,7 @@ class LiveGhostTrader:
             else:
                 return "FLIP"
 
-    async def execute_emergency_liquidation(self, state: GhostStateManager, pairs: List[Dict], notifier: TelegramNotifier, timeframe: str, target: Optional[str] = None):
+    async def execute_emergency_liquidation(self, state: TradeStateManager, pairs: List[Dict], notifier: TelegramNotifier, timeframe: str, exchange_id: str, api_key: str, api_secret: str, target: Optional[str] = None):
         open_positions = state.get_open_positions()
         
         if target:
@@ -134,8 +145,8 @@ class LiveGhostTrader:
             asset_x = pos["asset_x"]
             asset_y = pos["asset_y"]
             try:
-                df_x = await self.fetch_recent_candles(symbol=asset_x, timeframe=timeframe, bars_needed=1)
-                df_y = await self.fetch_recent_candles(symbol=asset_y, timeframe=timeframe, bars_needed=1)
+                df_x = await self.fetch_recent_candles(symbol=asset_x, timeframe=timeframe, bars_needed=1, exchange_id=exchange_id, api_key=api_key, api_secret=api_secret)
+                df_y = await self.fetch_recent_candles(symbol=asset_y, timeframe=timeframe, bars_needed=1, exchange_id=exchange_id, api_key=api_key, api_secret=api_secret)
                 price_x = df_x['close'].iloc[-1]
                 price_y = df_y['close'].iloc[-1]
                 
@@ -153,43 +164,46 @@ class LiveGhostTrader:
                 if notifier:
                     await notifier.send(f"❌ LIQUIDATION FAILED for {pair_label}: {e}")
 
-    async def process_user_commands(self, state: GhostStateManager, pairs: List[Dict], notifier: TelegramNotifier, timeframe: str):
-        global SYSTEM_PAUSED
-        commands = state.pop_pending_commands()
+    async def process_user_commands(self, state: TradeStateManager, pairs: List[Dict], notifier: TelegramNotifier, timeframe: str, exchange_id: str, api_key: str, api_secret: str):
+        commands = state.claim_pending_commands()
         for cmd in commands:
+            command_id = cmd["id"]
             action = cmd["command"]
             target = cmd["target_pair"]
             logger.info(f"Processing UI Command: {action} on {target}")
             
             try:
                 if action == "/stop_all":
-                    await self.execute_emergency_liquidation(state, pairs, notifier, timeframe, target=None)
+                    await self.execute_emergency_liquidation(state, pairs, notifier, timeframe, exchange_id=exchange_id, api_key=api_key, api_secret=api_secret, target=None)
                 elif action == "/stop":
-                    await self.execute_emergency_liquidation(state, pairs, notifier, timeframe, target=target)
+                    await self.execute_emergency_liquidation(state, pairs, notifier, timeframe, exchange_id=exchange_id, api_key=api_key, api_secret=api_secret, target=target)
                 elif action == "/pause":
-                    SYSTEM_PAUSED = True
+                    state.set_system_paused(True)
                     if notifier:
                         await notifier.send("⏸️ <b>SYSTEM PAUSED</b>\nNo new trades will be executed.")
                 elif action == "/resume":
-                    SYSTEM_PAUSED = False
+                    state.set_system_paused(False)
                     if notifier:
                         await notifier.send("▶️ <b>SYSTEM RESUMED</b>\nTick execution restored.")
                 else:
                     logger.warning(f"Unknown command {action}")
+                    state.mark_command_ignored(command_id, "unknown command")
+                    continue
+                state.mark_command_executed(command_id)
             except Exception as e:
+                state.mark_command_failed(command_id, str(e))
                 logger.error(f"Failed executing command {action}: {e}")
                 if notifier:
                     await notifier.send(f"⚠️ COMMAND FAILED: {action} ({e})")
 
 
-    async def execute_tick(self, pairs: List[Dict[str, Any]], state: GhostStateManager, notifier: TelegramNotifier, timeframe: str, strategy_cfg: dict):
-        global SYSTEM_PAUSED
-        if SYSTEM_PAUSED:
+    async def execute_tick(self, pairs: List[Dict[str, Any]], state: TradeStateManager, notifier: TelegramNotifier, timeframe: str, strategy_cfg: dict, exchange_id: str, api_key: str, api_secret: str):
+        if state.is_system_paused():
             logger.info("Tick skipped — System is PAUSED.")
             return
 
         tick_time = datetime.now(timezone.utc).isoformat()
-        logger.info(f"═══ GHOST TICK @ {tick_time} ═══")
+        logger.info(f"═══ ENGINE TICK @ {tick_time} ═══")
 
         pair_prices = {}
 
@@ -198,6 +212,7 @@ class LiveGhostTrader:
             asset_y = pair["Asset_Y"]
             pair_label = f"{asset_x}|{asset_y}"
             best_params = pair["Best_Params"]
+            hedge_ratio = pair["Hedge_Ratio"]
             lookback_bars = best_params["lookback_bars"]
             entry_z = best_params["entry_z"]
             vol_lookback_bars = strategy_cfg["execution"]["volatility_lookback_bars"]
@@ -205,8 +220,8 @@ class LiveGhostTrader:
             bars_needed = lookback_bars + 50
 
             try:
-                df_a = await self.fetch_recent_candles(asset_x, bars_needed, timeframe)
-                df_b = await self.fetch_recent_candles(asset_y, bars_needed, timeframe)
+                df_a = await self.fetch_recent_candles(asset_x, bars_needed, timeframe, exchange_id=exchange_id, api_key=api_key, api_secret=api_secret)
+                df_b = await self.fetch_recent_candles(asset_y, bars_needed, timeframe, exchange_id=exchange_id, api_key=api_key, api_secret=api_secret)
             except Exception as e:
                 logger.warning(f"Failed fetching data for {pair_label}: {e}")
                 continue
@@ -223,6 +238,7 @@ class LiveGhostTrader:
                 exit_z=exit_z,
                 lookback_bars=lookback_bars,
                 vol_lookback_bars=vol_lookback_bars,
+                hedge_ratio=hedge_ratio,
                 current_side=current_side,
             )
 
@@ -304,7 +320,7 @@ class LiveGhostTrader:
         per_pair_pnl_json = json.dumps(per_pair_pnl) if per_pair_pnl else None
 
         closed = state.get_all_closed()
-        realized = sum(t["pnl_pct"] or 0.0 for t in closed)
+        realized = sum(t["realized_pnl_pct"] or 0.0 for t in closed)
         unrealized = self.calculate_unrealized_pnl(state, pair_prices)
         open_count = len(state.get_open_positions())
 
@@ -326,14 +342,24 @@ class LiveGhostTrader:
     async def run(self, pipeline_cfg: dict, strategy_cfg: dict, notifier: TelegramNotifier = None):
         timeframe = pipeline_cfg["timeframe"]
         execution_cfg = pipeline_cfg["execution"]
-        max_ticks = execution_cfg.get("max_ticks", None) # Optional loop limit
+        max_ticks = execution_cfg.get("max_ticks", None)  # Optional loop limit
         heartbeat_seconds = execution_cfg["heartbeat_seconds"]
         sync_to_boundary = execution_cfg["sync_to_boundary"]
         db_path = execution_cfg["db_path"]
         min_sharpe = execution_cfg["min_sharpe"]
+        exchange_id = execution_cfg["exchange"]
+
+        # Resolve credentials from credential_tier
+        credential_tier = execution_cfg["credential_tier"]
+        if credential_tier == "live":
+            api_key = settings.exchange_live_api_key or ""
+            api_secret = settings.exchange_live_api_secret or ""
+        else:
+            api_key = settings.exchange_readonly_api_key or ""
+            api_secret = settings.exchange_readonly_api_secret or ""
 
         logger.info("═══════════════════════════════════════════════════════════")
-        logger.info(f"  EPOCH 3: Ghost Trader Starting [{timeframe}]")
+        logger.info(f"  Trader Engine Starting [{timeframe}]")
         logger.info(f"  Sync: {sync_to_boundary} | Heartbeat: {heartbeat_seconds}s")
         logger.info("═══════════════════════════════════════════════════════════")
 
@@ -348,11 +374,11 @@ class LiveGhostTrader:
             await notifier.send("⚠️ <b>Fatal Error:</b> No Tier 1 pairs found.")
             return
 
-        state = GhostStateManager(db_path=db_path)
+        state = TradeStateManager(db_path=db_path)
 
         open_pos = state.get_open_positions()
         if open_pos:
-            logger.info(f"Resuming with {len(open_pos)} open ghost positions.")
+            logger.info(f"Resuming with {len(open_pos)} open positions.")
 
         tick_count = 0
 
@@ -368,7 +394,7 @@ class LiveGhostTrader:
                 logger.info(f"Next tick scheduled for {wake_fmt} UTC. Entering polling loop.")
                 
                 while True:
-                    await self.process_user_commands(state, pairs, notifier, timeframe)
+                    await self.process_user_commands(state, pairs, notifier, timeframe, exchange_id=exchange_id, api_key=api_key, api_secret=api_secret)
                     
                     now = datetime.now(timezone.utc)
                     if now >= target_time:
@@ -376,7 +402,7 @@ class LiveGhostTrader:
                         
                     await asyncio.sleep(min(10.0, (target_time - now).total_seconds()))
 
-                await self.execute_tick(pairs, state, notifier, timeframe, strategy_cfg)
+                await self.execute_tick(pairs, state, notifier, timeframe, strategy_cfg, exchange_id=exchange_id, api_key=api_key, api_secret=api_secret)
                 tick_count += 1
 
                 if max_ticks is not None and tick_count >= max_ticks:
@@ -384,10 +410,10 @@ class LiveGhostTrader:
                     break
 
         except KeyboardInterrupt:
-            logger.info("Ghost Trader shut down by user (KeyboardInterrupt).")
+            logger.info("Trader Engine shut down by user (KeyboardInterrupt).")
         except Exception as e:
-            logger.critical(f"Ghost Trader crashed: {e}")
-            await notifier.send(f"⚠️ <b>FATAL ERROR:</b> Ghost Trader crashed:\n<pre>{e}</pre>")
+            logger.critical(f"Trader Engine crashed: {e}")
+            await notifier.send(f"⚠️ <b>FATAL ERROR:</b> Trader Engine crashed:\n<pre>{e}</pre>")
             raise
         finally:
             state.close()

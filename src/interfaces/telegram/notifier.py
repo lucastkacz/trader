@@ -6,12 +6,12 @@ from src.core.logger import logger
 class TelegramNotifier:
     """
     Decoupled 1-Way Push Notifier.
-    Used exclusively by the Ghost Trader Executive Loop to safely dispatch state updates.
+    Used exclusively by the Trader Engine execution loop to safely dispatch state updates.
     """
     def __init__(self):
         self.token = settings.telegram_bot_token
         self.chat_id = settings.telegram_chat_id
-        self.prefix_tag = "[👻 PAPER]" if settings.log_level != "info" else "[💰 LIVE]"
+        self.prefix_tag = "[TRADER PAPER]" if settings.log_level != "info" else "[TRADER LIVE]"
 
     def _send_sync(self, message: str):
         """Synchronous HTTP dispatch with strict strict timeouts to prevent freezing."""

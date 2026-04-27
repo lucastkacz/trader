@@ -13,7 +13,7 @@ def load_yaml(path: str) -> dict:
         return list(data.values())[0]
 
 async def main():
-    parser = argparse.ArgumentParser(description="Ghost Trader Institutional Framework")
+    parser = argparse.ArgumentParser(description="Trader Institutional Framework")
     subparsers = parser.add_subparsers(dest="command", help="Operational Mode")
 
     # --- RESEARCH COMMAND ---

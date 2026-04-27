@@ -1,6 +1,6 @@
 """
-Ghost Signal Engine
-====================
+Signal Engine
+==============
 Pure math module for live signal generation.
 Structurally identical to the vectorized backtest logic, but operates
 on the latest bar rather than a historical array.
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from src.core.logger import logger, LogContext
+from src.engine.analysis.spread_math import build_hedged_log_spread, build_rolling_zscore
 
 
 @dataclass
@@ -35,6 +36,7 @@ def evaluate_signal(
     exit_z: float,
     lookback_bars: int,
     vol_lookback_bars: int,
+    hedge_ratio: float,
     current_side: Optional[str] = None,
 ) -> SignalResult:
     """
@@ -46,8 +48,9 @@ def evaluate_signal(
     df_b : Recent OHLCV DataFrame for Asset B (must have 'close' column)
     entry_z : Z-score threshold to trigger entry
     exit_z : Z-score threshold to trigger exit (typically 0.0)
-    lookback_days : Rolling window for spread mean/std (in days)
-    vol_lookback_days : Rolling window for volatility parity (in days)
+    lookback_bars : Rolling window for spread mean/std
+    vol_lookback_bars : Rolling window for volatility parity
+    hedge_ratio : Canonical hedge ratio for log(A) - hedge_ratio * log(B)
     current_side : Current position state ('LONG_SPREAD', 'SHORT_SPREAD', or None)
 
     Returns
@@ -71,17 +74,10 @@ def evaluate_signal(
             price_b=float(merged["B_close"].iloc[-1]) if len(merged) > 0 else 0.0,
         )
 
-    # 1. Log-price spread
-    log_a = np.log(merged["A_close"])
-    log_b = np.log(merged["B_close"])
-    spread = log_a - log_b
-
-    # 2. Rolling Z-Score
-    rolling_mean = spread.rolling(window=lookback_bars).mean()
-    rolling_std = spread.rolling(window=lookback_bars).std()
-    rolling_std = rolling_std.replace(0.0, np.nan)
-
-    z_score = float((spread.iloc[-1] - rolling_mean.iloc[-1]) / rolling_std.iloc[-1])
+    # 1. Canonical hedge-adjusted log spread and rolling z-score
+    spread = build_hedged_log_spread(merged["A_close"], merged["B_close"], hedge_ratio)
+    z_scores = build_rolling_zscore(spread, lookback_bars)
+    z_score = float(z_scores.iloc[-1])
 
     # 3. Volatility Parity Weights
     ret_a = np.log(merged["A_close"] / merged["A_close"].shift(1))

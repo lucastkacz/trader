@@ -5,6 +5,7 @@ pipeline:
   max_symbols: 100
   execution:
     exchange: "bybit"
+    credential_tier: "readonly"
     db_path: "data/uat/trades_4h.db"
     min_sharpe: 1.0
     max_ticks: null

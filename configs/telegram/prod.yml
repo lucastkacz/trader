@@ -1,0 +1,4 @@
+telegram:
+  environment: "PROD"
+  bot_name: "@ProdBot"
+  db_path: "data/prod/trades_4h.db"

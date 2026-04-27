@@ -1,15 +1,15 @@
 """
-Epoch 3: Paper Trader Report CLI
+Trader Report CLI
 ==================================
-Comprehensive reporting interface for the paper trading system.
+Comprehensive reporting interface for the trading system.
 Calls report_engine.py for computation → renders to terminal, JSON, or Markdown.
 
 Usage:
-    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0
-    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/uat/trades_4h.db --min-sharpe 1.0 --detailed
-    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --pair "MET/USDT|LTC/USDT"
-    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --json
-    PYTHONPATH=. python -m src.engine.ghost.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --export
+    PYTHONPATH=. python -m src.engine.trader.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0
+    PYTHONPATH=. python -m src.engine.trader.report_generator --db-path data/uat/trades_4h.db --min-sharpe 1.0 --detailed
+    PYTHONPATH=. python -m src.engine.trader.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --pair "MET/USDT|LTC/USDT"
+    PYTHONPATH=. python -m src.engine.trader.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --json
+    PYTHONPATH=. python -m src.engine.trader.report_generator --db-path data/dev/trades_1m.db --min-sharpe 1.0 --export
 """
 
 import os
@@ -17,8 +17,8 @@ import json
 import argparse
 from datetime import datetime, timezone
 
-from src.engine.ghost.state_manager import GhostStateManager
-from src.engine.ghost.report_engine import generate_report, GhostReport
+from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.report_engine import generate_report, TradeReport
 
 
 # ─── Terminal Colors (ANSI) ──────────────────────────────────────
@@ -72,7 +72,7 @@ def _subheader(title: str):
 
 # ─── Renderers ───────────────────────────────────────────────────
 
-def render_executive_summary(report: GhostReport):
+def render_executive_summary(report: TradeReport):
     _header("EXECUTIVE SUMMARY")
     print(_metric("Status", _status_color(report.status)))
     print(_metric("Total Equity", _pnl_color(report.total_equity_pct)))
@@ -84,7 +84,7 @@ def render_executive_summary(report: GhostReport):
     print(_metric("Bar Interval", f"{24*365/report.bars_per_year:.1f}h ({report.bars_per_year:.0f}/yr)"))
 
 
-def render_portfolio_metrics(report: GhostReport):
+def render_portfolio_metrics(report: TradeReport):
     _header("PORTFOLIO METRICS")
 
     def _fmt_opt(val, fmt=".4f"):
@@ -101,7 +101,7 @@ def render_portfolio_metrics(report: GhostReport):
     print(_metric("Trades / Week", f"{report.trades_per_week:.2f}"))
 
 
-def render_per_pair(report: GhostReport, filter_pair: str = None):
+def render_per_pair(report: TradeReport, filter_pair: str = None):
     _header("PER-PAIR BREAKDOWN")
 
     pairs = report.per_pair
@@ -136,7 +136,7 @@ def render_per_pair(report: GhostReport, filter_pair: str = None):
             print(f"  {C.DIM}  └─ Z-Score: {p.current_z_score:.4f}{C.RESET}")
 
 
-def render_trade_log(report: GhostReport, filter_pair: str = None):
+def render_trade_log(report: TradeReport, filter_pair: str = None):
     _header("TRADE LOG")
 
     trades = report.trade_log
@@ -152,7 +152,7 @@ def render_trade_log(report: GhostReport, filter_pair: str = None):
     print(f"  {C.DIM}{'─'*4} {'─'*28} {'─'*14} {'─'*8} {'─'*9} {'─'*5} {'─'*6}{C.RESET}")
 
     for t in trades:
-        pnl = t.get("pnl_pct") or 0.0
+        pnl = t.get("realized_pnl_pct") or 0.0
         marker = f"{C.GREEN}✓{C.RESET}" if pnl > 0 else f"{C.RED}✗{C.RESET}"
         bars = t.get("holding_bars") or "?"
         pnl_str = _pnl_color(pnl)
@@ -165,7 +165,7 @@ def render_trade_log(report: GhostReport, filter_pair: str = None):
         )
 
 
-def render_signal_quality(report: GhostReport):
+def render_signal_quality(report: TradeReport):
     _header("SIGNAL QUALITY")
     sq = report.signal_quality
     print(_metric("Signal Accuracy", f"{sq.signal_accuracy*100:.1f}%"))
@@ -176,7 +176,7 @@ def render_signal_quality(report: GhostReport):
     print(_metric("Total Signals Recorded", str(sq.total_signals_recorded)))
 
 
-def render_risk(report: GhostReport):
+def render_risk(report: TradeReport):
     _header("RISK DASHBOARD")
     r = report.risk
     print(_metric("Portfolio Heat", f"{r.portfolio_heat*100:.4f}%"))
@@ -186,7 +186,34 @@ def render_risk(report: GhostReport):
     print(_metric("Data Freshness", r.data_freshness[:19] if len(r.data_freshness) > 10 else r.data_freshness))
 
 
-def render_backtest_comparison(report: GhostReport):
+def render_state_ledger(report: TradeReport):
+    _header("STATE LEDGER")
+    ledger = report.state_ledger
+    latest_recon = ledger.latest_reconciliation_run_status or "N/A"
+
+    print(_metric("Order Events", str(ledger.total_order_events)))
+    print(_metric("Reconciliation Status", latest_recon))
+    print(_metric("Reconciliation Deltas", str(ledger.reconciliation_delta_count)))
+
+    _subheader("Leg Targets")
+    if not ledger.leg_targets_by_status_role:
+        print(f"  {C.DIM}No leg target rows recorded.{C.RESET}")
+    else:
+        for status, role_counts in ledger.leg_targets_by_status_role.items():
+            role_summary = ", ".join(
+                f"{role}: {count}" for role, count in role_counts.items()
+            )
+            print(_metric(status, role_summary))
+
+    _subheader("User Commands")
+    if not ledger.user_commands_by_status:
+        print(f"  {C.DIM}No user commands recorded.{C.RESET}")
+    else:
+        for status, count in ledger.user_commands_by_status.items():
+            print(_metric(status, str(count)))
+
+
+def render_backtest_comparison(report: TradeReport):
     _header("BACKTEST vs LIVE COMPARISON")
 
     bt_sharpe = f"{report.backtest_avg_sharpe:.4f}" if report.backtest_avg_sharpe else "N/A"
@@ -214,28 +241,28 @@ def render_backtest_comparison(report: GhostReport):
 
 # ─── Export Functions ────────────────────────────────────────────
 
-def export_json(report: GhostReport) -> str:
+def export_json(report: TradeReport) -> str:
     """Export report as JSON file. Returns the file path."""
-    os.makedirs("data/ghost/reports", exist_ok=True)
+    os.makedirs("data/reports", exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
-    path = f"data/ghost/reports/report_{ts}.json"
+    path = f"data/reports/report_{ts}.json"
     with open(path, "w") as f:
         json.dump(report.to_dict(), f, indent=2, default=str)
     return path
 
 
-def export_markdown(report: GhostReport) -> str:
+def export_markdown(report: TradeReport) -> str:
     """Export report as Markdown file. Returns the file path."""
-    os.makedirs("data/ghost/reports", exist_ok=True)
+    os.makedirs("data/reports", exist_ok=True)
 
     # Determine week number from first snapshot
     week_num = 1
     if report.uptime_hours > 0:
         week_num = max(1, int(report.uptime_hours / (24 * 7)) + 1)
-    path = f"data/ghost/reports/weekly_report_week{week_num:02d}.md"
+    path = f"data/reports/weekly_report_week{week_num:02d}.md"
 
     lines = []
-    lines.append(f"# Paper Trader Report — Week {week_num}")
+    lines.append(f"# Trader Report — Week {week_num}")
     lines.append(f"*Generated: {report.report_timestamp[:19]} UTC*\n")
 
     # Executive Summary
@@ -249,6 +276,39 @@ def export_markdown(report: GhostReport) -> str:
     lines.append(f"| Active Pairs | {report.active_pairs} |")
     lines.append(f"| Total Trades | {report.total_trades} |")
     lines.append(f"| Uptime | {report.uptime_hours:.1f}h |")
+    lines.append("")
+
+    # State Ledger
+    lines.append("## State Ledger\n")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
+    lines.append(f"| Order Events | {report.state_ledger.total_order_events} |")
+    latest_recon = report.state_ledger.latest_reconciliation_run_status or "N/A"
+    lines.append(f"| Latest Reconciliation Status | {latest_recon} |")
+    lines.append(f"| Reconciliation Deltas | {report.state_ledger.reconciliation_delta_count} |")
+    lines.append("")
+
+    lines.append("### Leg Targets\n")
+    lines.append("| Status | Roles |")
+    lines.append("|--------|-------|")
+    if report.state_ledger.leg_targets_by_status_role:
+        for status, role_counts in report.state_ledger.leg_targets_by_status_role.items():
+            role_summary = ", ".join(
+                f"{role}: {count}" for role, count in role_counts.items()
+            )
+            lines.append(f"| {status} | {role_summary} |")
+    else:
+        lines.append("| N/A | No leg target rows recorded. |")
+    lines.append("")
+
+    lines.append("### User Commands\n")
+    lines.append("| Status | Count |")
+    lines.append("|--------|-------|")
+    if report.state_ledger.user_commands_by_status:
+        for status, count in report.state_ledger.user_commands_by_status.items():
+            lines.append(f"| {status} | {count} |")
+    else:
+        lines.append("| N/A | 0 |")
     lines.append("")
 
     # Portfolio Metrics
@@ -288,7 +348,7 @@ def export_markdown(report: GhostReport) -> str:
         lines.append("| ID | Pair | Side | Entry Z | PnL% | Bars |")
         lines.append("|----|------|------|---------|------|------|")
         for t in report.trade_log:
-            pnl = t.get("pnl_pct") or 0.0
+            pnl = t.get("realized_pnl_pct") or 0.0
             bars = t.get("holding_bars") or "?"
             lines.append(
                 f"| {t.get('id', '?')} | {t.get('pair_label', '?')} | "
@@ -311,10 +371,10 @@ def main():
     parser.add_argument("--detailed", action="store_true", help="Show full trade log and signal quality")
     parser.add_argument("--pair", type=str, default=None, help='Single pair deep-dive (e.g. "MET/USDT|LTC/USDT")')
     parser.add_argument("--json", action="store_true", help="Output full report as JSON to stdout")
-    parser.add_argument("--export", action="store_true", help="Save JSON + Markdown reports to data/ghost/reports/")
+    parser.add_argument("--export", action="store_true", help="Save JSON + Markdown reports to data/reports/")
     args = parser.parse_args()
 
-    state = GhostStateManager(db_path=args.db_path)
+    state = TradeStateManager(db_path=args.db_path)
 
     try:
         report = generate_report(state, min_sharpe=args.min_sharpe)
@@ -341,6 +401,7 @@ def main():
             render_trade_log(report, filter_pair=args.pair)
             render_signal_quality(report)
 
+        render_state_ledger(report)
         render_risk(report)
         render_backtest_comparison(report)
         print()

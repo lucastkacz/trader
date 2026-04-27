@@ -1,3 +1,11 @@
-upgrade python
 refactor ghost in engine!
-run dev local pipeline
+run dev local pipeline (initial fetch, then univrese creation then cluster creation then live trding)
+refactor telegram
+update actions var names
+
+remove epoch mentioning, remove default values form functions
+
+refacccotr trader which is a mess
+
+
+13_CONTEXT_HANDOFF_AND_STATE_ARCHITECTURE.md is now complete. The broader MD is not fully exhausted yet, because it also includes larger production-hardening recommendations: strict typed config, more realistic backtest execution, exchange-agnostic market filtering, fuller order lifecycle states, boot reconciliation, and real auditor behavior.

@@ -15,7 +15,7 @@ class DiscoveryEngine:
     def __init__(self, storage: ParquetStorage):
         self.storage = storage
 
-    def run(self, timeframe: str, universe_cfg: dict, strategy_cfg: dict):
+    def run(self, timeframe: str, exchange: str, universe_cfg: dict, strategy_cfg: dict):
         logger.info("Initializing Epoch 1 Phase 3 & 4 Discovery Engine...")
         
         filters_cfg = universe_cfg["filters"]
@@ -33,7 +33,7 @@ class DiscoveryEngine:
         p_value_thresh = coint_cfg["p_value_threshold"]
         half_life_max = coint_cfg["max_half_life_bars"]
 
-        base_path = f"data/parquet/bybit/{timeframe}"
+        base_path = f"data/parquet/{exchange}/{timeframe}"
         
         if not os.path.exists(base_path):
             logger.error(f"Cannot find populated parquet directory at {base_path}")
@@ -52,7 +52,7 @@ class DiscoveryEngine:
                 continue
                 
             try:
-                df = self.storage.load_ohlcv(symbol, timeframe, exchange="bybit")
+                df = self.storage.load_ohlcv(symbol, timeframe, exchange=exchange)
                 df.set_index("timestamp", inplace=True)
                 
                 recent_df = df.iloc[-recent_vol_bars:]
