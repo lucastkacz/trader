@@ -10,28 +10,30 @@ from src.screener.filters.data_maturity import DataMaturityFilter
 from src.screener.clustering.returns_matrix import MatrixBuilder
 from src.screener.clustering.graph_louvain import LouvainTaxonomist
 from src.engine.analysis.cointegration import CointegrationEngine
+from src.engine.trader.config import StrategyConfig, UniverseConfig
 
 class DiscoveryEngine:
     def __init__(self, storage: ParquetStorage):
         self.storage = storage
 
-    def run(self, timeframe: str, exchange: str, universe_cfg: dict, strategy_cfg: dict):
+    def run(self, timeframe: str, exchange: str, universe_cfg: UniverseConfig, strategy_cfg: StrategyConfig):
         logger.info("Initializing Epoch 1 Phase 3 & 4 Discovery Engine...")
         
-        filters_cfg = universe_cfg["filters"]
-        exclude_mega_caps = filters_cfg["exclude_top_n_mega_caps"]
-        recent_vol_bars = filters_cfg["volume_lookback_bars"]
-        min_volume = filters_cfg["min_volume_liquidity"]
-        max_volume = filters_cfg["max_volume_liquidity"]
-        sieve_bars = filters_cfg["min_data_maturity_bars"]
+        filters_cfg = universe_cfg.filters
+        exclude_mega_caps = filters_cfg.exclude_top_n_mega_caps
+        recent_vol_bars = filters_cfg.volume_lookback_bars
+        min_volume = filters_cfg.min_volume_liquidity
+        max_volume = filters_cfg.max_volume_liquidity
+        sieve_bars = filters_cfg.min_data_maturity_bars
         
-        clustering_cfg = universe_cfg["clustering"]
-        returns_clip = clustering_cfg["returns_clip_percentile"]
-        louvain_thresh = clustering_cfg["louvain_correlation_threshold"]
+        clustering_cfg = universe_cfg.clustering
+        returns_clip = clustering_cfg.returns_clip_percentile
+        louvain_thresh = clustering_cfg.louvain_correlation_threshold
         
-        coint_cfg = universe_cfg["cointegration"]
-        p_value_thresh = coint_cfg["p_value_threshold"]
-        half_life_max = coint_cfg["max_half_life_bars"]
+        coint_cfg = universe_cfg.cointegration
+        p_value_thresh = coint_cfg.p_value_threshold
+        half_life_max = coint_cfg.max_half_life_bars
+        ewma_span_bars = coint_cfg.ewma_span_bars
 
         base_path = f"data/parquet/{exchange}/{timeframe}"
         
@@ -79,7 +81,7 @@ class DiscoveryEngine:
         logger.info(f"Loaded {len(pool)} assets into RAM memory safely.")
         
         # 2. Maturity Sieve
-        sieve = DataMaturityFilter(min_days=sieve_bars)
+        sieve = DataMaturityFilter(min_bars=sieve_bars)
         surviving_symbols = sieve.filter(pool)
         
         mature_pool = {sym: pool[sym] for sym in surviving_symbols}
@@ -103,7 +105,11 @@ class DiscoveryEngine:
         
         # 5. Cointegration Edge Processing
         logger.info("Entering Phase 4: Cointegration Alpha Core Generation...")
-        cointegration_engine = CointegrationEngine(p_value_threshold=p_value_thresh, max_half_life=half_life_max)
+        cointegration_engine = CointegrationEngine(
+            p_value_threshold=p_value_thresh,
+            max_half_life_bars=half_life_max,
+            ewma_span_bars=ewma_span_bars,
+        )
         
         final_pairs = []
         
@@ -132,8 +138,8 @@ class DiscoveryEngine:
                             "Hedge_Ratio": result["hedge_ratio"],
                             "Half_Life": result["half_life"],
                             "Best_Params": {
-                                "lookback_bars": strategy_cfg["execution"]["ew_ols_lookback_bars"],
-                                "entry_z": strategy_cfg["execution"]["entry_z_score"]
+                                "lookback_bars": strategy_cfg.execution.ew_ols_lookback_bars,
+                                "entry_z": strategy_cfg.execution.entry_z_score
                             },
                             "Performance": {
                                 "sharpe_ratio": 1.0, 

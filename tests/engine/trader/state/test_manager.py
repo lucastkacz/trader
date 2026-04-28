@@ -5,6 +5,11 @@ Uses in-memory SQLite to avoid filesystem side effects.
 
 import json
 import pytest
+from src.engine.trader.state.lifecycle import compute_holding_bars
+from src.engine.trader.state.order_lifecycle import (
+    InvalidLegOrderTransition,
+    LegOrderStatus,
+)
 from src.engine.trader.state_manager import TradeStateManager
 
 
@@ -105,7 +110,7 @@ def test_close_position_calculates_pnl(state):
     )
 
     # A goes up 10%, B stays flat → net PnL = 0.5 * 0.10 - 0.5 * 0.0 = +5%
-    pnl = state.close_position("X/USDT|Y/USDT", exit_price_a=110.0, exit_price_b=50.0)
+    pnl = state.close_position("X/USDT|Y/USDT", exit_price_a=110.0, exit_price_b=50.0, timeframe="4h")
     assert pnl is not None
     assert abs(pnl - 0.05) < 1e-10
 
@@ -136,6 +141,7 @@ def test_position_lifecycle_writes_order_events(state):
         "X/USDT|Y/USDT",
         exit_price_a=110.0,
         exit_price_b=50.0,
+        timeframe="4h",
         exit_z=0.1,
         close_reason="SIGNAL_EXIT",
     )
@@ -220,7 +226,7 @@ def test_close_position_records_close_leg_targets(state):
         lookback_bars=21,
     )
 
-    state.close_position("X/USDT|Y/USDT", 101.0, 49.0)
+    state.close_position("X/USDT|Y/USDT", 101.0, 49.0, timeframe="4h")
 
     legs = state.get_leg_fills(spread_id=spread_id)
     assert len(legs) == 4
@@ -248,7 +254,7 @@ def test_close_position_records_short_spread_close_leg_targets(state):
         lookback_bars=21,
     )
 
-    state.close_position("X/USDT|Y/USDT", 99.0, 51.0)
+    state.close_position("X/USDT|Y/USDT", 99.0, 51.0, timeframe="4h")
 
     close_legs = [
         leg for leg in state.get_leg_fills(spread_id=spread_id)
@@ -258,6 +264,123 @@ def test_close_position_records_short_spread_close_leg_targets(state):
         ("X/USDT", "BUY"),
         ("Y/USDT", "SELL"),
     ]
+
+
+def test_required_leg_order_statuses_are_explicit():
+    """Phase 10 order lifecycle statuses should be enumerated in one place."""
+    assert {status.value for status in LegOrderStatus} == {
+        "TARGET_RECORDED",
+        "SUBMIT_REQUESTED",
+        "ACKNOWLEDGED",
+        "PARTIALLY_FILLED",
+        "FILLED",
+        "CANCEL_REQUESTED",
+        "CANCELLED",
+        "FAILED",
+        "REJECTED",
+    }
+
+
+def test_leg_order_lifecycle_records_submission_acknowledgement_and_fills(state):
+    """Leg lifecycle helpers should update local state without submitting orders."""
+    spread_id = state.open_position(
+        pair_label="X/USDT|Y/USDT",
+        asset_x="X/USDT",
+        asset_y="Y/USDT",
+        side="LONG_SPREAD",
+        entry_price_a=100.0,
+        entry_price_b=50.0,
+        weight_a=0.6,
+        weight_b=0.4,
+        entry_z=-2.0,
+        lookback_bars=21,
+    )
+    leg_id = state.get_leg_fills(spread_id=spread_id)[0]["id"]
+
+    assert state.record_leg_submit_requested(leg_id, client_order_id="client-1") is True
+    assert state.record_leg_acknowledged(leg_id, exchange_order_id="exchange-1") is True
+    assert state.record_leg_partially_filled(leg_id, filled_qty=0.25, avg_fill_price=101.0) is True
+    assert state.record_leg_filled(leg_id, avg_fill_price=102.0) is True
+    assert state.record_leg_filled(leg_id, avg_fill_price=102.0) is False
+
+    leg = [row for row in state.get_leg_fills(spread_id=spread_id) if row["id"] == leg_id][0]
+    assert leg["status"] == "FILLED"
+    assert leg["filled_qty"] == pytest.approx(0.6)
+    assert leg["avg_fill_price"] == 102.0
+    assert leg["exchange_order_id"] == "exchange-1"
+    assert leg["client_order_id"] == "client-1"
+
+    events = state.get_order_events(spread_id=spread_id)
+    assert [event["event_type"] for event in events] == [
+        "SIGNAL_ENTRY",
+        "LEG_SUBMIT_REQUESTED",
+        "LEG_ACKNOWLEDGED",
+        "LEG_PARTIALLY_FILLED",
+        "LEG_FILLED",
+    ]
+
+
+def test_duplicate_leg_transition_is_idempotent(state):
+    """Exact duplicate lifecycle transitions should be no-ops."""
+    spread_id = state.open_position("X|Y", "X", "Y", "LONG_SPREAD", 10, 5, 0.5, 0.5, -2.0, 14)
+    leg_id = state.get_leg_fills(spread_id=spread_id)[0]["id"]
+
+    assert state.record_leg_submit_requested(leg_id, client_order_id="client-1") is True
+    assert state.record_leg_submit_requested(leg_id, client_order_id="client-1") is False
+
+    events = state.get_order_events(spread_id=spread_id)
+    assert [event["event_type"] for event in events] == [
+        "SIGNAL_ENTRY",
+        "LEG_SUBMIT_REQUESTED",
+    ]
+
+
+def test_invalid_leg_order_transition_is_rejected(state):
+    """Invalid status jumps should leave the leg unchanged."""
+    spread_id = state.open_position("X|Y", "X", "Y", "LONG_SPREAD", 10, 5, 0.5, 0.5, -2.0, 14)
+    leg_id = state.get_leg_fills(spread_id=spread_id)[0]["id"]
+
+    with pytest.raises(InvalidLegOrderTransition):
+        state.record_leg_acknowledged(leg_id, exchange_order_id="exchange-1")
+
+    leg = state.get_leg_fills(spread_id=spread_id)[0]
+    assert leg["status"] == "TARGET_RECORDED"
+    assert leg["exchange_order_id"] is None
+    assert [event["event_type"] for event in state.get_order_events(spread_id=spread_id)] == [
+        "SIGNAL_ENTRY"
+    ]
+
+
+def test_leg_order_cancel_and_reject_paths(state):
+    """Cancel and reject terminal statuses should be explicit and local-only."""
+    spread_id = state.open_position("X|Y", "X", "Y", "LONG_SPREAD", 10, 5, 0.5, 0.5, -2.0, 14)
+    first_leg, second_leg = state.get_leg_fills(spread_id=spread_id)
+
+    state.record_leg_submit_requested(first_leg["id"], client_order_id="cancel-client")
+    state.record_leg_acknowledged(first_leg["id"], exchange_order_id="cancel-exchange")
+    state.record_leg_cancel_requested(first_leg["id"])
+    state.record_leg_cancelled(first_leg["id"])
+
+    state.record_leg_submit_requested(second_leg["id"], client_order_id="reject-client")
+    state.record_leg_rejected(second_leg["id"], reason="exchange rejected test order")
+
+    legs = state.get_leg_fills(spread_id=spread_id)
+    assert [leg["status"] for leg in legs] == ["CANCELLED", "REJECTED"]
+
+
+def test_leg_order_fill_quantity_validation(state):
+    """Fill status helpers should not allow impossible quantities."""
+    spread_id = state.open_position("X|Y", "X", "Y", "LONG_SPREAD", 10, 5, 0.5, 0.5, -2.0, 14)
+    leg_id = state.get_leg_fills(spread_id=spread_id)[0]["id"]
+
+    state.record_leg_submit_requested(leg_id, client_order_id="client-1")
+    state.record_leg_acknowledged(leg_id, exchange_order_id="exchange-1")
+
+    with pytest.raises(ValueError):
+        state.record_leg_partially_filled(leg_id, filled_qty=0.5, avg_fill_price=10.0)
+
+    with pytest.raises(ValueError):
+        state.record_leg_filled(leg_id, filled_qty=0.25, avg_fill_price=10.0)
 
 
 def test_leg_fills_require_existing_spread(state):
@@ -302,7 +425,7 @@ def test_close_reason_is_persisted(state):
         lookback_bars=21,
     )
 
-    state.close_position("X/USDT|Y/USDT", 90.0, 55.0, close_reason="FORCE_CLOSE_REQUESTED")
+    state.close_position("X/USDT|Y/USDT", 90.0, 55.0, timeframe="4h", close_reason="FORCE_CLOSE_REQUESTED")
 
     closed = state.get_all_closed()
     events = state.get_order_events(spread_id=spread_id)
@@ -328,14 +451,14 @@ def test_close_short_spread_pnl(state):
 
     # A goes down 10% (good for short A), B goes up 10% (good for long B)
     # PnL = -0.5 * (-0.10) + 0.5 * 0.10 = 0.05 + 0.05 = 0.10
-    pnl = state.close_position("X/USDT|Y/USDT", exit_price_a=90.0, exit_price_b=55.0)
+    pnl = state.close_position("X/USDT|Y/USDT", exit_price_a=90.0, exit_price_b=55.0, timeframe="4h")
     assert pnl is not None
     assert abs(pnl - 0.10) < 1e-10
 
 
 def test_close_nonexistent_position_returns_none(state):
     """Closing a pair with no open position returns None."""
-    result = state.close_position("FAKE/USDT|PAIR/USDT", 100.0, 50.0)
+    result = state.close_position("FAKE/USDT|PAIR/USDT", 100.0, 50.0, timeframe="4h")
     assert result is None
 
 
@@ -363,7 +486,7 @@ def test_multiple_positions_tracked(state):
     assert len(open_pos) == 2
 
     # Close one
-    state.close_position("A|B", 11, 5)
+    state.close_position("A|B", 11, 5, timeframe="4h")
     open_pos = state.get_open_positions()
     assert len(open_pos) == 1
     assert open_pos[0]["pair_label"] == "C|D"
@@ -390,6 +513,7 @@ def test_close_position_with_exit_z(state):
         "X/USDT|Y/USDT",
         exit_price_a=110.0,
         exit_price_b=50.0,
+        timeframe="4h",
         exit_z=0.15,
     )
     assert pnl is not None
@@ -414,13 +538,22 @@ def test_close_position_holding_bars(state):
         lookback_bars=14,
     )
 
-    pnl = state.close_position("X/USDT|Y/USDT", exit_price_a=110.0, exit_price_b=50.0)
+    pnl = state.close_position("X/USDT|Y/USDT", exit_price_a=110.0, exit_price_b=50.0, timeframe="4h")
     assert pnl is not None
 
     closed = state.get_all_closed()
     assert len(closed) == 1
     # Opened and closed nearly instantly → holding_bars should be 1 (minimum)
     assert closed[0]["holding_bars"] >= 1
+
+
+def test_compute_holding_bars_uses_configured_timeframe():
+    open_ts = "2026-04-27T00:00:00+00:00"
+    close_ts = "2026-04-27T04:00:00+00:00"
+
+    assert compute_holding_bars(open_ts, close_ts, "4h") == 1
+    assert compute_holding_bars(open_ts, close_ts, "1m") == 240
+    assert compute_holding_bars(open_ts, close_ts, "15m") == 16
 
 
 def test_equity_snapshot_with_per_pair_pnl(state):
@@ -489,7 +622,7 @@ def test_get_all_orders(state):
     """get_all_orders should return both OPEN and CLOSED."""
     state.open_position("A|B", "A", "B", "LONG_SPREAD", 10, 5, 0.5, 0.5, -2.0, 14)
     state.open_position("C|D", "C", "D", "SHORT_SPREAD", 20, 10, 0.6, 0.4, 2.0, 7)
-    state.close_position("A|B", 11, 5)
+    state.close_position("A|B", 11, 5, timeframe="4h")
 
     all_orders = state.get_all_orders()
     assert len(all_orders) == 2

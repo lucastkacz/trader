@@ -9,13 +9,15 @@ Never touches trading exchanges or networking modules directly.
 import sys
 import argparse
 import logging
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Optional
 
-import yaml
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from src.core.config import settings
+from src.engine.trader.config import TelegramConfig
+from src.engine.trader.config import load_telegram_config as load_typed_telegram_config
 from src.engine.trader.state_manager import TradeStateManager
 
 # Minimal basic logging for the listener itself
@@ -25,26 +27,17 @@ logging.basicConfig(
 )
 
 TELEGRAM_DB_PATH: Optional[str] = None
-TELEGRAM_ENVIRONMENT = "UNKNOWN"
+TELEGRAM_ENVIRONMENT: Optional[str] = None
+TELEGRAM_HOLDING_PERIOD_BAR_MINUTES: Optional[float] = None
 
 
-def load_telegram_config(config_path: str) -> Dict[str, Any]:
-    """Load the telegram YAML block from a config file."""
-    with open(config_path, "r") as f:
-        data = yaml.safe_load(f) or {}
-
-    cfg = data.get("telegram", data)
-    if not cfg.get("db_path"):
-        raise ValueError(f"Telegram config missing required db_path: {config_path}")
-    return cfg
-
-
-def configure_daemon(config_path: str) -> Dict[str, Any]:
+def configure_daemon(config_path: str) -> TelegramConfig:
     """Configure daemon process globals from YAML."""
-    global TELEGRAM_DB_PATH, TELEGRAM_ENVIRONMENT
-    cfg = load_telegram_config(config_path)
-    TELEGRAM_DB_PATH = cfg["db_path"]
-    TELEGRAM_ENVIRONMENT = cfg.get("environment", "UNKNOWN")
+    global TELEGRAM_DB_PATH, TELEGRAM_ENVIRONMENT, TELEGRAM_HOLDING_PERIOD_BAR_MINUTES
+    cfg = load_typed_telegram_config(config_path)
+    TELEGRAM_DB_PATH = cfg.db_path
+    TELEGRAM_ENVIRONMENT = cfg.environment
+    TELEGRAM_HOLDING_PERIOD_BAR_MINUTES = cfg.holding_period_bar_minutes
     return cfg
 
 
@@ -53,6 +46,33 @@ def open_state_manager() -> TradeStateManager:
     if TELEGRAM_DB_PATH is None:
         raise RuntimeError("Telegram daemon db_path is not configured")
     return TradeStateManager(db_path=TELEGRAM_DB_PATH)
+
+
+def holding_duration_minutes(position: dict) -> float:
+    """Return display duration in minutes using explicit Telegram bar policy."""
+    if TELEGRAM_HOLDING_PERIOD_BAR_MINUTES is None:
+        raise RuntimeError("Telegram daemon holding_period_bar_minutes is not configured")
+
+    holding_bars = position.get("holding_bars")
+    if holding_bars:
+        return holding_bars * TELEGRAM_HOLDING_PERIOD_BAR_MINUTES
+
+    opened_at = position.get("opened_at")
+    if not opened_at:
+        return 0.0
+
+    try:
+        t_open = datetime.fromisoformat(opened_at.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return 0.0
+    return max(0.0, (datetime.now(timezone.utc) - t_open).total_seconds() / 60.0)
+
+
+def format_duration(minutes: float) -> str:
+    """Format a holding duration for compact Telegram display."""
+    if minutes < 60:
+        return f"{minutes:.0f}m"
+    return f"{minutes / 60.0:g}h"
 
 
 def require_auth(func):
@@ -104,9 +124,9 @@ async def bot_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = "📂 <b>OPEN POSITIONS</b>\n\n"
     for p in open_pos:
-        duration = p.get('holding_bars', 0) * 4
+        duration = format_duration(holding_duration_minutes(p))
         msg += f"• <b>{p['pair_label']}</b> ({p['side']})\n"
-        msg += f"  Duration: {duration}h\n"
+        msg += f"  Duration: {duration}\n"
         
     await update.message.reply_text(msg, parse_mode="HTML")
 

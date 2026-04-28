@@ -75,7 +75,7 @@ jobs:
           EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
       - name: Run 4H validation (${{ github.event.inputs.ticks }} ticks)
-        run: python main.py execute --pipeline ci_4h_runtime.yml --strategy configs/strategy/alpha_v1.yml
+        run: python main.py execute --pipeline ci_4h_runtime.yml --strategy configs/strategy/alpha_v1.yml --risk configs/risk/alpha_v1.yml
         env:
           PYTHONPATH: .
           EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
@@ -83,9 +83,9 @@ jobs:
 
       - name: Generate validation report
         run: |
-          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --json > validation_report.json
-          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --export
-          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --detailed
+          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --surviving-pairs-path data/universes/4h/surviving_pairs.json --json > validation_report.json
+          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --surviving-pairs-path data/universes/4h/surviving_pairs.json --export
+          python -m src.engine.trader.report_generator --db-path data/ci/trades_4h.db --min-sharpe 1.0 --surviving-pairs-path data/universes/4h/surviving_pairs.json --detailed
         env:
           PYTHONPATH: .
 

@@ -7,9 +7,20 @@ from typing import Any
 from src.core.config import settings
 from src.core.logger import logger
 from src.engine.trader.commands.processor import process_user_commands
+from src.engine.trader.config import OrderExecutionConfig, PipelineConfig, RiskConfig, StrategyConfig
 from src.engine.trader.execution.liquidation import execute_emergency_liquidation
 from src.engine.trader.execution.market_data import fetch_recent_candles
+from src.engine.trader.execution.orders import (
+    CCXTOrderExecutionAdapter,
+    OrderExecutionAdapter,
+)
 from src.engine.trader.execution.pnl import calculate_per_pair_pnl, calculate_unrealized_pnl
+from src.engine.trader.reconciliation import (
+    ExchangeSnapshotProvider,
+    ReconciliationAuditReport,
+    run_boot_reconciliation,
+    run_read_only_audit,
+)
 from src.engine.trader.runtime.actions import determine_action
 from src.engine.trader.runtime.credentials import resolve_credentials
 from src.engine.trader.runtime.pairs import load_tier1_pairs
@@ -115,6 +126,8 @@ class LiveTrader:
         exchange_id: str,
         api_key: str,
         api_secret: str,
+        order_execution_cfg: OrderExecutionConfig,
+        order_execution_adapter: OrderExecutionAdapter | None,
     ) -> None:
         await execute_tick(
             pairs=pairs,
@@ -125,31 +138,67 @@ class LiveTrader:
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            order_execution_cfg=order_execution_cfg,
+            order_execution_adapter=order_execution_adapter,
+        )
+
+    async def run_read_only_audit(
+        self,
+        state: TradeStateManager,
+        snapshot_provider: ExchangeSnapshotProvider | None,
+        credentials_available: bool,
+        qty_tolerance: float = 1e-9,
+    ) -> ReconciliationAuditReport:
+        """Run one manually callable read-only reconciliation audit."""
+        return await run_read_only_audit(
+            state=state,
+            snapshot_provider=snapshot_provider,
+            credentials_available=credentials_available,
+            qty_tolerance=qty_tolerance,
         )
 
     async def run(
         self,
-        pipeline_cfg: dict[str, Any],
-        strategy_cfg: dict[str, Any],
+        pipeline_cfg: PipelineConfig,
+        strategy_cfg: StrategyConfig,
+        risk_cfg: RiskConfig,
+        reconciliation_snapshot_provider: ExchangeSnapshotProvider | None = None,
         notifier: TelegramNotifier = None,
     ) -> None:
-        timeframe = pipeline_cfg["timeframe"]
-        execution_cfg = pipeline_cfg["execution"]
-        max_ticks = execution_cfg.get("max_ticks", None)  # Optional loop limit
-        heartbeat_seconds = execution_cfg["heartbeat_seconds"]
-        sync_to_boundary = execution_cfg["sync_to_boundary"]
-        db_path = execution_cfg["db_path"]
-        min_sharpe = execution_cfg["min_sharpe"]
-        exchange_id = execution_cfg["exchange"]
+        timeframe = pipeline_cfg.timeframe
+        execution_cfg = pipeline_cfg.execution
+        max_ticks = execution_cfg.max_ticks
+        heartbeat_seconds = execution_cfg.heartbeat_seconds
+        sync_to_boundary = execution_cfg.sync_to_boundary
+        db_path = execution_cfg.db_path
+        min_sharpe = execution_cfg.min_sharpe
+        exchange_id = execution_cfg.exchange
+        order_execution_cfg = execution_cfg.order_execution
 
         api_key, api_secret = resolve_credentials(
             settings=settings,
-            credential_tier=execution_cfg["credential_tier"],
+            credential_tier=execution_cfg.credential_tier,
         )
+        if order_execution_cfg.mode == "live" and execution_cfg.credential_tier != "live":
+            raise ValueError("order_execution.mode='live' requires credential_tier='live'")
+        if order_execution_cfg.mode == "live" and not (api_key and api_secret):
+            raise ValueError("order_execution.mode='live' requires live API credentials")
+        order_execution_adapter = None
+        if order_execution_cfg.mode == "live":
+            order_execution_adapter = CCXTOrderExecutionAdapter(
+                exchange_id=exchange_id,
+                api_key=api_key,
+                api_secret=api_secret,
+            )
 
         logger.info("═══════════════════════════════════════════════════════════")
         logger.info(f"  Trader Engine Starting [{timeframe}]")
         logger.info(f"  Sync: {sync_to_boundary} | Heartbeat: {heartbeat_seconds}s")
+        logger.info(
+            f"  Risk: {risk_cfg.name} | "
+            f"Cluster Cap: {risk_cfg.max_cluster_exposure:.2%} | "
+            f"Max Leverage: {risk_cfg.max_leverage:.2f}x"
+        )
         logger.info("═══════════════════════════════════════════════════════════")
 
         if notifier is None:
@@ -164,6 +213,30 @@ class LiveTrader:
             return
 
         state = TradeStateManager(db_path=db_path)
+
+        reconciliation_run_id = await run_boot_reconciliation(
+            state=state,
+            snapshot_provider=reconciliation_snapshot_provider,
+            credentials_available=bool(api_key and api_secret),
+        )
+        reconciliation_run = next(
+            run for run in state.get_reconciliation_runs()
+            if run["id"] == reconciliation_run_id
+        )
+        reconciliation_status = reconciliation_run["status"]
+        reconciliation_delta_count = len(
+            state.get_reconciliation_deltas(run_id=reconciliation_run_id)
+        )
+        if reconciliation_status != "MATCHED":
+            logger.warning(
+                f"Boot reconciliation status={reconciliation_status} "
+                f"deltas={reconciliation_delta_count}. No actions taken."
+            )
+            await notifier.send(
+                f"⚠️ <b>Boot Reconciliation:</b> {reconciliation_status}\n"
+                f"Deltas: {reconciliation_delta_count}\n"
+                "Mode: read-only, no actions taken."
+            )
 
         open_pos = state.get_open_positions()
         if open_pos:
@@ -204,10 +277,12 @@ class LiveTrader:
                     state,
                     notifier,
                     timeframe,
-                    strategy_cfg,
+                    strategy_cfg.model_dump(),
                     exchange_id=exchange_id,
                     api_key=api_key,
                     api_secret=api_secret,
+                    order_execution_cfg=order_execution_cfg,
+                    order_execution_adapter=order_execution_adapter,
                 )
                 tick_count += 1
 

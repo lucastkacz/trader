@@ -6,9 +6,7 @@ class FrictionEngine:
     Deducts Exchange Fees per turnover, and perpetually drains capital
     via Funding Rates to model the cost of carrying institutional positions.
     """
-    def __init__(self, maker_fee: float = 0.0002, taker_fee: float = 0.0006, annual_fund_rate: float = 0.10):
-        # Default ~0.06% Taker limits for Binance USD-M
-        # Default 10% annualized generic funding drag
+    def __init__(self, maker_fee: float, taker_fee: float, annual_fund_rate: float):
         self.taker_fee = taker_fee
         self.maker_fee = maker_fee
         

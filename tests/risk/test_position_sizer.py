@@ -1,10 +1,16 @@
 import pytest
 import numpy as np
 
+from src.engine.trader.config import load_risk_config
+
 try:
     from src.risk.position_sizer import VaultSizer, RiskLimitExceeded
 except ImportError:
     pass
+
+def test_vault_sizer_requires_explicit_risk_limits():
+    with pytest.raises(TypeError):
+        VaultSizer()
 
 def test_volatility_risk_parity():
     """
@@ -19,7 +25,11 @@ def test_volatility_risk_parity():
     vol_a = 0.01  # 1% standard deviation
     vol_b = 0.05  # 5% standard deviation
     
-    vault = VaultSizer(max_cluster_exposure=0.10, max_leverage=10.0)
+    risk_cfg = load_risk_config("configs/risk/alpha_v1.yml")
+    vault = VaultSizer(
+        max_cluster_exposure=risk_cfg.max_cluster_exposure,
+        max_leverage=risk_cfg.max_leverage,
+    )
     
     # We allocate to the Pair (Cluster limit is 10% of 10,000 = $1,000 Exposure Total)
     alloc_a, alloc_b = vault.calculate_parity(total_capital, vol_a, vol_b)
@@ -55,7 +65,11 @@ def test_leverage_limit_violation():
     # OR if the user-defined sizing targets fixed dollar risk.
     # In our Vault, we cap Notional Leverage defined as (PositionSize / IsolatedMargin).
     
-    vault = VaultSizer(max_cluster_exposure=0.10, max_leverage=10.0)
+    risk_cfg = load_risk_config("configs/risk/alpha_v1.yml")
+    vault = VaultSizer(
+        max_cluster_exposure=risk_cfg.max_cluster_exposure,
+        max_leverage=risk_cfg.max_leverage,
+    )
     
     # Mocking a scenario where to achieve the $100 Target Risk, 
     # it requires $10,000,000 in notional position.

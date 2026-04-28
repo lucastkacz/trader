@@ -81,7 +81,7 @@ jobs:
             echo "User=ubuntu" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
             echo "WorkingDirectory=/home/ubuntu/quant" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
             echo "Environment=\"PYTHONPATH=/home/ubuntu/quant\"" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
-            echo "ExecStart=/home/ubuntu/quant/.venv/bin/python main.py execute --pipeline configs/pipelines/prod.yml --strategy configs/strategy/alpha_v1.yml" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
+            echo "ExecStart=/home/ubuntu/quant/.venv/bin/python main.py execute --pipeline configs/pipelines/prod.yml --strategy configs/strategy/alpha_v1.yml --risk configs/risk/alpha_v1.yml" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
             echo "Restart=on-failure" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
             echo "RestartSec=30" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null
             echo "StandardOutput=append:/home/ubuntu/quant/logs/trader_stdout.log" | sudo tee -a /etc/systemd/system/trader-engine.service > /dev/null

@@ -58,19 +58,19 @@ jobs:
           EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
       - name: Run CI 1M integration (5 ticks)
-        run: python main.py execute --pipeline configs/pipelines/ci_1m.yml --strategy configs/strategy/alpha_v1.yml
+        run: python main.py execute --pipeline configs/pipelines/ci_1m.yml --strategy configs/strategy/alpha_v1.yml --risk configs/risk/alpha_v1.yml
         env:
           PYTHONPATH: .
           EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
           EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
       - name: Generate CI report (JSON)
-        run: python -m src.engine.trader.report_generator --db-path data/ci/trades_1m.db --min-sharpe 1.0 --json > ci_report.json
+        run: python -m src.engine.trader.report_generator --db-path data/ci/trades_1m.db --min-sharpe 1.0 --surviving-pairs-path data/universes/1m/surviving_pairs.json --json > ci_report.json
         env:
           PYTHONPATH: .
 
       - name: Generate CI report (export)
-        run: python -m src.engine.trader.report_generator --db-path data/ci/trades_1m.db --min-sharpe 1.0 --export
+        run: python -m src.engine.trader.report_generator --db-path data/ci/trades_1m.db --min-sharpe 1.0 --surviving-pairs-path data/universes/1m/surviving_pairs.json --export
         env:
           PYTHONPATH: .
 

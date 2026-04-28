@@ -5,6 +5,7 @@ from typing import Optional, List, Dict, Any
 from src.engine.trader.state.connection import connect_sqlite
 from src.engine.trader.state.lifecycle import compute_holding_bars
 from src.engine.trader.state.migrations import migrate_schema
+from src.engine.trader.state.order_lifecycle import LegOrderStatus
 from src.engine.trader.state.repositories import build_state_repositories
 from src.engine.trader.state.schema import create_schema
 from src.engine.trader.state.serialization import json_default
@@ -72,6 +73,7 @@ class TradeStateManager:
         pair_label: str,
         exit_price_a: float,
         exit_price_b: float,
+        timeframe: str,
         exit_z: Optional[float] = None,
         close_reason: str = "SIGNAL_EXIT",
     ) -> Optional[float]:
@@ -83,13 +85,14 @@ class TradeStateManager:
             pair_label=pair_label,
             exit_price_a=exit_price_a,
             exit_price_b=exit_price_b,
+            timeframe=timeframe,
             exit_z=exit_z,
             close_reason=close_reason,
         )
 
     @staticmethod
-    def _compute_holding_bars(open_ts: str, close_ts: str) -> int:
-        return compute_holding_bars(open_ts, close_ts)
+    def _compute_holding_bars(open_ts: str, close_ts: str, timeframe: str) -> int:
+        return compute_holding_bars(open_ts, close_ts, timeframe)
 
     def get_open_positions(self) -> List[Dict[str, Any]]:
         """Returns all currently open positions."""
@@ -158,6 +161,110 @@ class TradeStateManager:
     def get_leg_fills(self, spread_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Return leg target/fill rows, optionally filtered by spread id."""
         return self.legs.get(spread_id=spread_id)
+
+    # ─── Leg Order Lifecycle Interface ──────────────────────────────
+
+    def transition_leg_order_status(
+        self,
+        leg_fill_id: int,
+        next_status: LegOrderStatus | str,
+        *,
+        filled_qty: float | None = None,
+        avg_fill_price: float | None = None,
+        exchange_order_id: str | None = None,
+        client_order_id: str | None = None,
+        reason: str | None = None,
+    ) -> bool:
+        """Move a leg target through the local execution lifecycle."""
+        return self.operations.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=next_status,
+            filled_qty=filled_qty,
+            avg_fill_price=avg_fill_price,
+            exchange_order_id=exchange_order_id,
+            client_order_id=client_order_id,
+            reason=reason,
+        )
+
+    def record_leg_submit_requested(self, leg_fill_id: int, client_order_id: str) -> bool:
+        """Record that a future executor requested submission for a leg."""
+        return self.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=LegOrderStatus.SUBMIT_REQUESTED,
+            client_order_id=client_order_id,
+        )
+
+    def record_leg_acknowledged(
+        self,
+        leg_fill_id: int,
+        exchange_order_id: str,
+        client_order_id: str | None = None,
+    ) -> bool:
+        """Record that an exchange acknowledged a submitted leg order."""
+        return self.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=LegOrderStatus.ACKNOWLEDGED,
+            exchange_order_id=exchange_order_id,
+            client_order_id=client_order_id,
+        )
+
+    def record_leg_partially_filled(
+        self,
+        leg_fill_id: int,
+        filled_qty: float,
+        avg_fill_price: float,
+    ) -> bool:
+        """Record a partial fill for one leg order."""
+        return self.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=LegOrderStatus.PARTIALLY_FILLED,
+            filled_qty=filled_qty,
+            avg_fill_price=avg_fill_price,
+        )
+
+    def record_leg_filled(
+        self,
+        leg_fill_id: int,
+        filled_qty: float | None = None,
+        avg_fill_price: float | None = None,
+    ) -> bool:
+        """Record a complete fill for one leg order."""
+        return self.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=LegOrderStatus.FILLED,
+            filled_qty=filled_qty,
+            avg_fill_price=avg_fill_price,
+        )
+
+    def record_leg_cancel_requested(self, leg_fill_id: int) -> bool:
+        """Record that cancellation was requested for one leg order."""
+        return self.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=LegOrderStatus.CANCEL_REQUESTED,
+        )
+
+    def record_leg_cancelled(self, leg_fill_id: int) -> bool:
+        """Record that one leg order was cancelled."""
+        return self.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=LegOrderStatus.CANCELLED,
+        )
+
+    def record_leg_failed(self, leg_fill_id: int, reason: str | None = None) -> bool:
+        """Record a non-exchange-rejection failure for one leg order."""
+        return self.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=LegOrderStatus.FAILED,
+            reason=reason,
+        )
+
+    def record_leg_rejected(self, leg_fill_id: int, reason: str | None = None) -> bool:
+        """Record that one leg order was rejected."""
+        return self.transition_leg_order_status(
+            leg_fill_id=leg_fill_id,
+            next_status=LegOrderStatus.REJECTED,
+            reason=reason,
+        )
 
     def snapshot_equity(
         self,

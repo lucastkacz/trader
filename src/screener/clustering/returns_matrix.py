@@ -9,7 +9,7 @@ class MatrixBuilder:
     Applies strict mathematical Winsorization to prevent Pump-and-Dump
     anomalies from permanently destroying correlation topologies.
     """
-    def __init__(self, clip_percentile: float = 0.01):
+    def __init__(self, clip_percentile: float):
         self.clip_percentile = clip_percentile
         self.logger_ctx = LogContext(trade_id="SCREENER_MATRIX")
         

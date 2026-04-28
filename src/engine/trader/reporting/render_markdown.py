@@ -34,7 +34,7 @@ def render_markdown(report: TradeReport) -> str:
     lines.append(f"| Reconciliation Deltas | {report.state_ledger.reconciliation_delta_count} |")
     lines.append("")
 
-    lines.append("### Leg Targets\n")
+    lines.append("### Leg Order Statuses\n")
     lines.append("| Status | Roles |")
     lines.append("|--------|-------|")
     if report.state_ledger.leg_targets_by_status_role:
@@ -44,7 +44,7 @@ def render_markdown(report: TradeReport) -> str:
             )
             lines.append(f"| {status} | {role_summary} |")
     else:
-        lines.append("| N/A | No leg target rows recorded. |")
+        lines.append("| N/A | No leg order rows recorded. |")
     lines.append("")
 
     lines.append("### User Commands\n")

@@ -12,3 +12,4 @@ universe:
   cointegration:
     p_value_threshold: 0.05
     max_half_life_bars: 84
+    ewma_span_bars: 48

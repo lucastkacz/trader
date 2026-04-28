@@ -1,11 +1,18 @@
 import numpy as np
 import pandas as pd
+import pytest
+
+from src.engine.trader.config import load_backtest_config
 
 try:
     from src.simulation.vectorized_engine import Simulator
     from src.simulation.friction_model import FrictionEngine
 except ImportError:
     pass
+
+def test_friction_engine_requires_explicit_backtest_assumptions():
+    with pytest.raises(TypeError):
+        FrictionEngine()
 
 def test_pessimism_and_funding_drag():
     """
@@ -56,7 +63,12 @@ def test_pessimism_and_funding_drag():
     assert gross_df["gross_returns"].iloc[11] < 0.0 
     
     # 3. Apply Friction (Funding Rate bleed & Fees)
-    friction = FrictionEngine(maker_fee=0.0002, taker_fee=0.0004, annual_fund_rate=0.10)
+    friction_cfg = load_backtest_config("configs/backtest/stress_test.yml").friction
+    friction = FrictionEngine(
+        maker_fee=friction_cfg.maker_fee,
+        taker_fee=friction_cfg.taker_fee,
+        annual_fund_rate=friction_cfg.annual_fund_rate,
+    )
     net_df = friction.apply(gross_df)
     
     raw_pnl = gross_df["gross_returns"].sum()

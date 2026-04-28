@@ -9,7 +9,7 @@ class LouvainTaxonomist:
     Generates deterministic asset cohorts utilizing NetworkX Graph Theory
     and the Louvain heuristic over a Spearman-Rank correlation space.
     """
-    def __init__(self, correlation_threshold: float = 0.5):
+    def __init__(self, correlation_threshold: float):
         self.threshold = correlation_threshold
         self.logger_ctx = LogContext(trade_id="SCREENER_LOUVAIN")
 

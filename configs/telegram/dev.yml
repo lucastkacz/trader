@@ -2,3 +2,4 @@ telegram:
   environment: "DEV"
   bot_name: "@DevBot"
   db_path: "data/dev/trades_1m.db"
+  holding_period_bar_minutes: 1

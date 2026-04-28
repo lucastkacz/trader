@@ -6,6 +6,7 @@ Uses in-memory SQLite with synthetic data to verify metric computations.
 import math
 import pytest
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
 
 from src.engine.trader.state_manager import TradeStateManager
 from src.engine.trader.report_engine import (
@@ -16,7 +17,7 @@ from src.engine.trader.report_engine import (
     _compute_max_drawdown,
     _compute_returns,
 )
-from src.engine.trader.report_generator import render_state_ledger
+from src.engine.trader.report_generator import main as report_main, render_state_ledger
 
 
 @pytest.fixture
@@ -46,11 +47,11 @@ def _inject_snapshots(state, equities, interval_hours=4.0):
 
 def _inject_trade(state, pair_label, side, entry_a, entry_b, exit_a, exit_b,
                    weight_a=0.5, weight_b=0.5, entry_z=-2.0, exit_z=0.1,
-                   holding_bars=6, pnl=None):
+                   holding_bars=6, bar_hours=4, pnl=None):
     """Helper to inject a closed trade directly into the database."""
     base = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     t_open = base.isoformat()
-    t_close = (base + timedelta(hours=holding_bars * 4)).isoformat()
+    t_close = (base + timedelta(hours=holding_bars * bar_hours)).isoformat()
 
     if pnl is None:
         ret_a = (exit_a - entry_a) / entry_a
@@ -100,6 +101,21 @@ def test_empty_database_report(state):
     assert report.state_ledger.user_commands_by_status == {}
     assert report.state_ledger.latest_reconciliation_run_status is None
     assert report.state_ledger.reconciliation_delta_count == 0
+
+
+def test_report_cli_requires_surviving_pairs_path():
+    with patch(
+        "sys.argv",
+        [
+            "report_generator",
+            "--db-path",
+            ":memory:",
+            "--min-sharpe",
+            "1.0",
+        ],
+    ):
+        with pytest.raises(SystemExit):
+            report_main()
 
 
 def test_sharpe_ratio_calculation(state):
@@ -198,7 +214,7 @@ def test_state_ledger_snapshot_counts_current_schema(state):
     spread_id = state.open_position(
         "X|Y", "X", "Y", "LONG_SPREAD", 100.0, 50.0, 0.6, 0.4, -2.0, 21
     )
-    state.close_position("X|Y", 101.0, 50.0)
+    state.close_position("X|Y", 101.0, 50.0, timeframe="4h")
 
     state.write_command("/pause")
     commands = state.claim_pending_commands()
@@ -257,6 +273,27 @@ def test_state_ledger_terminal_renderer_outputs_counts(state, capsys):
     assert "TARGET_RECORDED" in output
     assert "OPEN: 2" in output
     assert "PENDING" in output
+
+
+def test_state_ledger_surfaces_expanded_leg_order_statuses(state):
+    """Reports should group all local leg lifecycle statuses by role."""
+    spread_id = state.open_position(
+        "X|Y", "X", "Y", "LONG_SPREAD", 100.0, 50.0, 0.6, 0.4, -2.0, 21
+    )
+    first_leg, second_leg = state.get_leg_fills(spread_id=spread_id)
+
+    state.record_leg_submit_requested(first_leg["id"], client_order_id="client-1")
+    state.record_leg_acknowledged(first_leg["id"], exchange_order_id="exchange-1")
+    state.record_leg_partially_filled(first_leg["id"], filled_qty=0.25, avg_fill_price=101.0)
+
+    state.record_leg_submit_requested(second_leg["id"], client_order_id="client-2")
+
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
+
+    assert report.state_ledger.leg_targets_by_status_role == {
+        "PARTIALLY_FILLED": {"OPEN": 1},
+        "SUBMIT_REQUESTED": {"OPEN": 1},
+    }
 
 
 def test_status_healthy_when_positive(state):

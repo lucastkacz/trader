@@ -8,7 +8,7 @@ class VaultSizer:
     Portfolio Allocation and Margin Limits rule engine.
     Ensures that mathematical targets never cross operational exchange limits.
     """
-    def __init__(self, max_cluster_exposure: float = 0.10, max_leverage: float = 10.0):
+    def __init__(self, max_cluster_exposure: float, max_leverage: float):
         self.max_cluster_exposure = max_cluster_exposure
         self.max_leverage = max_leverage
         

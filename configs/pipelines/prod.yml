@@ -11,3 +11,9 @@ pipeline:
     max_ticks: null
     heartbeat_seconds: 14400
     sync_to_boundary: true
+    order_execution:
+      mode: "state_only"
+      fill_poll_attempts: 0
+      fill_poll_interval_seconds: 0.0
+      cancel_unfilled_after_poll: false
+      client_order_prefix: "prod"

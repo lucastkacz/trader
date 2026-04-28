@@ -1,11 +1,21 @@
 import pandas as pd
 import numpy as np
+import pytest
+
+from src.engine.trader.config import load_universe_config
 
 try:
     from src.screener.clustering.returns_matrix import MatrixBuilder
     from src.screener.clustering.graph_louvain import LouvainTaxonomist
 except ImportError:
     pass
+
+def test_clustering_components_require_explicit_config():
+    with pytest.raises(TypeError):
+        MatrixBuilder()
+
+    with pytest.raises(TypeError):
+        LouvainTaxonomist()
 
 def test_winsorization_and_clustering():
     """
@@ -33,15 +43,21 @@ def test_winsorization_and_clustering():
         "C/USDT": df_assetC
     }
     
+    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    
     # 3. Build Matrix
-    builder = MatrixBuilder(clip_percentile=0.01)
+    builder = MatrixBuilder(
+        clip_percentile=universe_cfg.clustering.returns_clip_percentile,
+    )
     returns_matrix = builder.build(pool)
     
     # Assert Winsorization worked (Max return should not be 5.0 for Asset C)
     assert returns_matrix["C/USDT"].max() < 1.0 
     
     # 4. Cluster using NetworkX
-    taxonomist = LouvainTaxonomist()
+    taxonomist = LouvainTaxonomist(
+        correlation_threshold=universe_cfg.clustering.louvain_correlation_threshold,
+    )
     clusters = taxonomist.clusterize(returns_matrix)
     
     # Assert A and B are in the same deterministic cohort, and C is isolated

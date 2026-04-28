@@ -1,0 +1,4 @@
+risk:
+  name: "Alpha V1 Risk Limits"
+  max_cluster_exposure: 0.10
+  max_leverage: 10.0

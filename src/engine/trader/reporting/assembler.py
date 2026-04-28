@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 def generate_report(
     state: "TradeStateManager",
     min_sharpe: float,
-    surviving_pairs_path: str = "data/universes/surviving_pairs.json",
+    surviving_pairs_path: str,
 ) -> TradeReport:
     """Generate a complete report from the current database state."""
     all_orders = state.get_all_orders()

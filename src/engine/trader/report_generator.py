@@ -41,6 +41,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Paper Trader Report")
     parser.add_argument("--db-path", type=str, required=True, help="Path to the SQLite database (e.g. data/dev/trades_1m.db)")
     parser.add_argument("--min-sharpe", type=float, required=True, help="Minimum Sharpe ratio for Tier 1 filtering")
+    parser.add_argument(
+        "--surviving-pairs-path",
+        type=str,
+        required=True,
+        help="Path to the surviving_pairs.json artifact used for backtest comparison",
+    )
     parser.add_argument("--detailed", action="store_true", help="Show full trade log and signal quality")
     parser.add_argument("--pair", type=str, default=None, help='Single pair deep-dive (e.g. "MET/USDT|LTC/USDT")')
     parser.add_argument("--json", action="store_true", help="Output full report as JSON to stdout")
@@ -50,7 +56,11 @@ def main() -> None:
     state = TradeStateManager(db_path=args.db_path)
 
     try:
-        report = generate_report(state, min_sharpe=args.min_sharpe)
+        report = generate_report(
+            state,
+            min_sharpe=args.min_sharpe,
+            surviving_pairs_path=args.surviving_pairs_path,
+        )
 
         if args.json:
             print(json.dumps(report.to_dict(), indent=2, default=str))

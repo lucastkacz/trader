@@ -171,9 +171,9 @@ def render_state_ledger(report: TradeReport) -> None:
     print(_metric("Reconciliation Status", latest_recon))
     print(_metric("Reconciliation Deltas", str(ledger.reconciliation_delta_count)))
 
-    _subheader("Leg Targets")
+    _subheader("Leg Order Statuses")
     if not ledger.leg_targets_by_status_role:
-        print(f"  {C.DIM}No leg target rows recorded.{C.RESET}")
+        print(f"  {C.DIM}No leg order rows recorded.{C.RESET}")
     else:
         for status, role_counts in ledger.leg_targets_by_status_role.items():
             role_summary = ", ".join(

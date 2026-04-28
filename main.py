@@ -1,16 +1,14 @@
 import asyncio
 import argparse
-import yaml
 
+from src.engine.trader.config import (
+    load_backtest_config,
+    load_pipeline_config,
+    load_risk_config,
+    load_strategy_config,
+    load_universe_config,
+)
 from src.pipeline.master_flow import research_flow, execute_flow
-
-def load_yaml(path: str) -> dict:
-    if not path: return {}
-    with open(path, "r") as f:
-        # returns the first top-level key's dict. e.g. 'pipeline', 'strategy', etc.
-        data = yaml.safe_load(f)
-        if not data: return {}
-        return list(data.values())[0]
 
 async def main():
     parser = argparse.ArgumentParser(description="Trader Institutional Framework")
@@ -28,15 +26,16 @@ async def main():
     execute_parser = subparsers.add_parser("execute", help="Launch the Live Trading Execution Engine")
     execute_parser.add_argument("--pipeline", type=str, required=True, help="Path to pipeline YAML config")
     execute_parser.add_argument("--strategy", type=str, required=True, help="Path to strategy YAML config")
+    execute_parser.add_argument("--risk", type=str, required=True, help="Path to risk YAML config")
     execute_parser.add_argument("--telegram", type=str, default=None, help="Path to telegram YAML config")
 
     args = parser.parse_args()
 
     if args.command == "research":
-        pipeline_cfg = load_yaml(args.pipeline)
-        universe_cfg = load_yaml(args.universe)
-        backtest_cfg = load_yaml(args.backtest)
-        strategy_cfg = load_yaml(args.strategy)
+        pipeline_cfg = load_pipeline_config(args.pipeline)
+        universe_cfg = load_universe_config(args.universe)
+        backtest_cfg = load_backtest_config(args.backtest)
+        strategy_cfg = load_strategy_config(args.strategy)
         
         await research_flow(
             pipeline_cfg=pipeline_cfg, 
@@ -47,12 +46,14 @@ async def main():
         )
 
     elif args.command == "execute":
-        pipeline_cfg = load_yaml(args.pipeline)
-        strategy_cfg = load_yaml(args.strategy)
+        pipeline_cfg = load_pipeline_config(args.pipeline)
+        strategy_cfg = load_strategy_config(args.strategy)
+        risk_cfg = load_risk_config(args.risk)
         
         await execute_flow(
             pipeline_cfg=pipeline_cfg,
             strategy_cfg=strategy_cfg,
+            risk_cfg=risk_cfg,
             telegram_path=args.telegram
         )
         

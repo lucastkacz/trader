@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.core.logger import logger
+from src.engine.trader.config import OrderExecutionConfig
 from src.engine.trader.execution.market_data import fetch_recent_candles
+from src.engine.trader.execution.orders import (
+    OrderExecutionAdapter,
+    execute_spread_leg_orders,
+)
 from src.engine.trader.execution.pnl import calculate_per_pair_pnl, calculate_unrealized_pnl
 from src.engine.trader.runtime.actions import determine_action
 from src.engine.trader.signal_engine import evaluate_signal
@@ -22,6 +27,8 @@ async def execute_tick(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    order_execution_cfg: OrderExecutionConfig,
+    order_execution_adapter: OrderExecutionAdapter | None,
 ) -> None:
     """Execute one full trader tick across all configured pairs."""
     if state.is_system_paused():
@@ -103,8 +110,11 @@ async def execute_tick(
             current_side=current_side,
             result=result,
             lookback_bars=lookback_bars,
+            timeframe=timeframe,
             state=state,
             notifier=notifier,
+            order_execution_cfg=order_execution_cfg,
+            order_execution_adapter=order_execution_adapter,
         )
 
     per_pair_pnl = calculate_per_pair_pnl(state, pair_prices)
@@ -136,14 +146,17 @@ async def _route_signal_transition(
     current_side: str | None,
     result: Any,
     lookback_bars: int,
+    timeframe: str,
     state: TradeStateManager,
     notifier: TelegramNotifier,
+    order_execution_cfg: OrderExecutionConfig,
+    order_execution_adapter: OrderExecutionAdapter | None,
 ) -> None:
     asset_x = pair["Asset_X"]
     asset_y = pair["Asset_Y"]
 
     if current_side is None and result.signal != "FLAT":
-        state.open_position(
+        spread_id = state.open_position(
             pair_label=pair_label,
             asset_x=asset_x,
             asset_y=asset_y,
@@ -155,6 +168,13 @@ async def _route_signal_transition(
             entry_z=result.z_score,
             lookback_bars=lookback_bars,
         )
+        await execute_spread_leg_orders(
+            state=state,
+            spread_id=spread_id,
+            leg_role="OPEN",
+            config=order_execution_cfg,
+            adapter=order_execution_adapter,
+        )
         await notifier.send(
             f"🚀 <b>ENTRY SIGNAL: {pair_label}</b>\n"
             f"• Z-Score: {result.z_score:.2f}\n"
@@ -162,11 +182,20 @@ async def _route_signal_transition(
         )
 
     elif current_side is not None and result.signal == "FLAT":
+        spread_id = state.get_position_for_pair(pair_label)["id"]
         pnl = state.close_position(
             pair_label=pair_label,
             exit_price_a=result.price_a,
             exit_price_b=result.price_b,
+            timeframe=timeframe,
             exit_z=result.z_score,
+        )
+        await execute_spread_leg_orders(
+            state=state,
+            spread_id=spread_id,
+            leg_role="CLOSE",
+            config=order_execution_cfg,
+            adapter=order_execution_adapter,
         )
         await notifier.send(
             f"🏁 <b>EXIT SIGNAL: {pair_label}</b>\n"
@@ -176,13 +205,22 @@ async def _route_signal_transition(
         )
 
     elif current_side is not None and result.signal != "FLAT" and result.signal != current_side:
+        closing_spread_id = state.get_position_for_pair(pair_label)["id"]
         pnl = state.close_position(
             pair_label=pair_label,
             exit_price_a=result.price_a,
             exit_price_b=result.price_b,
+            timeframe=timeframe,
             exit_z=result.z_score,
         )
-        state.open_position(
+        await execute_spread_leg_orders(
+            state=state,
+            spread_id=closing_spread_id,
+            leg_role="CLOSE",
+            config=order_execution_cfg,
+            adapter=order_execution_adapter,
+        )
+        new_spread_id = state.open_position(
             pair_label=pair_label,
             asset_x=asset_x,
             asset_y=asset_y,
@@ -193,6 +231,13 @@ async def _route_signal_transition(
             weight_b=result.weight_b,
             entry_z=result.z_score,
             lookback_bars=lookback_bars,
+        )
+        await execute_spread_leg_orders(
+            state=state,
+            spread_id=new_spread_id,
+            leg_role="OPEN",
+            config=order_execution_cfg,
+            adapter=order_execution_adapter,
         )
         await notifier.send(
             f"🔄 <b>FLIP SIGNAL: {pair_label}</b>\n"

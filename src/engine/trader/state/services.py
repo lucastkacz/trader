@@ -3,6 +3,12 @@
 from datetime import datetime, timezone
 from typing import Any
 
+from src.engine.trader.state.order_lifecycle import (
+    InvalidLegOrderTransition,
+    LegOrderStatus,
+    normalize_leg_order_status,
+    validate_leg_order_transition,
+)
 from src.engine.trader.state.repositories import StateRepositories
 
 
@@ -55,6 +61,92 @@ class StateOperationService:
             price_a=price_a,
             price_b=price_b,
         )
+
+    def transition_leg_order_status(
+        self,
+        leg_fill_id: int,
+        next_status: LegOrderStatus | str,
+        *,
+        filled_qty: float | None = None,
+        avg_fill_price: float | None = None,
+        exchange_order_id: str | None = None,
+        client_order_id: str | None = None,
+        reason: str | None = None,
+    ) -> bool:
+        """
+        Move one leg target through the local order lifecycle.
+
+        Returns True when state changes, and False when the requested transition
+        is an exact duplicate of the already-recorded state.
+        """
+        row = self.repos.legs.get_by_id(leg_fill_id)
+        if row is None:
+            raise KeyError(f"Leg fill id {leg_fill_id} does not exist")
+
+        current_status = normalize_leg_order_status(row["status"])
+        next_status = normalize_leg_order_status(next_status)
+        next_values = _merge_leg_execution_values(
+            row=row,
+            next_status=next_status,
+            filled_qty=filled_qty,
+            avg_fill_price=avg_fill_price,
+            exchange_order_id=exchange_order_id,
+            client_order_id=client_order_id,
+        )
+
+        if _is_duplicate_leg_transition(
+            row=row,
+            next_status=next_status,
+            values=next_values,
+        ):
+            return False
+
+        if current_status == next_status and next_status != LegOrderStatus.PARTIALLY_FILLED:
+            raise InvalidLegOrderTransition(
+                f"Invalid leg order transition {current_status.value} -> {next_status.value}; "
+                "status is already recorded with different execution fields"
+            )
+
+        validate_leg_order_transition(current_status, next_status)
+        _validate_leg_execution_values(row=row, next_status=next_status, values=next_values)
+
+        now = _utc_now()
+        payload = {
+            "leg_fill_id": leg_fill_id,
+            "from_status": current_status.value,
+            "to_status": next_status.value,
+            "filled_qty": next_values["filled_qty"],
+            "avg_fill_price": next_values["avg_fill_price"],
+            "exchange_order_id": next_values["exchange_order_id"],
+            "client_order_id": next_values["client_order_id"],
+        }
+        if reason:
+            payload["reason"] = reason
+
+        with self.repos.lifecycle.conn:
+            self.repos.legs.update_execution_state(
+                leg_fill_id=leg_fill_id,
+                status=next_status.value,
+                filled_qty=next_values["filled_qty"],
+                avg_fill_price=next_values["avg_fill_price"],
+                exchange_order_id=next_values["exchange_order_id"],
+                client_order_id=next_values["client_order_id"],
+                updated_at=now,
+            )
+            self.repos.events.append(
+                spread_id=row["spread_id"],
+                event_type=f"LEG_{next_status.value}",
+                payload=payload,
+                created_at=now,
+                idempotency_key=_leg_transition_idempotency_key(
+                    leg_fill_id=leg_fill_id,
+                    current_status=current_status,
+                    next_status=next_status,
+                    values=next_values,
+                ),
+            )
+
+        return True
 
     def start_reconciliation_run(
         self,
@@ -135,3 +227,81 @@ class StateOperationService:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _merge_leg_execution_values(
+    row: dict[str, Any],
+    next_status: LegOrderStatus,
+    filled_qty: float | None,
+    avg_fill_price: float | None,
+    exchange_order_id: str | None,
+    client_order_id: str | None,
+) -> dict[str, Any]:
+    merged_filled_qty = row["filled_qty"] if filled_qty is None else filled_qty
+    if next_status == LegOrderStatus.FILLED and filled_qty is None:
+        merged_filled_qty = row["target_qty"]
+
+    return {
+        "filled_qty": float(merged_filled_qty),
+        "avg_fill_price": row["avg_fill_price"] if avg_fill_price is None else avg_fill_price,
+        "exchange_order_id": (
+            row["exchange_order_id"] if exchange_order_id is None else exchange_order_id
+        ),
+        "client_order_id": row["client_order_id"] if client_order_id is None else client_order_id,
+    }
+
+
+def _is_duplicate_leg_transition(
+    row: dict[str, Any],
+    next_status: LegOrderStatus,
+    values: dict[str, Any],
+) -> bool:
+    return (
+        row["status"] == next_status.value
+        and float(row["filled_qty"]) == values["filled_qty"]
+        and row["avg_fill_price"] == values["avg_fill_price"]
+        and row["exchange_order_id"] == values["exchange_order_id"]
+        and row["client_order_id"] == values["client_order_id"]
+    )
+
+
+def _validate_leg_execution_values(
+    row: dict[str, Any],
+    next_status: LegOrderStatus,
+    values: dict[str, Any],
+) -> None:
+    current_filled_qty = float(row["filled_qty"])
+    target_qty = float(row["target_qty"])
+    next_filled_qty = values["filled_qty"]
+    tolerance = 1e-9
+
+    if next_filled_qty < current_filled_qty - tolerance:
+        raise ValueError("filled_qty cannot decrease during leg lifecycle transitions")
+    if next_filled_qty < -tolerance:
+        raise ValueError("filled_qty cannot be negative")
+    if next_filled_qty > target_qty + tolerance:
+        raise ValueError("filled_qty cannot exceed target_qty")
+
+    if next_status == LegOrderStatus.PARTIALLY_FILLED:
+        if next_filled_qty <= 0:
+            raise ValueError("PARTIALLY_FILLED requires filled_qty greater than zero")
+        if next_filled_qty >= target_qty - tolerance:
+            raise ValueError("PARTIALLY_FILLED filled_qty must be less than target_qty")
+
+    if next_status == LegOrderStatus.FILLED and abs(next_filled_qty - target_qty) > tolerance:
+        raise ValueError("FILLED requires filled_qty to equal target_qty")
+
+
+def _leg_transition_idempotency_key(
+    leg_fill_id: int,
+    current_status: LegOrderStatus,
+    next_status: LegOrderStatus,
+    values: dict[str, Any],
+) -> str:
+    return (
+        f"leg:{leg_fill_id}:{current_status.value}->{next_status.value}:"
+        f"filled={values['filled_qty']}:"
+        f"avg={values['avg_fill_price']}:"
+        f"exchange={values['exchange_order_id']}:"
+        f"client={values['client_order_id']}"
+    )

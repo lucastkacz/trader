@@ -7,6 +7,7 @@ from src.core.logger import LogContext, logger
 from src.engine.trader.state.events import EventRepository
 from src.engine.trader.state.legs import LegRepository
 from src.engine.trader.state.positions import PositionRepository
+from src.utils.timeframe_math import get_timeframe_minutes
 
 
 class PositionLifecycleService:
@@ -94,6 +95,7 @@ class PositionLifecycleService:
         pair_label: str,
         exit_price_a: float,
         exit_price_b: float,
+        timeframe: str,
         exit_z: float | None = None,
         close_reason: str = "SIGNAL_EXIT",
     ) -> float | None:
@@ -108,7 +110,7 @@ class PositionLifecycleService:
 
         pnl = self._calculate_realized_pnl(row, exit_price_a, exit_price_b)
         now = datetime.now(timezone.utc).isoformat()
-        holding_bars = compute_holding_bars(row["opened_at"], now)
+        holding_bars = compute_holding_bars(row["opened_at"], now, timeframe)
 
         with self.conn:
             self.positions.close(
@@ -172,16 +174,16 @@ class PositionLifecycleService:
         return -row["weight_a"] * ret_a + row["weight_b"] * ret_b
 
 
-def compute_holding_bars(open_ts: str, close_ts: str) -> int:
+def compute_holding_bars(open_ts: str, close_ts: str, timeframe: str) -> int:
     """
-    Compute holding duration in 4H bars from ISO timestamps.
-    Uses actual time delta, so it works for any candle interval.
+    Compute holding duration in configured timeframe bars from ISO timestamps.
     Minimum 1 bar (even if closed within the same tick).
     """
+    bar_minutes = get_timeframe_minutes(timeframe)
     try:
         t_open = datetime.fromisoformat(open_ts.replace("Z", "+00:00"))
         t_close = datetime.fromisoformat(close_ts.replace("Z", "+00:00"))
-        delta_hours = (t_close - t_open).total_seconds() / 3600.0
-        return max(1, int(round(delta_hours / 4.0)))
+        delta_minutes = (t_close - t_open).total_seconds() / 60.0
+        return max(1, int(round(delta_minutes / bar_minutes)))
     except (ValueError, TypeError):
         return 1

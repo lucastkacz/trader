@@ -61,6 +61,7 @@ async def execute_emergency_liquidation(
                 pair_label=pair_label,
                 exit_price_a=price_x,
                 exit_price_b=price_y,
+                timeframe=timeframe,
                 exit_z=None,
             )
             total_exit_pnl += pnl or 0.0

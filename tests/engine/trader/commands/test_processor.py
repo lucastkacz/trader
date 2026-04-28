@@ -8,6 +8,7 @@ import pytest
 import pandas as pd
 from unittest.mock import patch, AsyncMock
 
+from src.engine.trader.config import OrderExecutionConfig
 from src.engine.trader.live_trader import LiveTrader
 from src.engine.trader.state_manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
@@ -27,6 +28,17 @@ def mock_notifier():
 @pytest.fixture
 def live_trader():
     return LiveTrader()
+
+
+@pytest.fixture
+def state_only_order_execution():
+    return OrderExecutionConfig(
+        mode="state_only",
+        fill_poll_attempts=0,
+        fill_poll_interval_seconds=0.0,
+        cancel_unfilled_after_poll=False,
+        client_order_prefix="test",
+    )
 
 @pytest.mark.asyncio
 async def test_pause_resume_state(live_trader, memory_state, mock_notifier):
@@ -54,7 +66,12 @@ async def test_unknown_command_is_marked_ignored(live_trader, memory_state, mock
     assert command["error"] == "unknown command"
 
 @pytest.mark.asyncio
-async def test_paused_tick_skips_execution(live_trader, memory_state, mock_notifier):
+async def test_paused_tick_skips_execution(
+    live_trader,
+    memory_state,
+    mock_notifier,
+    state_only_order_execution,
+):
     """A paused trader should return before writing tick-derived state."""
     memory_state.set_system_paused(True)
 
@@ -67,6 +84,8 @@ async def test_paused_tick_skips_execution(live_trader, memory_state, mock_notif
         exchange_id="bybit",
         api_key="",
         api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
     )
 
     assert memory_state.get_equity_curve() == []

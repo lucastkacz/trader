@@ -2,10 +2,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.engine.trader.config import load_universe_config
+
 try:
     from src.engine.analysis.cointegration import CointegrationEngine
 except ImportError:
     pass
+
+def test_cointegration_engine_requires_explicit_config():
+    with pytest.raises(TypeError):
+        CointegrationEngine()
 
 def test_bidirectional_adf_and_halflife():
     """
@@ -29,7 +35,12 @@ def test_bidirectional_adf_and_halflife():
     cointegrated_y = 0.8 * random_walk_x + np.random.normal(0, 0.5, n) + 50
     df_cointegrated = pd.DataFrame({"X": random_walk_x, "Y": cointegrated_y})
     
-    engine = CointegrationEngine(max_half_life=30.0)
+    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    engine = CointegrationEngine(
+        p_value_threshold=universe_cfg.cointegration.p_value_threshold,
+        max_half_life_bars=30.0,
+        ewma_span_bars=universe_cfg.cointegration.ewma_span_bars,
+    )
     
     # Test 1: Rejection of divergence
     result_fail = engine.evaluate(df_divergent["X"], df_divergent["Y"])
@@ -54,7 +65,12 @@ def test_cointegration_returns_canonical_x_on_y_hedge_ratio():
     y = np.cumsum(np.random.normal(0, 0.01, n)) + 4.0
     x = 1.7 * y + np.random.normal(0, 0.001, n)
 
-    result = CointegrationEngine(max_half_life=1000.0).evaluate(
+    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    result = CointegrationEngine(
+        p_value_threshold=universe_cfg.cointegration.p_value_threshold,
+        max_half_life_bars=1000.0,
+        ewma_span_bars=universe_cfg.cointegration.ewma_span_bars,
+    ).evaluate(
         pd.Series(x),
         pd.Series(y),
     )

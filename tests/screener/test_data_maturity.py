@@ -1,24 +1,29 @@
 import pandas as pd
 import numpy as np
+import pytest
 
 try:
     from src.screener.filters.data_maturity import DataMaturityFilter
 except ImportError:
     pass
 
+def test_data_maturity_filter_requires_explicit_min_bars():
+    with pytest.raises(TypeError):
+        DataMaturityFilter()
+
 def test_data_maturity_rejection():
     """
-    Simulates a 179-day active pandas timeframe to verify the 180-day
+    Simulates a 179-bar active pandas timeframe to verify the 180-bar
     minimum rule is strictly enforced by the filter.
     """
-    # 1. Synthesize 179 days of data
+    # 1. Synthesize 179 bars of data
     dates = pd.date_range(start="2023-01-01", periods=179, freq='D')
     df_young = pd.DataFrame({
         "timestamp": dates,
         "close": np.random.rand(179) * 100
     })
     
-    # 2. Synthesize 180 days of data + 5 days of NaN (Delisted or Network Outage)
+    # 2. Synthesize 180 bars of data + outage NaNs
     dates_mature = pd.date_range(start="2023-01-01", periods=185, freq='D')
     closes = np.random.rand(185) * 100
     # Simulate a crash where the exchange disconnected for 10 days
@@ -43,7 +48,7 @@ def test_data_maturity_rejection():
         "PERFECT_COIN": df_perfect
     }
     
-    sieve = DataMaturityFilter(min_days=180)
+    sieve = DataMaturityFilter(min_bars=180)
     survivors = sieve.filter(pool)
     
     assert len(survivors) == 1

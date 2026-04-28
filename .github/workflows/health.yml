@@ -59,7 +59,7 @@ jobs:
 
       - name: Generate and download report
         run: |
-          ssh oracle-vps "cd ~/quant && PYTHONPATH=. .venv/bin/python -m src.engine.trader.report_generator --db-path data/prod/trades_4h.db --min-sharpe 1.0 --json" \
+          ssh oracle-vps "cd ~/quant && PYTHONPATH=. .venv/bin/python -m src.engine.trader.report_generator --db-path data/prod/trades_4h.db --min-sharpe 1.0 --surviving-pairs-path data/universes/4h/surviving_pairs.json --json" \
             > latest_report.json
           echo "Report downloaded successfully"
           # Show key metrics

@@ -14,10 +14,15 @@ class CointegrationEngine:
     3. Ornstein-Uhlenbeck Half-Life for funding decay projection.
     """
     
-    def __init__(self, p_value_threshold: float = 0.05, max_half_life: float = 14.0, ewma_span: int = 48):
+    def __init__(
+        self,
+        p_value_threshold: float,
+        max_half_life_bars: float,
+        ewma_span_bars: int,
+    ):
         self.p_value_threshold = p_value_threshold
-        self.max_half_life = max_half_life
-        self.ewma_span = ewma_span # Empirically weighting the last ~48 hours
+        self.max_half_life_bars = max_half_life_bars
+        self.ewma_span_bars = ewma_span_bars
         
     def evaluate(self, series_x: pd.Series, series_y: pd.Series) -> dict:
         """
@@ -53,7 +58,7 @@ class CointegrationEngine:
         # Downstream strategy code defines spread as X - beta * Y, so the
         # stored hedge ratio is always the beta from X ~ Y, even though the
         # cointegration pass/fail test above remains bidirectional.
-        alpha = 2.0 / (self.ewma_span + 1)
+        alpha = 2.0 / (self.ewma_span_bars + 1)
         weights = np.array([(1 - alpha)**(len(series_x) - i - 1) for i in range(len(series_x))])
 
         ew_ols = sm.WLS(series_x, sm.add_constant(series_y), weights=weights).fit()
@@ -76,7 +81,7 @@ class CointegrationEngine:
         else:
             half_life = -np.log(2) / lambda_val
             
-        is_valid = (half_life > 0) and (half_life <= self.max_half_life)
+        is_valid = (half_life > 0) and (half_life <= self.max_half_life_bars)
         
         return {
             "is_cointegrated": is_valid,
