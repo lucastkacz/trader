@@ -140,8 +140,8 @@ async def bot_stop_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state.close()
     
     await update.message.reply_text(
-        "🚨 <b>COMMAND LOGGED: STOP ALL</b>\n"
-        "The executing daemon will detect this within 10 seconds and liquidate strictly at market.",
+        "🚨 <b>COMMAND LOGGED: LOCAL STATE STOP ALL</b>\n"
+        "The executing trader will record forced local closes on its next command sweep.",
         parse_mode="HTML"
     )
 
@@ -160,8 +160,8 @@ async def bot_stop_pair(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state.close()
     
     await update.message.reply_text(
-        f"🚨 <b>COMMAND LOGGED: STOP {target}</b>\n"
-        f"Awaiting 10-second loop sweep...",
+        f"🚨 <b>COMMAND LOGGED: LOCAL STATE STOP {target}</b>\n"
+        "The executing trader will record a forced local close on its next command sweep.",
         parse_mode="HTML"
     )
 
@@ -194,8 +194,8 @@ async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/positions - Detailed layout of active pairs\n"
         "/pause - Skip new trades (Holds existing)\n"
         "/resume - Revert pause mechanism\n"
-        "/stop [PAIR] - Closes one pair immediately\n"
-        "/stop_all - Closes EVERYTHING immediately"
+        "/stop [PAIR] - Requests one forced local-state close\n"
+        "/stop_all - Requests forced local-state close for everything"
     )
     await update.message.reply_text(msg, parse_mode="HTML")
 

@@ -118,6 +118,28 @@ async def test_stop_all_writes_command_to_configured_database(configured_daemon)
     assert len(commands) == 1
     assert commands[0]["command"] == "/stop_all"
     assert commands[0]["target_pair"] is None
+    message = update.message.reply_text.await_args.args[0]
+    assert "LOCAL STATE STOP ALL" in message
+    assert "market" not in message.lower()
+
+
+@pytest.mark.asyncio
+async def test_stop_pair_writes_local_state_command_to_configured_database(configured_daemon):
+    update = FakeUpdate(chat_id="123")
+
+    await daemon.bot_stop_pair(update, _context(args=["BTC|ETH"]))
+
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        commands = state.get_commands()
+    finally:
+        state.close()
+
+    assert len(commands) == 1
+    assert commands[0]["command"] == "/stop"
+    assert commands[0]["target_pair"] == "BTC|ETH"
+    message = update.message.reply_text.await_args.args[0]
+    assert "LOCAL STATE STOP BTC|ETH" in message
 
 
 @pytest.mark.asyncio

@@ -165,3 +165,44 @@ def test_insufficient_data_returns_flat():
     )
 
     assert result.signal == "FLAT"
+
+
+def test_flat_price_lines_return_finite_flat_signal():
+    """Flat lines should not leak NaN z-scores into recorded signal state."""
+    prices = np.ones(200) * 100.0
+    df_a = _make_df(prices, "A/USDT")
+    df_b = _make_df(prices, "B/USDT")
+
+    result = evaluate_signal(
+        df_a, df_b, entry_z=2.0, exit_z=0.0,
+        lookback_bars=14 * 6, vol_lookback_bars=14 * 6,
+        hedge_ratio=1.0,
+    )
+
+    assert result.signal == "FLAT"
+    assert result.z_score == 0.0
+    assert np.isfinite(result.spread)
+    assert np.isfinite(result.price_a)
+    assert np.isfinite(result.price_b)
+    assert result.weight_a == 0.5
+    assert result.weight_b == 0.5
+
+
+def test_nan_close_gaps_return_finite_flat_signal():
+    """NaN close gaps should be dropped before signal math is evaluated."""
+    prices = np.ones(200) * 100.0
+    df_a = _make_df(prices, "A/USDT")
+    df_b = _make_df(prices, "B/USDT")
+    df_a.loc[df_a.index[-1], "close"] = np.nan
+
+    result = evaluate_signal(
+        df_a, df_b, entry_z=2.0, exit_z=0.0,
+        lookback_bars=14 * 6, vol_lookback_bars=14 * 6,
+        hedge_ratio=1.0,
+    )
+
+    assert result.signal == "FLAT"
+    assert result.z_score == 0.0
+    assert np.isfinite(result.spread)
+    assert np.isfinite(result.price_a)
+    assert np.isfinite(result.price_b)

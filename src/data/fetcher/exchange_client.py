@@ -13,6 +13,7 @@ import pandas as pd
 from typing import List, Optional
 
 from src.core.logger import logger, LogContext
+from src.data.fetcher.symbols import to_ccxt_linear_swap_symbol, to_display_symbol
 
 
 def create_exchange(exchange_id: str, api_key: str, api_secret: str) -> ccxt.Exchange:
@@ -61,8 +62,7 @@ async def fetch_universe(exchange: ccxt.Exchange, min_volume: float) -> List[str
 
             quote_volume = float(data.get("quoteVolume", 0) or 0)
             if quote_volume > min_volume:
-                clean_symbol = symbol.split(":")[0]
-                valid_pairs.append(clean_symbol)
+                valid_pairs.append(to_display_symbol(symbol))
 
         ctx = LogContext(trade_id="UNIVERSE_SCAN")
         logger.bind(**ctx.model_dump(exclude_none=True)).info(
@@ -97,12 +97,8 @@ async def fetch_klines(
     since : int, optional — start timestamp in milliseconds
     end_ts : int, optional — freeze-frame cutoff timestamp in milliseconds
     """
-    # CCXT requires the settlement suffix for perpetual queries
-    if ":" not in symbol:
-        quote_currency = symbol.split("/")[-1]
-        ccxt_symbol = f"{symbol}:{quote_currency}"
-    else:
-        ccxt_symbol = symbol
+    # CCXT represents linear swaps as base/quote:settlement (e.g. BTC/USDT:USDT).
+    ccxt_symbol = to_ccxt_linear_swap_symbol(symbol)
 
     ctx = LogContext(pair=symbol)
     logger.bind(**ctx.model_dump(exclude_none=True)).debug(

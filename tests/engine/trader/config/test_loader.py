@@ -1,4 +1,5 @@
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 import yaml
@@ -27,8 +28,6 @@ def test_valid_operator_configs_parse():
     assert dev_pipeline.execution.order_execution.mode == "state_only"
     assert load_pipeline_config("configs/pipelines/uat.yml").execution.max_ticks is None
     assert load_pipeline_config("configs/pipelines/prod.yml").execution.max_ticks is None
-    assert load_pipeline_config("configs/pipelines/ci_1m.yml").execution.max_ticks == 5
-    assert load_pipeline_config("configs/pipelines/ci_4h.yml").execution.max_ticks == 1
 
     universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
     assert universe_cfg.filters.min_volume_liquidity == 20_000_000
@@ -42,6 +41,24 @@ def test_valid_operator_configs_parse():
     assert load_telegram_config("configs/telegram/uat.yml").holding_period_bar_minutes == 240
     assert load_telegram_config("configs/telegram/prod.yml").environment == "PROD"
     assert load_telegram_config("configs/telegram/prod.yml").holding_period_bar_minutes == 240
+
+
+def test_all_shipped_pipeline_configs_keep_order_execution_state_only():
+    pipeline_paths = sorted(Path("configs/pipelines").glob("*.yml"))
+    assert [path.name for path in pipeline_paths] == ["dev.yml", "prod.yml", "uat.yml"]
+
+    parsed = [load_pipeline_config(path) for path in pipeline_paths]
+
+    assert {cfg.execution.order_execution.mode for cfg in parsed} == {"state_only"}
+
+
+def test_unsupported_order_execution_mode_fails_loudly(tmp_path):
+    cfg = yaml.safe_load(open("configs/pipelines/dev.yml"))
+    cfg["pipeline"]["execution"]["order_execution"]["mode"] = "live_without_gate"
+    path = write_yaml(tmp_path, cfg)
+
+    with pytest.raises(ValidationError, match="mode"):
+        load_pipeline_config(path)
 
 
 def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):

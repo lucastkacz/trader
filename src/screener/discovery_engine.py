@@ -11,6 +11,7 @@ from src.screener.clustering.returns_matrix import MatrixBuilder
 from src.screener.clustering.graph_louvain import LouvainTaxonomist
 from src.engine.analysis.cointegration import CointegrationEngine
 from src.engine.trader.config import StrategyConfig, UniverseConfig
+from src.engine.trader.runtime.pairs import build_pair_artifact
 
 class DiscoveryEngine:
     def __init__(self, storage: ParquetStorage):
@@ -149,8 +150,13 @@ class DiscoveryEngine:
                         
         logger.info(f"Phase 4 Alpha Core yielded {len(final_pairs)} pristine pairs out of thousands of combinations.")
         
+        artifact = build_pair_artifact(
+            pair_rows=final_pairs,
+            timeframe=timeframe,
+            exchange=exchange,
+        )
         with open(f"{universe_dir}/surviving_pairs.json", "w") as f:
-            json.dump(final_pairs, f, indent=4)
+            json.dump(artifact, f, indent=4)
             
         logger.info(f"Epoch 1 Pipeline Orchestration complete. Written to {universe_dir}/surviving_pairs.json.")
         return True

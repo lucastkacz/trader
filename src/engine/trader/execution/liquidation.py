@@ -18,7 +18,7 @@ async def execute_emergency_liquidation(
     api_secret: str,
     target: str | None = None,
 ) -> None:
-    """Close open local positions at latest fetched prices."""
+    """Close open local positions at latest fetched prices without exchange mutation."""
     open_positions = state.get_open_positions()
 
     if target:
@@ -26,11 +26,17 @@ async def execute_emergency_liquidation(
 
     if not open_positions:
         if notifier:
-            await notifier.send(f"⚠️ Liquidation requested but no positions found for <b>{target or 'ALL'}</b>.")
+            await notifier.send(
+                f"⚠️ Local state liquidation requested but no positions found for "
+                f"<b>{target or 'ALL'}</b>."
+            )
         return
 
     if notifier:
-        await notifier.send(f"🚨 <b>EXECUTING EMERGENCY LIQUIDATION</b> for {len(open_positions)} pair(s)...")
+        await notifier.send(
+            f"🚨 <b>EXECUTING LOCAL STATE EMERGENCY LIQUIDATION</b> "
+            f"for {len(open_positions)} pair(s)..."
+        )
 
     total_exit_pnl = 0.0
     for pos in open_positions:
@@ -63,11 +69,15 @@ async def execute_emergency_liquidation(
                 exit_price_b=price_y,
                 timeframe=timeframe,
                 exit_z=None,
+                close_reason="FORCE_CLOSE_REQUESTED",
             )
             total_exit_pnl += pnl or 0.0
             if notifier:
-                await notifier.send(f"✅ <b>EMERGENCY EXIT:</b> {pair_label}\nPNL: <b>{pnl*100:.2f}%</b>")
+                await notifier.send(
+                    f"✅ <b>LOCAL STATE EMERGENCY EXIT:</b> {pair_label}\n"
+                    f"PNL: <b>{pnl*100:.2f}%</b>"
+                )
         except Exception as exc:
             logger.error(f"Liquidation failed for {pair_label}: {exc}")
             if notifier:
-                await notifier.send(f"❌ LIQUIDATION FAILED for {pair_label}: {exc}")
+                await notifier.send(f"❌ LOCAL STATE LIQUIDATION FAILED for {pair_label}: {exc}")

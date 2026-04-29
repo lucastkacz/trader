@@ -11,17 +11,23 @@ from src.simulation.vectorized_engine import Simulator
 from src.simulation.friction_model import FrictionEngine
 from src.utils.timeframe_math import get_bars_per_year
 from src.engine.analysis.spread_math import build_hedged_log_spread, build_rolling_zscore
+from src.engine.trader.runtime.pairs import build_pair_artifact, extract_pair_artifact_pairs
 
 class StressTestOrchestrator:
     def __init__(self, storage: ParquetStorage):
         self.storage = storage
 
-    def load_pairs(self, timeframe: str) -> list:
+    def load_pairs(self, timeframe: str, exchange: str) -> list:
         path = f"data/universes/{timeframe}/surviving_pairs.json"
         if not os.path.exists(path):
             path = f"data/universes/{timeframe}/pairs.json"
         with open(path, "r") as f:
-            return json.load(f)
+            return extract_pair_artifact_pairs(
+                artifact=json.load(f),
+                source_path=path,
+                expected_timeframe=timeframe,
+                expected_exchange=exchange,
+            )
 
     def build_unified_df(self, symbol_a: str, symbol_b: str, timeframe: str, exchange: str) -> Optional[pd.DataFrame]:
         try:
@@ -87,7 +93,7 @@ class StressTestOrchestrator:
 
         bars_per_year = get_bars_per_year(timeframe)
 
-        pairs = self.load_pairs(timeframe)
+        pairs = self.load_pairs(timeframe, exchange)
         logger.info(f"Loaded {len(pairs)} cointegrated pairs from Epoch 1.")
 
         sim = Simulator()
@@ -188,8 +194,13 @@ class StressTestOrchestrator:
 
         universe_dir = f"data/universes/{timeframe}"
         os.makedirs(universe_dir, exist_ok=True)
+        artifact = build_pair_artifact(
+            pair_rows=surviving_pairs,
+            timeframe=timeframe,
+            exchange=exchange,
+        )
         with open(f"{universe_dir}/surviving_pairs.json", "w") as f:
-            json.dump(surviving_pairs, f, indent=4)
+            json.dump(artifact, f, indent=4)
 
         logger.info(f"Results written to {universe_dir}/surviving_pairs.json")
         return True

@@ -56,3 +56,27 @@ async def test_fetch_klines_network_failure():
             timeframe="4h",
             limit=100,
         )
+
+
+@pytest.mark.asyncio
+async def test_fetch_klines_resolves_display_symbol_to_ccxt_linear_swap_symbol():
+    mock_exchange = AsyncMock()
+    mock_exchange.id = "bybit"
+    mock_exchange.fetch_ohlcv.return_value = [
+        [1, 100.0, 101.0, 99.0, 100.5, 1000.0],
+    ]
+
+    df = await fetch_klines(
+        exchange=mock_exchange,
+        symbol="BTC/USDT",
+        timeframe="4h",
+        limit=100,
+    )
+
+    mock_exchange.fetch_ohlcv.assert_awaited_once_with(
+        "BTC/USDT:USDT",
+        "4h",
+        limit=100,
+        since=None,
+    )
+    assert df["close"].iloc[0] == 100.5

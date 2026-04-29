@@ -118,3 +118,54 @@ async def test_execute_emergency_liquidation(live_trader, memory_state, mock_not
         
         # Verify network was mocked appropriately (Called 4 times: [SOL, ADA] + [BTC, ETH])
         assert mock_fetch.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_emergency_liquidation_is_explicit_local_state_close(
+    live_trader,
+    memory_state,
+    mock_notifier,
+):
+    """Operator stops should be recorded as forced local closes, not strategy exits."""
+    spread_id = memory_state.open_position(
+        "BTC|ETH",
+        "BTC",
+        "ETH",
+        "LONG_SPREAD",
+        50000,
+        2500,
+        0.5,
+        0.5,
+        -2.5,
+        14,
+    )
+
+    with patch("src.engine.trader.execution.market_data.fetch_live_klines", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = pd.DataFrame({"close": [60000]})
+
+        await live_trader.execute_emergency_liquidation(
+            memory_state,
+            pairs=[],
+            notifier=mock_notifier,
+            timeframe="4h",
+            exchange_id="bybit",
+            api_key="",
+            api_secret="",
+            target="BTC|ETH",
+        )
+
+    closed = memory_state.get_all_closed()
+    assert closed[0]["close_reason"] == "FORCE_CLOSE_REQUESTED"
+    close_events = [
+        event for event in memory_state.get_order_events(spread_id=spread_id)
+        if event["event_type"] == "FORCE_CLOSE_REQUESTED"
+    ]
+    assert len(close_events) == 1
+    assert [leg["status"] for leg in memory_state.get_leg_fills(spread_id=spread_id)] == [
+        "TARGET_RECORDED",
+        "TARGET_RECORDED",
+        "TARGET_RECORDED",
+        "TARGET_RECORDED",
+    ]
+    sent_messages = [call.args[0] for call in mock_notifier.send.await_args_list]
+    assert any("LOCAL STATE" in message for message in sent_messages)

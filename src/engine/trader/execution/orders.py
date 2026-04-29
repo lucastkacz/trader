@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from src.data.fetcher.exchange_client import create_exchange
+from src.data.fetcher.symbols import to_ccxt_linear_swap_symbol
 from src.engine.trader.config import OrderExecutionConfig
 from src.engine.trader.state.order_lifecycle import LegOrderStatus
 from src.engine.trader.state_manager import TradeStateManager
@@ -347,10 +348,7 @@ def _outcome(
 
 
 def _to_ccxt_derivative_symbol(symbol: str) -> str:
-    if ":" in symbol:
-        return symbol
-    quote_currency = symbol.split("/")[-1]
-    return f"{symbol}:{quote_currency}"
+    return to_ccxt_linear_swap_symbol(symbol)
 
 
 _TERMINAL_STATUSES = {

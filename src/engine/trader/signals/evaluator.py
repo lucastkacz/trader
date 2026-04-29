@@ -45,20 +45,18 @@ def evaluate_signal(
         on="timestamp",
         how="inner",
     ).sort_values("timestamp").reset_index(drop=True)
+    merged = merged.replace([np.inf, -np.inf], np.nan).dropna(subset=["A_close", "B_close"])
+    merged = merged[(merged["A_close"] > 0) & (merged["B_close"] > 0)].reset_index(drop=True)
 
     if len(merged) < lookback_bars + 1:
-        return SignalResult(
-            signal="FLAT", z_score=0.0,
-            weight_a=0.5, weight_b=0.5,
-            spread=0.0,
-            price_a=float(merged["A_close"].iloc[-1]) if len(merged) > 0 else 0.0,
-            price_b=float(merged["B_close"].iloc[-1]) if len(merged) > 0 else 0.0,
-        )
+        return _flat_signal_result(merged)
 
     # 1. Canonical hedge-adjusted log spread and rolling z-score
     spread = build_hedged_log_spread(merged["A_close"], merged["B_close"], hedge_ratio)
     z_scores = build_rolling_zscore(spread, lookback_bars)
     z_score = float(z_scores.iloc[-1])
+    if not np.isfinite(z_score):
+        return _flat_signal_result(merged, spread=spread)
 
     # 3. Volatility Parity Weights
     ret_a = np.log(merged["A_close"] / merged["A_close"].shift(1))
@@ -67,7 +65,7 @@ def evaluate_signal(
     vol_a = ret_a.rolling(window=vol_lookback_bars).std().iloc[-1]
     vol_b = ret_b.rolling(window=vol_lookback_bars).std().iloc[-1]
 
-    if vol_a > 0 and vol_b > 0:
+    if np.isfinite(vol_a) and np.isfinite(vol_b) and vol_a > 0 and vol_b > 0:
         inv_a = 1.0 / vol_a
         inv_b = 1.0 / vol_b
         sum_inv = inv_a + inv_b
@@ -114,4 +112,31 @@ def evaluate_signal(
         spread=float(spread.iloc[-1]),
         price_a=latest_a,
         price_b=latest_b,
+    )
+
+
+def _flat_signal_result(
+    merged: pd.DataFrame,
+    spread: pd.Series | None = None,
+) -> SignalResult:
+    """Return a finite no-trade signal for insufficient or invalid current math."""
+    if len(merged) == 0:
+        price_a = 0.0
+        price_b = 0.0
+    else:
+        price_a = float(merged["A_close"].iloc[-1])
+        price_b = float(merged["B_close"].iloc[-1])
+
+    latest_spread = 0.0
+    if spread is not None and len(spread) > 0 and np.isfinite(spread.iloc[-1]):
+        latest_spread = float(spread.iloc[-1])
+
+    return SignalResult(
+        signal="FLAT",
+        z_score=0.0,
+        weight_a=0.5,
+        weight_b=0.5,
+        spread=latest_spread,
+        price_a=price_a,
+        price_b=price_b,
     )

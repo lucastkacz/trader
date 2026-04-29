@@ -5,6 +5,7 @@ from src.engine.trader.execution.orders import (
     OrderRejected,
     OrderStatusSnapshot,
     OrderSubmissionResult,
+    _to_ccxt_derivative_symbol,
     execute_spread_leg_orders,
 )
 from src.engine.trader.state_manager import TradeStateManager
@@ -73,6 +74,14 @@ def _open_spread(state):
         entry_z=-2.0,
         lookback_bars=21,
     )
+
+
+def test_to_ccxt_derivative_symbol_adds_settlement_suffix_for_linear_swap_contracts():
+    assert _to_ccxt_derivative_symbol("BTC/USDT") == "BTC/USDT:USDT"
+
+
+def test_to_ccxt_derivative_symbol_preserves_already_resolved_ccxt_symbol():
+    assert _to_ccxt_derivative_symbol("BTC/USDT:USDT") == "BTC/USDT:USDT"
 
 
 @pytest.mark.asyncio

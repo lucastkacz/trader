@@ -4,13 +4,14 @@ import json
 from typing import Any
 
 from src.core.logger import logger
+from src.engine.trader.runtime.pairs import extract_pair_artifact_pairs
 
 
 def _load_backtest_lookup(surviving_pairs_path: str) -> dict[str, dict[str, Any]]:
     """Load surviving_pairs.json and build a lookup keyed by pair label."""
     try:
         with open(surviving_pairs_path) as f:
-            pairs = json.load(f)
+            pairs = extract_pair_artifact_pairs(json.load(f), surviving_pairs_path)
     except FileNotFoundError:
         logger.warning(f"Backtest file not found: {surviving_pairs_path}")
         return {}

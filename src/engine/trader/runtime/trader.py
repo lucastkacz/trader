@@ -33,8 +33,13 @@ from src.interfaces.telegram.notifier import TelegramNotifier
 class LiveTrader:
     """High-level trader runtime orchestrator."""
 
-    def load_tier1_pairs(self, timeframe: str, min_sharpe: float) -> list[dict[str, Any]]:
-        return load_tier1_pairs(timeframe, min_sharpe)
+    def load_tier1_pairs(
+        self,
+        timeframe: str,
+        min_sharpe: float,
+        exchange: str,
+    ) -> list[dict[str, Any]]:
+        return load_tier1_pairs(timeframe, min_sharpe, exchange)
 
     def seconds_until_next_candle(self, timeframe: str) -> float:
         return seconds_until_next_candle(timeframe)
@@ -206,7 +211,7 @@ class LiveTrader:
 
         await notifier.send(f"🟢 <b>System Boot:</b> Engine Synchronized on {timeframe}")
 
-        pairs = self.load_tier1_pairs(timeframe, min_sharpe)
+        pairs = self.load_tier1_pairs(timeframe, min_sharpe, exchange_id)
         if not pairs:
             logger.error("No Tier 1 pairs found. Aborting.")
             await notifier.send("⚠️ <b>Fatal Error:</b> No Tier 1 pairs found.")
