@@ -16,7 +16,7 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    # Controls Loguru dual-sink behavior (see PLAN/10_environment_and_secrets_strategy.md)
+    # Controls Loguru dual-sink behavior; see docs/engineering-rules.md.
     # debug  = verbose console + JSON sink (local development)
     # info   = quiet console + JSON sink (VPS deployment)
     # silent = JSON sink only, no console (pytest Airplane Mode)

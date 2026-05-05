@@ -1,0 +1,37 @@
+# Repository Instructions
+
+This is a Python quant trading platform. Reliability, auditability, offline tests, strict configuration, and live-trading safety matter more than fast implementation.
+
+## Required Context
+
+Before changing code, read the relevant project context:
+
+- `CONTEXT.md` for shared domain language.
+- `docs/index.md` for the canonical documentation map.
+- `docs/engineering-rules.md` for coding, testing, config, and runtime safety rules.
+- `docs/system-design.md` for the current trading system design.
+- `docs/current-roadmap.md` when touching active production work, especially pair recalculation and eligible pair artifacts.
+
+## Agent Skills
+
+Project-specific Codex skills live under `.agents/skills/`. Use `improve-quant-architecture` when asked to review architecture, find refactoring opportunities, or make the codebase more testable, maintainable, or AI-navigable.
+
+## Non-Negotiables
+
+- No live exchange mutation from research or pair recalculation code.
+- No automatic forced close hidden behind pair-set changes.
+- No network calls in unit tests.
+- No raw YAML dictionaries below the config boundary.
+- No `.get("key", default)` for config-origin values.
+- No broad live-trader rewrites inside unrelated slices.
+- Prefer behavior tests through module interfaces over tests coupled to internals.
+- Do not call the system production-ready for real capital until the production
+  readiness gate in `docs/engineering-rules.md` is satisfied.
+
+## Working Style
+
+- Read the existing code before proposing a shape.
+- Keep changes focused and aligned with the local module style.
+- Add or update tests for production behavior changes.
+- Preserve user changes and do not revert unrelated work.
+- Use architecture terms from `.agents/skills/improve-quant-architecture/references/LANGUAGE.md` when discussing module shape.
