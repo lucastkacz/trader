@@ -29,6 +29,13 @@ For code quality audits:
 - `docs/engineering-rules.md`
 - `.agents/skills/quant-code-quality-auditor/SKILL.md`
 
+For roadmap updates:
+
+- `docs/current-roadmap.md`
+- `docs/engineering-rules.md`
+- `docs/system-design.md`
+- `.agents/skills/quant-roadmap-maintainer/SKILL.md`
+
 For pair recalculation or eligible pair artifacts:
 
 - `docs/system-design.md`
