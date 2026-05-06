@@ -19,6 +19,12 @@ class OrderExecutionConfig(StrictConfigModel):
     client_order_prefix: str = Field(min_length=1)
 
 
+class PairRefreshConfig(StrictConfigModel):
+    mode: Literal["manual"]
+    reload_policy: Literal["on_boot"]
+    stale_open_position_policy: Literal["natural_exit"]
+
+
 class PipelineExecutionConfig(StrictConfigModel):
     exchange: str
     credential_tier: Literal["readonly", "live"]
@@ -28,6 +34,7 @@ class PipelineExecutionConfig(StrictConfigModel):
     heartbeat_seconds: int
     sync_to_boundary: bool
     order_execution: OrderExecutionConfig
+    pair_refresh: PairRefreshConfig
 
 
 class PipelineConfig(StrictConfigModel):

@@ -2,24 +2,22 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Pair Recalculation And Artifact Lifecycle
+## Now: Artifact Versioning And Promotion
 
 Goal:
 
 ```text
-make pair artifacts observable, auditable, validated, and safe for future
-manual recalculation
+make eligible pair artifact replacement explicit, validated, and auditable
+before execution can load it
 ```
 
 Required behavior:
 
-- Add explicit `pair_refresh` config under pipeline execution.
-- Start with `mode: manual`.
-- Use `reload_policy: on_boot`.
-- Use `stale_open_position_policy: natural_exit`.
-- Validate artifact metadata before execution accepts it.
-- Reject legacy list-only artifacts.
-- Keep pair recalculation separate from live position mutation.
+- Research writes a candidate artifact.
+- Validator checks schema, metadata, freshness, and pair contents.
+- Promotion atomically replaces the promoted artifact used by execution.
+- Execution loads only the promoted artifact on boot.
+- Keep the current `pair_refresh` policy manual, on-boot, and natural-exit.
 
 Do not implement:
 
@@ -36,18 +34,19 @@ Do not increase real-capital exposure while the active work is artifact
 lifecycle. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
 
-## Next: Artifact Versioning And Promotion
+## Next: Scheduled Refresh Preparation
 
-Future pair refresh automation needs candidate artifacts before promotion:
+Future pair refresh automation needs an explicit operator cadence and traceable
+research runs before scheduled mode:
 
 ```text
-research writes candidate artifact
--> validator checks schema, metadata, freshness, and pair contents
--> promotion atomically replaces accepted artifact
--> execution loads accepted artifact on boot
+operator chooses cadence
+-> research run writes candidate artifact
+-> validator and promotion publish a new promoted artifact
+-> operator restarts trader
 ```
 
-This should be implemented before any scheduled refresh.
+This should be designed before any scheduled refresh implementation.
 
 ## Later: Scheduled Refresh
 

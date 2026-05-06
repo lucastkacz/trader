@@ -63,6 +63,67 @@ def test_load_tier1_pairs_rejects_mismatched_artifact_metadata(monkeypatch, tmp_
         pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
 
 
+def test_load_tier1_pairs_rejects_mismatched_artifact_exchange(monkeypatch, tmp_path):
+    universe_dir = tmp_path / "data" / "universes" / "1m"
+    universe_dir.mkdir(parents=True)
+    path = universe_dir / "surviving_pairs.json"
+    path.write_text(
+        json.dumps(_artifact([_valid_pair()], exchange="kucoin")),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="exchange"):
+        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+
+
+def test_load_tier1_pairs_rejects_legacy_list_only_artifact(monkeypatch, tmp_path):
+    universe_dir = tmp_path / "data" / "universes" / "1m"
+    universe_dir.mkdir(parents=True)
+    (universe_dir / "surviving_pairs.json").write_text(
+        json.dumps(["BTC|ETH", "SOL|ADA"]),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="Legacy list-only"):
+        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+
+
+def test_load_tier1_pairs_rejects_malformed_artifact_envelope(monkeypatch, tmp_path):
+    universe_dir = tmp_path / "data" / "universes" / "1m"
+    universe_dir.mkdir(parents=True)
+    artifact = _artifact([_valid_pair()])
+    del artifact["metadata"]["generated_at"]
+    (universe_dir / "surviving_pairs.json").write_text(
+        json.dumps(artifact),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="generated_at"):
+        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+
+
+def test_load_tier1_pairs_rejects_pair_count_mismatch(monkeypatch, tmp_path):
+    universe_dir = tmp_path / "data" / "universes" / "1m"
+    universe_dir.mkdir(parents=True)
+    artifact = _artifact([_valid_pair()])
+    artifact["metadata"]["pair_count"] = 2
+    (universe_dir / "surviving_pairs.json").write_text(
+        json.dumps(artifact),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="pair_count mismatch"):
+        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+
+
 def test_load_tier1_pairs_rejects_missing_performance_sharpe(monkeypatch, tmp_path):
     universe_dir = tmp_path / "data" / "universes" / "1m"
     universe_dir.mkdir(parents=True)
@@ -101,8 +162,8 @@ def test_validate_surviving_pair_rows_rejects_non_list_rows():
 
 
 def test_extract_pair_artifact_rejects_legacy_list_artifact():
-    with pytest.raises(ValueError, match="metadata"):
-        pairs.extract_pair_artifact_pairs([_valid_pair()], "artifact.json")
+    with pytest.raises(ValueError, match="Legacy list-only"):
+        pairs.extract_pair_artifact_pairs(["BTC|ETH"], "artifact.json")
 
 
 def test_load_tier1_pairs_missing_artifact_tells_operator_to_run_research(monkeypatch, tmp_path):

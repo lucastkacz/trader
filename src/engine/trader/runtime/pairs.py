@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -27,6 +27,28 @@ class SurvivingPairPerformance(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     sharpe_ratio: float
+
+
+class PairArtifactMetadata(BaseModel):
+    """Validated metadata for the research-to-execution pair artifact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    artifact_type: Literal["surviving_pairs"]
+    generated_at: datetime
+    timeframe: str = Field(min_length=1)
+    exchange: str = Field(min_length=1)
+    pair_count: int = Field(ge=0)
+
+
+class PairArtifactEnvelope(BaseModel):
+    """Validated top-level surviving-pairs artifact envelope."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metadata: PairArtifactMetadata
+    pairs: list[Any]
 
 
 class SurvivingPairRow(BaseModel):
@@ -85,36 +107,40 @@ def extract_pair_artifact_pairs(
     expected_exchange: str | None = None,
 ) -> list[dict[str, Any]]:
     """Validate a surviving-pairs artifact envelope and return its pair rows."""
+    if isinstance(artifact, list):
+        raise ValueError(
+            f"Legacy list-only surviving pairs artifacts are not supported: {source_path}. "
+            "Regenerate the artifact with metadata and pairs."
+        )
     if not isinstance(artifact, dict):
         raise ValueError(
             f"Surviving pairs artifact must contain metadata and pairs: {source_path}"
         )
 
-    metadata = artifact.get("metadata")
-    rows = artifact.get("pairs")
-    if not isinstance(metadata, dict):
-        raise ValueError(f"Surviving pairs artifact missing metadata: {source_path}")
+    try:
+        envelope = PairArtifactEnvelope.model_validate(artifact)
+    except ValidationError as exc:
+        raise ValueError(
+            f"Malformed surviving pairs artifact envelope in {source_path}: {exc}"
+        ) from exc
 
-    if metadata.get("schema_version") != PAIR_ARTIFACT_SCHEMA_VERSION:
-        raise ValueError(f"Unsupported surviving pairs schema_version in {source_path}")
-    if metadata.get("artifact_type") != "surviving_pairs":
-        raise ValueError(f"Unsupported artifact_type in {source_path}")
-    if expected_timeframe is not None and metadata.get("timeframe") != expected_timeframe:
+    metadata = envelope.metadata
+    if expected_timeframe is not None and metadata.timeframe != expected_timeframe:
         raise ValueError(
             f"Surviving pairs artifact timeframe mismatch in {source_path}: "
-            f"expected {expected_timeframe}, found {metadata.get('timeframe')}"
+            f"expected {expected_timeframe}, found {metadata.timeframe}"
         )
-    if expected_exchange is not None and metadata.get("exchange") != expected_exchange:
+    if expected_exchange is not None and metadata.exchange != expected_exchange:
         raise ValueError(
             f"Surviving pairs artifact exchange mismatch in {source_path}: "
-            f"expected {expected_exchange}, found {metadata.get('exchange')}"
+            f"expected {expected_exchange}, found {metadata.exchange}"
         )
 
-    validated = validate_surviving_pair_rows(rows, str(source_path))
-    if metadata.get("pair_count") != len(validated):
+    validated = validate_surviving_pair_rows(envelope.pairs, str(source_path))
+    if metadata.pair_count != len(validated):
         raise ValueError(
             f"Surviving pairs artifact pair_count mismatch in {source_path}: "
-            f"metadata={metadata.get('pair_count')} actual={len(validated)}"
+            f"metadata={metadata.pair_count} actual={len(validated)}"
         )
     return validated
 

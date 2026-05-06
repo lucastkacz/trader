@@ -55,9 +55,11 @@ The eligible pair artifact is the research-to-execution handoff:
 data/universes/{timeframe}/surviving_pairs.json
 ```
 
-The artifact should include metadata such as schema version, artifact type,
-generation time, timeframe, exchange, and pair count. Execution should reject
-missing, malformed, mismatched, stale, or legacy list-only artifacts.
+The artifact is a JSON envelope with `metadata` and `pairs`. Metadata includes
+schema version, artifact type, generation time, timeframe, exchange, and pair
+count. Execution validates the envelope on boot and rejects missing, malformed,
+mismatched, or legacy list-only artifacts. Freshness checks belong to artifact
+versioning and promotion before scheduled refresh is introduced.
 
 ## Pair Recalculation Policy
 

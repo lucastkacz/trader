@@ -17,3 +17,7 @@ pipeline:
       fill_poll_interval_seconds: 0.0
       cancel_unfilled_after_poll: false
       client_order_prefix: "dev"
+    pair_refresh:
+      mode: "manual"
+      reload_policy: "on_boot"
+      stale_open_position_policy: "natural_exit"
