@@ -15,6 +15,7 @@ Before changing code, read the relevant project context:
 ## Agent Skills
 
 Project-specific Codex skills live under `.agents/skills/`. Use `improve-quant-architecture` when asked to review architecture, find refactoring opportunities, or make the codebase more testable, maintainable, or AI-navigable.
+Use `quant-code-quality-auditor` when asked to sniff code quality, pre-merge maintainability, SOLID-style responsibility drift, file/function size, config-boundary leaks, test integrity, live-safety drift, or stale legacy references.
 
 ## Non-Negotiables
 

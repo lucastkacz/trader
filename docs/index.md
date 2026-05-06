@@ -23,6 +23,12 @@ For architecture reviews:
 - `.agents/skills/improve-quant-architecture/SKILL.md`
 - `.agents/skills/improve-quant-architecture/references/LANGUAGE.md`
 
+For code quality audits:
+
+- `CONTEXT.md`
+- `docs/engineering-rules.md`
+- `.agents/skills/quant-code-quality-auditor/SKILL.md`
+
 For pair recalculation or eligible pair artifacts:
 
 - `docs/system-design.md`
