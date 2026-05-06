@@ -28,10 +28,17 @@ Canonical system documentation lives in `docs/`.
 
 **Runtime state**: in-memory and persisted trading state used by live execution, including positions, orders, reconciliation results, commands, and lifecycle events.
 
+**Operational seam**: a place where environment-specific behavior enters the
+system, such as filesystem layout, exchange adapter, clock, credentials,
+notification channel, or state store. Production modules should receive these
+through typed config, explicit parameters, or adapters rather than hardcoding
+them.
+
 ## Engineering Priorities
 
 - Reliability over cleverness.
 - Auditability over hidden convenience.
 - Typed config over permissive defaults.
 - Offline tests over live integration assumptions.
+- Agnostic, modular seams over hardcoded paths or environment assumptions.
 - Focused slices over broad rewrites.

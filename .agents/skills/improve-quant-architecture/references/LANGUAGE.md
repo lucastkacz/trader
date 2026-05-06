@@ -16,6 +16,10 @@ Use these words consistently in architecture reviews.
 
 **Adapter**: a concrete thing satisfying an interface at a seam.
 
+**Operational seam**: a seam where environment-specific behavior enters a
+module, including filesystem layout, storage backend, exchange adapter, clock,
+credentials, notification channel, or runtime policy.
+
 **Leverage**: what callers get from depth: more behavior per unit of interface they must learn.
 
 **Locality**: what maintainers get from depth: change, bugs, and verification concentrated in one place.
@@ -27,6 +31,8 @@ Use these words consistently in architecture reviews.
 - The interface is the test surface.
 - One adapter means a hypothetical seam. Two adapters means a real seam.
 - Avoid exposing internal seams only because tests want them.
+- Hardcoded paths, exchanges, timeframes, clocks, or storage locations usually
+  indicate a missing operational seam unless the file is the explicit adapter.
 
 ## Rejected Framing
 

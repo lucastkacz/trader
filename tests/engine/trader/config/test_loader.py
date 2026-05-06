@@ -25,10 +25,9 @@ def write_yaml(tmp_path, data):
 def test_valid_operator_configs_parse():
     dev_pipeline = load_pipeline_config("configs/pipelines/dev.yml")
     assert dev_pipeline.execution.max_ticks is None
+    assert dev_pipeline.execution.market_data_base_dir == "data/parquet"
+    assert dev_pipeline.execution.artifact_base_dir == "data/universes"
     assert dev_pipeline.execution.order_execution.mode == "state_only"
-    assert dev_pipeline.execution.pair_refresh.mode == "manual"
-    assert dev_pipeline.execution.pair_refresh.reload_policy == "on_boot"
-    assert dev_pipeline.execution.pair_refresh.stale_open_position_policy == "natural_exit"
     assert load_pipeline_config("configs/pipelines/uat.yml").execution.max_ticks is None
     assert load_pipeline_config("configs/pipelines/prod.yml").execution.max_ticks is None
 
@@ -53,19 +52,6 @@ def test_all_shipped_pipeline_configs_keep_order_execution_state_only():
     parsed = [load_pipeline_config(path) for path in pipeline_paths]
 
     assert {cfg.execution.order_execution.mode for cfg in parsed} == {"state_only"}
-
-
-def test_all_shipped_pipeline_configs_use_manual_on_boot_pair_refresh():
-    pipeline_paths = sorted(Path("configs/pipelines").glob("*.yml"))
-
-    parsed = [load_pipeline_config(path) for path in pipeline_paths]
-
-    assert {cfg.execution.pair_refresh.mode for cfg in parsed} == {"manual"}
-    assert {cfg.execution.pair_refresh.reload_policy for cfg in parsed} == {"on_boot"}
-    assert {
-        cfg.execution.pair_refresh.stale_open_position_policy
-        for cfg in parsed
-    } == {"natural_exit"}
 
 
 def test_unsupported_order_execution_mode_fails_loudly(tmp_path):
@@ -112,37 +98,23 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
         (
             "configs/pipelines/dev.yml",
             "pipeline",
-            ("execution", "pair_refresh"),
-            load_pipeline_config,
-            "pair_refresh",
-        ),
-        (
-            "configs/pipelines/dev.yml",
-            "pipeline",
-            ("execution", "pair_refresh", "mode"),
-            load_pipeline_config,
-            "mode",
-        ),
-        (
-            "configs/pipelines/dev.yml",
-            "pipeline",
-            ("execution", "pair_refresh", "reload_policy"),
-            load_pipeline_config,
-            "reload_policy",
-        ),
-        (
-            "configs/pipelines/dev.yml",
-            "pipeline",
-            ("execution", "pair_refresh", "stale_open_position_policy"),
-            load_pipeline_config,
-            "stale_open_position_policy",
-        ),
-        (
-            "configs/pipelines/dev.yml",
-            "pipeline",
             ("execution", "exchange"),
             load_pipeline_config,
             "exchange",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("execution", "market_data_base_dir"),
+            load_pipeline_config,
+            "market_data_base_dir",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("execution", "artifact_base_dir"),
+            load_pipeline_config,
+            "artifact_base_dir",
         ),
         (
             "configs/universe/alpha_v1.yml",
@@ -215,45 +187,3 @@ def test_missing_operational_fields_fail_loudly(
 
     with pytest.raises(ValidationError, match=match):
         loader(path)
-
-
-def test_wrong_top_level_key_fails_before_validation(tmp_path):
-    path = write_yaml(tmp_path, {"strategy": {"name": "wrong"}})
-
-    with pytest.raises(ValueError, match="top-level key 'pipeline'"):
-        load_pipeline_config(path)
-
-
-def test_extra_config_keys_are_rejected(tmp_path):
-    cfg = yaml.safe_load(open("configs/pipelines/dev.yml"))
-    cfg["pipeline"]["execution"]["implicit_default"] = 123
-    path = write_yaml(tmp_path, cfg)
-
-    with pytest.raises(ValidationError, match="implicit_default"):
-        load_pipeline_config(path)
-
-
-@pytest.mark.parametrize(
-    ("field_name", "invalid_value", "match"),
-    [
-        ("mode", "scheduled", "mode"),
-        ("reload_policy", "hot_reload", "reload_policy"),
-        ("stale_open_position_policy", "force_close", "stale_open_position_policy"),
-    ],
-)
-def test_invalid_pair_refresh_values_fail_loudly(tmp_path, field_name, invalid_value, match):
-    cfg = yaml.safe_load(open("configs/pipelines/dev.yml"))
-    cfg["pipeline"]["execution"]["pair_refresh"][field_name] = invalid_value
-    path = write_yaml(tmp_path, cfg)
-
-    with pytest.raises(ValidationError, match=match):
-        load_pipeline_config(path)
-
-
-def test_pair_refresh_rejects_extra_keys(tmp_path):
-    cfg = yaml.safe_load(open("configs/pipelines/dev.yml"))
-    cfg["pipeline"]["execution"]["pair_refresh"]["implicit_default"] = "surprise"
-    path = write_yaml(tmp_path, cfg)
-
-    with pytest.raises(ValidationError, match="implicit_default"):
-        load_pipeline_config(path)

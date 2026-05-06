@@ -2,21 +2,23 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Artifact Versioning And Promotion
+## Now: Promotion Operator Surface And Traceability
 
 Goal:
 
 ```text
-make eligible pair artifact replacement explicit, validated, and auditable
-before execution can load it
+make artifact promotion operator-accessible and traceable before scheduled
+refresh is designed
 ```
 
 Required behavior:
 
-- Research writes a candidate artifact.
-- Validator checks schema, metadata, freshness, and pair contents.
-- Promotion atomically replaces the promoted artifact used by execution.
-- Execution loads only the promoted artifact on boot.
+- Expose an explicit operator promotion command around the validated promotion
+  function.
+- Record enough promotion metadata to audit which candidate became promoted.
+- Keep artifact locations supplied through typed config, explicit parameters, or
+  a storage adapter.
+- Keep execution loading only the promoted artifact on boot.
 - Keep the current `pair_refresh` policy manual, on-boot, and natural-exit.
 
 Do not implement:

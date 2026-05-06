@@ -43,6 +43,9 @@ python3 .agents/skills/quant-code-quality-auditor/scripts/audit_repo.py src/engi
 - **Oversized surfaces**: files over 200 lines, long functions, or classes that require too much context to change safely.
 - **Shallow abstraction**: wrappers that add indirection without leverage, locality, validation, or a simpler interface.
 - **Config boundary leaks**: raw YAML dicts, permissive defaults, or `.get("key", default)` below typed config parsing.
+- **Hardcoded operational assumptions**: embedded filesystem paths, exchange
+  names, timeframes, environments, clocks, or storage locations in domain logic
+  instead of typed config, explicit parameters, or adapters.
 - **Test integrity**: unit tests that can call the network, depend on internals, or skip behavior through mocks that prove little.
 - **Live-safety drift**: exchange mutation outside explicit execution modules or hidden behind research, reporting, config, or pair refresh flows.
 - **Legacy contamination**: references to removed planning surfaces or stale domain names.

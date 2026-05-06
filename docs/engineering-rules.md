@@ -7,6 +7,14 @@ offline verification, and live-trading safety matter more than fast changes.
 
 - Use type hints for all production function signatures.
 - Prefer clear, boring modules with explicit interfaces.
+- Production modules must be agnostic to exchange, timeframe, environment,
+  filesystem layout, and storage backend unless that module is the explicit
+  adapter for that concern.
+- Do not hardcode operational paths, exchanges, timeframes, credentials,
+  environments, clocks, or storage locations inside domain logic.
+- Put environment-specific behavior behind typed config, explicit parameters,
+  or adapters. If a default path is useful, keep it at an entrypoint, config
+  model, or narrow local adapter seam.
 - Keep pure math, state mutation, external I/O, runtime orchestration, and
   presentation in separate modules when the behavior is substantial.
 - Avoid pass-through modules. A module should provide leverage or locality.
@@ -22,6 +30,8 @@ offline verification, and live-trading safety matter more than fast changes.
 - Missing required operational config should fail at boot with a precise error.
 - `null` is acceptable only when it is explicitly present and modeled as
   intentional.
+- Paths and storage locations used by production flows are operational config or
+  adapter inputs, not hidden constants in domain modules.
 
 ## Testing
 
@@ -29,6 +39,9 @@ offline verification, and live-trading safety matter more than fast changes.
 - Unit tests must not call the network.
 - Exchange clients, Telegram, clocks, and filesystem-heavy behavior should use
   mocks, fakes, or local test adapters.
+- Tests belong under `tests/`. Production research modules may run simulations,
+  stress filters, or validations, but they are not a substitute for behavior
+  tests through module interfaces.
 - Add or update tests for production behavior changes.
 - Prefer behavior tests through module interfaces over tests coupled to internals.
 - If a test or implementation loops without progress, stop and report the design

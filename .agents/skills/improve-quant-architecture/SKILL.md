@@ -25,6 +25,10 @@ Read only what is relevant to the area being reviewed:
 - Do not hide forced position closes behind pair recalculation.
 - Do not introduce raw YAML dict access below the config boundary.
 - Do not introduce `.get("key", default)` for config-origin values.
+- Do not preserve hardcoded operational paths, exchanges, timeframes,
+  environments, clocks, or storage locations inside domain modules.
+- Prefer agnostic, flexible, modular seams: typed config, explicit parameters,
+  or adapters should carry environment-specific concerns into the module.
 - Prefer deep modules around domain concepts over broad pass-through wrappers.
 - Treat the module interface as the test surface.
 - For true external dependencies such as exchanges, Telegram, filesystem artifacts, or clocks, propose adapters only when there is a production adapter and a test adapter.
@@ -39,6 +43,8 @@ Start from the user's target area and trace callers, tests, configs, and persist
 - A module is shallow: its interface exposes nearly the same complexity as its implementation.
 - Tests verify internals instead of behavior through the module interface.
 - Config knowledge leaks below the config boundary.
+- Operational path, exchange, storage, clock, or environment assumptions are
+  hardcoded rather than entering through a seam.
 - Artifact schema, validation, promotion, and loading are spread across callers.
 - Runtime trading behavior mixes policy, I/O, state mutation, and calculation in one place.
 
@@ -63,6 +69,8 @@ Once the user chooses a candidate, grill the design:
 - What behavior belongs behind the module interface?
 - Where should the seam live?
 - Which dependencies are in-process, local-substitutable, true external, or runtime state?
+- Which paths, storage stores, clocks, exchanges, or runtime policies must be
+  supplied instead of hardcoded?
 - Which adapters are justified?
 - What tests should survive future implementation refactors?
 - Which old tests become waste after testing through the deeper interface?

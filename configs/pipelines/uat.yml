@@ -6,6 +6,8 @@ pipeline:
   execution:
     exchange: "bybit"
     credential_tier: "readonly"
+    market_data_base_dir: "data/parquet"
+    artifact_base_dir: "data/universes"
     db_path: "data/uat/trades_4h.db"
     min_sharpe: 1.0
     max_ticks: null

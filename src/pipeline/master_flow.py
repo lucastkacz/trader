@@ -13,7 +13,8 @@ from src.engine.trader.config import (
     UniverseConfig,
 )
 from src.screener.discovery_engine import DiscoveryEngine
-from src.simulation.stress_orchestrator import StressTestOrchestrator
+from src.engine.trader.runtime.pairs import candidate_pair_artifact_path
+from src.research.pair_stress_filter import PairStressFilter
 from src.engine.trader.live_trader import LiveTrader
 
 # --- RESEARCH TASKS ---
@@ -29,7 +30,7 @@ async def task_mine_data(pipeline_cfg: PipelineConfig, universe_cfg: UniverseCon
         api_key = settings.exchange_readonly_api_key or ""
         api_secret = settings.exchange_readonly_api_secret or ""
 
-    storage = ParquetStorage(base_dir="data/parquet")
+    storage = ParquetStorage(base_dir=pipeline_cfg.execution.market_data_base_dir)
     miner = HistoricalMiner(storage)
     await miner.run(
         exchange_id=exchange_id,
@@ -44,26 +45,40 @@ async def task_mine_data(pipeline_cfg: PipelineConfig, universe_cfg: UniverseCon
 
 @task(name="Alpha Cointegration Taxonomy")
 def task_discover_alpha(
-    timeframe: str,
-    exchange: str,
+    pipeline_cfg: PipelineConfig,
     universe_cfg: UniverseConfig,
     strategy_cfg: StrategyConfig,
 ):
-    storage = ParquetStorage(base_dir="data/parquet")
+    storage = ParquetStorage(base_dir=pipeline_cfg.execution.market_data_base_dir)
     engine = DiscoveryEngine(storage)
-    engine.run(timeframe, exchange, universe_cfg, strategy_cfg)
+    engine.run(
+        timeframe=pipeline_cfg.timeframe,
+        exchange=pipeline_cfg.execution.exchange,
+        universe_cfg=universe_cfg,
+        strategy_cfg=strategy_cfg,
+        artifact_base_dir=pipeline_cfg.execution.artifact_base_dir,
+    )
     return True
 
-@task(name="Vectorized Arena Filter")
+@task(name="Pair Stress Filter")
 def task_vector_stress(
-    timeframe: str,
-    exchange: str,
+    pipeline_cfg: PipelineConfig,
     backtest_cfg: BacktestConfig,
     strategy_cfg: StrategyConfig,
 ):
-    storage = ParquetStorage(base_dir="data/parquet")
-    orchestrator = StressTestOrchestrator(storage)
-    orchestrator.run(timeframe, exchange, backtest_cfg.model_dump(), strategy_cfg.model_dump())
+    storage = ParquetStorage(base_dir=pipeline_cfg.execution.market_data_base_dir)
+    stress_filter = PairStressFilter(storage)
+    stress_filter.run(
+        timeframe=pipeline_cfg.timeframe,
+        exchange=pipeline_cfg.execution.exchange,
+        input_pairs_path=candidate_pair_artifact_path(
+            pipeline_cfg.timeframe,
+            pipeline_cfg.execution.artifact_base_dir,
+        ),
+        output_artifact_base_dir=pipeline_cfg.execution.artifact_base_dir,
+        backtest_cfg=backtest_cfg,
+        strategy_cfg=strategy_cfg,
+    )
     return True
 
 # --- EXECUTION TASKS ---
@@ -109,8 +124,8 @@ async def research_flow(
     else:
         await task_mine_data(pipeline_cfg, universe_cfg)
         
-    task_discover_alpha(timeframe, exchange, universe_cfg, strategy_cfg)
-    task_vector_stress(timeframe, exchange, backtest_cfg, strategy_cfg)
+    task_discover_alpha(pipeline_cfg, universe_cfg, strategy_cfg)
+    task_vector_stress(pipeline_cfg, backtest_cfg, strategy_cfg)
 
 @flow(name="Live Execution Orchestrator", retries=0)
 async def execute_flow(

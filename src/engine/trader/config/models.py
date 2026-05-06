@@ -28,6 +28,8 @@ class PairRefreshConfig(StrictConfigModel):
 class PipelineExecutionConfig(StrictConfigModel):
     exchange: str
     credential_tier: Literal["readonly", "live"]
+    market_data_base_dir: str = Field(min_length=1)
+    artifact_base_dir: str = Field(min_length=1)
     db_path: str
     min_sharpe: float
     max_ticks: int | None

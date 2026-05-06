@@ -12,7 +12,7 @@ historical market data
 -> returns matrix construction
 -> clustering
 -> cointegration discovery
--> stress testing
+-> pair stress filtering
 -> eligible pair artifact
 -> trader execution
 -> state, reporting, and operator controls
@@ -22,9 +22,12 @@ historical market data
 
 The research flow is offline or operator-run. It may read local data, fetch
 historical data through the data layer, compute candidate pairs, run filters and
-stress tests, and write eligible pair artifacts.
+pair stress filters, and write eligible pair artifacts.
 
 Research code must not mutate live exchange state.
+Research modules are production workflow modules, not tests. They should expose
+small interfaces and receive storage, paths, exchanges, clocks, and runtime
+policy through config, explicit parameters, or adapters.
 
 ## Execution Flow
 
@@ -52,14 +55,24 @@ mutation.
 The eligible pair artifact is the research-to-execution handoff:
 
 ```text
-data/universes/{timeframe}/surviving_pairs.json
+candidate default: data/universes/{timeframe}/candidate_surviving_pairs.json
+promoted default:  data/universes/{timeframe}/surviving_pairs.json
 ```
+
+Research writes candidate artifacts. Promotion validates schema, metadata,
+generation freshness, timeframe, exchange, pair count, and pair contents before
+atomically replacing the promoted artifact. Execution loads only the promoted
+artifact on boot.
+
+These paths describe the default local layout, not a domain-layer constant.
+Artifact stores and paths should be supplied through typed config, explicit
+parameters, or a local storage adapter so the execution and research flows can
+survive alternate environments.
 
 The artifact is a JSON envelope with `metadata` and `pairs`. Metadata includes
 schema version, artifact type, generation time, timeframe, exchange, and pair
 count. Execution validates the envelope on boot and rejects missing, malformed,
-mismatched, or legacy list-only artifacts. Freshness checks belong to artifact
-versioning and promotion before scheduled refresh is introduced.
+mismatched, or legacy list-only artifacts.
 
 ## Pair Recalculation Policy
 
@@ -75,9 +88,10 @@ Initial supported mode is manual:
 
 ```text
 operator runs research
--> new artifact is written
+-> candidate artifact is written
+-> operator promotes the candidate artifact
 -> operator restarts trader
--> trader loads artifact on boot
+-> trader loads promoted artifact on boot
 -> new entries use new pair set
 -> existing positions close naturally
 ```
@@ -89,7 +103,7 @@ Scheduled refresh and hot reload are future work.
 Config is split by concern:
 
 ```text
-configs/pipelines/   runtime environment, exchange, DB paths, cadence, execution mode
+configs/pipelines/   runtime environment, exchange, DB/data/artifact paths, cadence, execution mode
 configs/universe/    asset eligibility and filtering
 configs/strategy/    signal thresholds and lookbacks
 configs/backtest/    simulation grid and friction assumptions
@@ -99,6 +113,10 @@ configs/telegram/    Telegram environment metadata
 
 Raw YAML dictionaries are parsed once near entrypoints. Runtime modules receive
 typed config objects or explicit values.
+
+Runtime and research modules should not reach for hardcoded local paths. Market
+data stores, artifact locations, exchanges, timeframes, and clocks enter through
+typed config or adapters at explicit operational seams.
 
 ## State And Reporting
 

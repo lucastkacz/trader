@@ -4,7 +4,7 @@ import pytest
 
 from src.engine.analysis.spread_math import build_hedged_log_spread
 from src.engine.trader.signal_engine import evaluate_signal
-from src.simulation.stress_orchestrator import StressTestOrchestrator
+from src.research.pair_stress_simulation import build_pair_zscore
 
 
 def _make_ohlcv(prices: np.ndarray) -> pd.DataFrame:
@@ -18,7 +18,7 @@ def _make_ohlcv(prices: np.ndarray) -> pd.DataFrame:
     })
 
 
-def test_live_signal_and_stress_test_use_same_hedged_spread_zscore():
+def test_live_signal_and_pair_stress_filter_use_same_hedged_spread_zscore():
     """Live and backtest paths should agree on hedge-adjusted spread math."""
     periods = 160
     lookback_bars = 60
@@ -50,7 +50,7 @@ def test_live_signal_and_stress_test_use_same_hedged_spread_zscore():
         "A_close": prices_a,
         "B_close": prices_b,
     })
-    stress_result = StressTestOrchestrator(storage=None).build_zscore(
+    stress_result = build_pair_zscore(
         stress_df,
         lookback_bars=lookback_bars,
         hedge_ratio=hedge_ratio,

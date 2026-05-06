@@ -30,8 +30,18 @@ def _artifact(pair_rows, timeframe="1m", exchange="bybit"):
     )
 
 
+def _write_artifact(path, artifact):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+
+def _artifact_base_dir(tmp_path):
+    return tmp_path / "data" / "universes"
+
+
 def test_load_tier1_pairs_validates_and_filters(monkeypatch, tmp_path):
-    universe_dir = tmp_path / "data" / "universes" / "1m"
+    artifact_base_dir = _artifact_base_dir(tmp_path)
+    universe_dir = artifact_base_dir / "1m"
     universe_dir.mkdir(parents=True)
     path = universe_dir / "surviving_pairs.json"
     path.write_text(
@@ -41,7 +51,12 @@ def test_load_tier1_pairs_validates_and_filters(monkeypatch, tmp_path):
 
     monkeypatch.chdir(tmp_path)
 
-    tier1 = pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+    tier1 = pairs.load_tier1_pairs(
+        "1m",
+        min_sharpe=1.0,
+        exchange="bybit",
+        artifact_base_dir=artifact_base_dir,
+    )
 
     assert len(tier1) == 1
     assert tier1[0]["Asset_X"] == "BTC/USDT"
@@ -49,7 +64,8 @@ def test_load_tier1_pairs_validates_and_filters(monkeypatch, tmp_path):
 
 
 def test_load_tier1_pairs_rejects_mismatched_artifact_metadata(monkeypatch, tmp_path):
-    universe_dir = tmp_path / "data" / "universes" / "1m"
+    artifact_base_dir = _artifact_base_dir(tmp_path)
+    universe_dir = artifact_base_dir / "1m"
     universe_dir.mkdir(parents=True)
     path = universe_dir / "surviving_pairs.json"
     path.write_text(
@@ -60,11 +76,12 @@ def test_load_tier1_pairs_rejects_mismatched_artifact_metadata(monkeypatch, tmp_
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="timeframe"):
-        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+        pairs.load_tier1_pairs("1m", 1.0, "bybit", artifact_base_dir)
 
 
 def test_load_tier1_pairs_rejects_mismatched_artifact_exchange(monkeypatch, tmp_path):
-    universe_dir = tmp_path / "data" / "universes" / "1m"
+    artifact_base_dir = _artifact_base_dir(tmp_path)
+    universe_dir = artifact_base_dir / "1m"
     universe_dir.mkdir(parents=True)
     path = universe_dir / "surviving_pairs.json"
     path.write_text(
@@ -75,11 +92,12 @@ def test_load_tier1_pairs_rejects_mismatched_artifact_exchange(monkeypatch, tmp_
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="exchange"):
-        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+        pairs.load_tier1_pairs("1m", 1.0, "bybit", artifact_base_dir)
 
 
 def test_load_tier1_pairs_rejects_legacy_list_only_artifact(monkeypatch, tmp_path):
-    universe_dir = tmp_path / "data" / "universes" / "1m"
+    artifact_base_dir = _artifact_base_dir(tmp_path)
+    universe_dir = artifact_base_dir / "1m"
     universe_dir.mkdir(parents=True)
     (universe_dir / "surviving_pairs.json").write_text(
         json.dumps(["BTC|ETH", "SOL|ADA"]),
@@ -89,11 +107,12 @@ def test_load_tier1_pairs_rejects_legacy_list_only_artifact(monkeypatch, tmp_pat
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="Legacy list-only"):
-        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+        pairs.load_tier1_pairs("1m", 1.0, "bybit", artifact_base_dir)
 
 
 def test_load_tier1_pairs_rejects_malformed_artifact_envelope(monkeypatch, tmp_path):
-    universe_dir = tmp_path / "data" / "universes" / "1m"
+    artifact_base_dir = _artifact_base_dir(tmp_path)
+    universe_dir = artifact_base_dir / "1m"
     universe_dir.mkdir(parents=True)
     artifact = _artifact([_valid_pair()])
     del artifact["metadata"]["generated_at"]
@@ -105,11 +124,12 @@ def test_load_tier1_pairs_rejects_malformed_artifact_envelope(monkeypatch, tmp_p
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="generated_at"):
-        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+        pairs.load_tier1_pairs("1m", 1.0, "bybit", artifact_base_dir)
 
 
 def test_load_tier1_pairs_rejects_pair_count_mismatch(monkeypatch, tmp_path):
-    universe_dir = tmp_path / "data" / "universes" / "1m"
+    artifact_base_dir = _artifact_base_dir(tmp_path)
+    universe_dir = artifact_base_dir / "1m"
     universe_dir.mkdir(parents=True)
     artifact = _artifact([_valid_pair()])
     artifact["metadata"]["pair_count"] = 2
@@ -121,11 +141,12 @@ def test_load_tier1_pairs_rejects_pair_count_mismatch(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="pair_count mismatch"):
-        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+        pairs.load_tier1_pairs("1m", 1.0, "bybit", artifact_base_dir)
 
 
 def test_load_tier1_pairs_rejects_missing_performance_sharpe(monkeypatch, tmp_path):
-    universe_dir = tmp_path / "data" / "universes" / "1m"
+    artifact_base_dir = _artifact_base_dir(tmp_path)
+    universe_dir = artifact_base_dir / "1m"
     universe_dir.mkdir(parents=True)
     bad_pair = _valid_pair()
     del bad_pair["Performance"]["sharpe_ratio"]
@@ -137,11 +158,12 @@ def test_load_tier1_pairs_rejects_missing_performance_sharpe(monkeypatch, tmp_pa
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="Performance.*sharpe_ratio"):
-        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+        pairs.load_tier1_pairs("1m", 1.0, "bybit", artifact_base_dir)
 
 
 def test_load_tier1_pairs_rejects_missing_best_params(monkeypatch, tmp_path):
-    universe_dir = tmp_path / "data" / "universes" / "1m"
+    artifact_base_dir = _artifact_base_dir(tmp_path)
+    universe_dir = artifact_base_dir / "1m"
     universe_dir.mkdir(parents=True)
     bad_pair = _valid_pair()
     del bad_pair["Best_Params"]["lookback_bars"]
@@ -153,7 +175,7 @@ def test_load_tier1_pairs_rejects_missing_best_params(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValueError, match="Best_Params.*lookback_bars"):
-        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+        pairs.load_tier1_pairs("1m", 1.0, "bybit", artifact_base_dir)
 
 
 def test_validate_surviving_pair_rows_rejects_non_list_rows():
@@ -170,4 +192,4 @@ def test_load_tier1_pairs_missing_artifact_tells_operator_to_run_research(monkey
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(FileNotFoundError, match="Run research first"):
-        pairs.load_tier1_pairs("1m", min_sharpe=1.0, exchange="bybit")
+        pairs.load_tier1_pairs("1m", 1.0, "bybit", _artifact_base_dir(tmp_path))

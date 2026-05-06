@@ -22,6 +22,9 @@ For architecture reviews:
 - `CONTEXT.md`
 - `.agents/skills/improve-quant-architecture/SKILL.md`
 - `.agents/skills/improve-quant-architecture/references/LANGUAGE.md`
+- Pay special attention to operational seams: paths, storage, exchanges,
+  clocks, credentials, and runtime policies should not be hardcoded inside
+  domain modules.
 
 For code quality audits:
 

@@ -21,6 +21,9 @@ Read only what is needed for the roadmap update:
 
 - Keep the document short and focused on active or near-term work.
 - Preserve explicit "Do not implement" boundaries when they still protect safety.
+- Preserve agnostic modularity: roadmap slices should call out when paths,
+  stores, exchanges, clocks, or runtime policies need typed config, explicit
+  parameters, or adapters instead of hardcoded assumptions.
 - Do not describe obsolete implementation history.
 - Do not add a new roadmap document unless `docs/current-roadmap.md` becomes genuinely hard to navigate.
 - Do not mark the system production-ready or safe for increased capital unless every gate in `docs/engineering-rules.md` is satisfied.

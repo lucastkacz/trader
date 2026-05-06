@@ -25,6 +25,8 @@ Use `quant-roadmap-maintainer` when asked to update `docs/current-roadmap.md`, c
 - No network calls in unit tests.
 - No raw YAML dictionaries below the config boundary.
 - No `.get("key", default)` for config-origin values.
+- No hardcoded operational paths, exchanges, timeframes, environments, or storage
+  locations below the config/runtime adapter layer.
 - No broad live-trader rewrites inside unrelated slices.
 - Prefer behavior tests through module interfaces over tests coupled to internals.
 - Do not call the system production-ready for real capital until the production
@@ -34,6 +36,9 @@ Use `quant-roadmap-maintainer` when asked to update `docs/current-roadmap.md`, c
 
 - Read the existing code before proposing a shape.
 - Keep changes focused and aligned with the local module style.
+- Keep production code agnostic, flexible, and modular: pass paths, stores,
+  exchanges, clocks, and runtime policies through typed config objects,
+  explicit parameters, or adapters instead of embedding environment assumptions.
 - Add or update tests for production behavior changes.
 - Preserve user changes and do not revert unrelated work.
 - Use architecture terms from `.agents/skills/improve-quant-architecture/references/LANGUAGE.md` when discussing module shape.
