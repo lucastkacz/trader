@@ -2,22 +2,23 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Promotion Operator Surface And Traceability
+## Now: Scheduled Refresh Preparation
 
 Goal:
 
 ```text
-make artifact promotion operator-accessible and traceable before scheduled
-refresh is designed
+design scheduled pair refresh from the now-traceable manual artifact lifecycle
+without changing live execution reload behavior
 ```
 
 Required behavior:
 
-- Expose an explicit operator promotion command around the validated promotion
-  function.
-- Record enough promotion metadata to audit which candidate became promoted.
-- Keep artifact locations supplied through typed config, explicit parameters, or
-  a storage adapter.
+- Define the operator cadence and traceable research-run expectations before
+  implementing scheduled mode.
+- Preserve the research-to-candidate, operator-promotion, promoted-on-boot
+  lifecycle.
+- Keep artifact, audit, market-data, exchange, clock, and runtime policy seams
+  supplied through typed config, explicit parameters, or adapters.
 - Keep execution loading only the promoted artifact on boot.
 - Keep the current `pair_refresh` policy manual, on-boot, and natural-exit.
 
@@ -36,10 +37,7 @@ Do not increase real-capital exposure while the active work is artifact
 lifecycle. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
 
-## Next: Scheduled Refresh Preparation
-
-Future pair refresh automation needs an explicit operator cadence and traceable
-research runs before scheduled mode:
+## Next: Scheduled Refresh
 
 ```text
 operator chooses cadence
@@ -48,12 +46,8 @@ operator chooses cadence
 -> operator restarts trader
 ```
 
-This should be designed before any scheduled refresh implementation.
-
-## Later: Scheduled Refresh
-
-Scheduled mode may run research on a configured cadence, but only after artifact
-versioning, validation, promotion, and traceability are complete.
+Scheduled mode may run research on a configured cadence, but only after the
+cadence contract and traceable research-run contract are designed.
 
 Scheduled mode must still preserve natural exit for existing positions.
 

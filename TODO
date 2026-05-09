@@ -1,8 +1,5 @@
-run dev local pipeline (initial fetch, then univrese creation then cluster creation then live trding)
-update actions var names
+regarding data alignment while fetching new crypto, 100 crpyto 1m candles. what happens if the last fethed crpyto is more recent than the first fetched crypto? Do we just align to the oldest one? Or do we have some kind of dynamic alignment?
+My honest take: for dev research, this is fine. For production-grade research artifacts, I would eventually add an explicit “closed candle cutoff” and maybe a freshness report per symbol.
 
-remove epoch mentioning, remove default values form functions
+One caveat: this is a relatively simple vectorized stress test. It has fees, funding bleed, next-bar execution, volatility parity, pessimistic entry returns, and z-score logic. It does not yet model every production execution concern like order book depth, real slippage curves, precision, partial fills, borrow/funding asymmetry per symbol, or exchange outages.
 
-
-
-13_CONTEXT_HANDOFF_AND_STATE_ARCHITECTURE.md is now complete. The broader MD is not fully exhausted yet, because it also includes larger production-hardening recommendations: strict typed config, more realistic backtest execution, exchange-agnostic market filtering, fuller order lifecycle states, boot reconciliation, and real auditor behavior.

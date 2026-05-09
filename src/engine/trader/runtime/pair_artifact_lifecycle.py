@@ -11,6 +11,12 @@ from src.engine.trader.runtime.pair_artifact_contract import (
     build_pair_artifact,
     validate_pair_artifact_file,
 )
+from src.engine.trader.runtime.pair_artifact_promotion_audit import (
+    PAIR_ARTIFACT_PROMOTION_AUDIT_FILENAME,
+    PairRefreshPromotionPolicy,
+    append_promotion_audit_record,
+    file_sha256,
+)
 
 PAIR_ARTIFACT_FILENAME = "surviving_pairs.json"
 PAIR_ARTIFACT_CANDIDATE_FILENAME = "candidate_surviving_pairs.json"
@@ -39,6 +45,14 @@ def candidate_pair_artifact_path(
 ) -> Path:
     """Return the research-written candidate pair artifact path."""
     return pair_artifact_dir(timeframe, base_dir) / PAIR_ARTIFACT_CANDIDATE_FILENAME
+
+
+def promotion_audit_path(
+    timeframe: str,
+    base_dir: str | Path,
+) -> Path:
+    """Return the promotion audit log path for a timeframe."""
+    return pair_artifact_dir(timeframe, base_dir) / PAIR_ARTIFACT_PROMOTION_AUDIT_FILENAME
 
 
 def write_candidate_pair_artifact(
@@ -90,17 +104,36 @@ def promote_candidate_pair_artifact(
     base_dir: str | Path,
     max_age_seconds: int = DEFAULT_PAIR_ARTIFACT_MAX_AGE_SECONDS,
     now: datetime | None = None,
+    audit_path: str | Path | None = None,
+    operator: str | None = None,
+    pipeline_name: str | None = None,
+    pair_refresh_policy: PairRefreshPromotionPolicy | None = None,
 ) -> Path:
     """Validate and atomically promote a candidate artifact for execution loading."""
     candidate_path = candidate_pair_artifact_path(timeframe, base_dir)
     promoted_path = promoted_pair_artifact_path(timeframe, base_dir)
-    validate_candidate_pair_artifact(
+    validated_candidate = validate_candidate_pair_artifact(
         timeframe=timeframe,
         exchange=exchange,
         base_dir=base_dir,
         max_age_seconds=max_age_seconds,
         now=now,
     )
+    candidate_sha256 = file_sha256(candidate_path)
+    promoted_at = now or datetime.now(validated_candidate.metadata.generated_at.tzinfo)
     promoted_path.parent.mkdir(parents=True, exist_ok=True)
     os.replace(candidate_path, promoted_path)
+    if audit_path is not None:
+        append_promotion_audit_record(
+            audit_path=Path(audit_path),
+            validated_candidate=validated_candidate,
+            candidate_path=candidate_path,
+            promoted_path=promoted_path,
+            candidate_sha256=candidate_sha256,
+            promoted_at=promoted_at,
+            max_age_seconds=max_age_seconds,
+            operator=operator,
+            pipeline_name=pipeline_name,
+            pair_refresh_policy=pair_refresh_policy,
+        )
     return promoted_path

@@ -8,6 +8,10 @@ from src.engine.trader.config import (
     load_strategy_config,
     load_universe_config,
 )
+from src.engine.trader.promote_pairs import (
+    add_promote_pairs_parser,
+    promote_pairs_from_args,
+)
 from src.pipeline.master_flow import research_flow, execute_flow
 
 async def main():
@@ -28,6 +32,9 @@ async def main():
     execute_parser.add_argument("--strategy", type=str, required=True, help="Path to strategy YAML config")
     execute_parser.add_argument("--risk", type=str, required=True, help="Path to risk YAML config")
     execute_parser.add_argument("--telegram", type=str, default=None, help="Path to telegram YAML config")
+
+    # --- PROMOTION COMMAND ---
+    add_promote_pairs_parser(subparsers)
 
     args = parser.parse_args()
 
@@ -56,6 +63,11 @@ async def main():
             risk_cfg=risk_cfg,
             telegram_path=args.telegram
         )
+
+    elif args.command == "promote-pairs":
+        result = promote_pairs_from_args(args)
+        print(f"Promoted artifact: {result.promoted_path}")
+        print(f"Promotion audit: {result.audit_path}")
         
     else:
         parser.print_help()

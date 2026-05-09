@@ -59,10 +59,12 @@ candidate default: data/universes/{timeframe}/candidate_surviving_pairs.json
 promoted default:  data/universes/{timeframe}/surviving_pairs.json
 ```
 
-Research writes candidate artifacts. Promotion validates schema, metadata,
-generation freshness, timeframe, exchange, pair count, and pair contents before
-atomically replacing the promoted artifact. Execution loads only the promoted
-artifact on boot.
+Research writes candidate artifacts. Operator promotion validates schema,
+metadata, generation freshness, timeframe, exchange, pair count, and pair
+contents before atomically replacing the promoted artifact. Promotion records an
+audit event with candidate metadata, content hash, promotion time, timeframe,
+exchange, from/to paths, pipeline name, operator when supplied, and the active
+pair-refresh policy. Execution loads only the promoted artifact on boot.
 
 These paths describe the default local layout, not a domain-layer constant.
 Artifact stores and paths should be supplied through typed config, explicit
