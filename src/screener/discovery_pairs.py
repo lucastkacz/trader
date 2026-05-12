@@ -4,6 +4,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from statsmodels.tools.sm_exceptions import MissingDataError
 
 from src.core.logger import logger
 from src.engine.analysis.cointegration import CointegrationEngine
@@ -70,13 +71,15 @@ def _evaluate_member_pair(
     cointegration_engine: CointegrationEngine,
     strategy_cfg: StrategyConfig,
 ) -> dict[str, Any] | None:
-    series_x = np.log(mature_pool[asset_x]["close"])
-    series_y = np.log(mature_pool[asset_y]["close"])
-    df_pair = pd.concat([series_x, series_y], axis=1).dropna()
+    df_pair = _build_positive_log_pair(mature_pool[asset_x], mature_pool[asset_y])
     if len(df_pair) < 500:
         return None
 
-    result = cointegration_engine.evaluate(df_pair.iloc[:, 0], df_pair.iloc[:, 1])
+    try:
+        result = cointegration_engine.evaluate(df_pair.iloc[:, 0], df_pair.iloc[:, 1])
+    except (MissingDataError, ValueError, np.linalg.LinAlgError) as exc:
+        logger.warning(f"Rejected {asset_x}/{asset_y}: invalid cointegration data ({exc})")
+        return None
     if not result["is_cointegrated"]:
         return None
     return {
@@ -95,3 +98,20 @@ def _evaluate_member_pair(
             "final_pnl_pct": 0.0,
         },
     }
+
+
+def _build_positive_log_pair(
+    asset_x: pd.DataFrame,
+    asset_y: pd.DataFrame,
+) -> pd.DataFrame:
+    prices = pd.concat(
+        [
+            pd.to_numeric(asset_x["close"], errors="coerce"),
+            pd.to_numeric(asset_y["close"], errors="coerce"),
+        ],
+        axis=1,
+    )
+    prices = prices.replace([np.inf, -np.inf], np.nan).dropna()
+    prices = prices[(prices.iloc[:, 0] > 0) & (prices.iloc[:, 1] > 0)]
+    logs = np.log(prices)
+    return logs.replace([np.inf, -np.inf], np.nan).dropna()
