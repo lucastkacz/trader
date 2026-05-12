@@ -103,6 +103,14 @@ class BacktestConfig(StrictConfigModel):
     friction: BacktestFrictionConfig
 
 
+class RunProfileConfig(StrictConfigModel):
+    pipeline: str = Field(min_length=1)
+    universe: str = Field(min_length=1)
+    backtest: str = Field(min_length=1)
+    strategy: str = Field(min_length=1)
+    skip_fetch: bool
+
+
 class RiskConfig(StrictConfigModel):
     name: str
     max_cluster_exposure: float

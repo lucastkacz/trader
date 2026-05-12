@@ -3,7 +3,7 @@ import numpy as np
 import statsmodels.api as sm
 from statsmodels.tsa.stattools import adfuller
 
-from src.engine.analysis.spread_math import build_hedged_log_spread
+from src.engine.analysis.spread_math import build_log_price_series
 
 class CointegrationEngine:
     """
@@ -26,16 +26,21 @@ class CointegrationEngine:
         
     def evaluate(self, series_x: pd.Series, series_y: pd.Series) -> dict:
         """
-        Receives purely logarithmic prices (ln(X) and ln(Y)) and returns
-        the structural state of the pair.
+        Receives raw positive prices and returns the structural state of the pair.
+
+        The engine converts to log prices once at this boundary. Downstream
+        spread math uses the same raw-price contract.
         """
+        log_x = build_log_price_series(series_x, "series_x")
+        log_y = build_log_price_series(series_y, "series_y")
+
         # Direction 1: Y = beta * X
-        reg_1 = sm.OLS(series_y, sm.add_constant(series_x)).fit()
+        reg_1 = sm.OLS(log_y, sm.add_constant(log_x)).fit()
         adf_1 = adfuller(reg_1.resid)
         pval_1 = adf_1[1]
         
         # Direction 2: X = beta * Y
-        reg_2 = sm.OLS(series_x, sm.add_constant(series_y)).fit()
+        reg_2 = sm.OLS(log_x, sm.add_constant(log_y)).fit()
         adf_2 = adfuller(reg_2.resid)
         pval_2 = adf_2[1]
         
@@ -59,13 +64,13 @@ class CointegrationEngine:
         # stored hedge ratio is always the beta from X ~ Y, even though the
         # cointegration pass/fail test above remains bidirectional.
         alpha = 2.0 / (self.ewma_span_bars + 1)
-        weights = np.array([(1 - alpha)**(len(series_x) - i - 1) for i in range(len(series_x))])
+        weights = np.array([(1 - alpha)**(len(log_x) - i - 1) for i in range(len(log_x))])
 
-        ew_ols = sm.WLS(series_x, sm.add_constant(series_y), weights=weights).fit()
+        ew_ols = sm.WLS(log_x, sm.add_constant(log_y), weights=weights).fit()
         hedge_ratio = ew_ols.params.iloc[1]
 
         # 3. Half-Life (Ornstein-Uhlenbeck) on the canonical downstream spread.
-        residuals = build_hedged_log_spread(series_x, series_y, hedge_ratio) - ew_ols.params.iloc[0]
+        residuals = (log_x - hedge_ratio * log_y) - ew_ols.params.iloc[0]
         z = residuals.values
         
         z_lag = z[:-1]

@@ -10,6 +10,7 @@ from src.engine.trader.config.models import (
     BacktestConfig,
     PipelineConfig,
     RiskConfig,
+    RunProfileConfig,
     StrategyConfig,
     TelegramConfig,
     UniverseConfig,
@@ -52,6 +53,10 @@ def load_strategy_config(path: str | Path) -> StrategyConfig:
 
 def load_backtest_config(path: str | Path) -> BacktestConfig:
     return _load_config(path, "backtest", BacktestConfig)
+
+
+def load_run_profile_config(path: str | Path) -> RunProfileConfig:
+    return _load_config(path, "run", RunProfileConfig)
 
 
 def load_risk_config(path: str | Path) -> RiskConfig:

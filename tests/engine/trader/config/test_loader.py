@@ -10,6 +10,7 @@ from src.engine.trader.config import (
     load_backtest_config,
     load_pipeline_config,
     load_risk_config,
+    load_run_profile_config,
     load_strategy_config,
     load_telegram_config,
     load_universe_config,
@@ -36,6 +37,9 @@ def test_valid_operator_configs_parse():
     assert universe_cfg.cointegration.ewma_span_bars == 48
     assert load_strategy_config("configs/strategy/alpha_v1.yml").execution.volatility_lookback_bars == 60
     assert load_backtest_config("configs/backtest/stress_test.yml").friction.taker_fee == 0.0006
+    run_profile = load_run_profile_config("configs/runs/dev_1m_research.yml")
+    assert run_profile.pipeline == "configs/pipelines/dev.yml"
+    assert run_profile.skip_fetch is True
     assert load_risk_config("configs/risk/alpha_v1.yml").max_leverage == 10.0
     assert load_telegram_config("configs/telegram/dev.yml").environment == "DEV"
     assert load_telegram_config("configs/telegram/dev.yml").holding_period_bar_minutes == 1
@@ -143,6 +147,20 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("friction", "taker_fee"),
             load_backtest_config,
             "taker_fee",
+        ),
+        (
+            "configs/runs/dev_1m_research.yml",
+            "run",
+            ("pipeline",),
+            load_run_profile_config,
+            "pipeline",
+        ),
+        (
+            "configs/runs/dev_1m_research.yml",
+            "run",
+            ("skip_fetch",),
+            load_run_profile_config,
+            "skip_fetch",
         ),
         (
             "configs/telegram/dev.yml",

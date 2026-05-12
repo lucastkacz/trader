@@ -9,6 +9,12 @@ from src.data.storage.local_parquet import ParquetStorage
 from src.engine.trader.config import BacktestConfig, StrategyConfig
 from src.engine.trader.runtime.pairs import write_candidate_pair_artifact
 from src.research.pair_stress_data import build_unified_ohlcv, load_candidate_pairs
+from src.research.pair_stress_report import (
+    build_rejected_pair_report,
+    build_surviving_pair_report,
+    extract_source_window,
+    write_pair_stress_report,
+)
 from src.research.pair_stress_simulation import (
     build_performance_stats,
     inject_volatility_parity,
@@ -52,9 +58,10 @@ class PairStressFilter:
         )
         bars_per_year = get_bars_per_year(timeframe)
         surviving_pairs = []
+        report_rows = []
 
         for pair_index, pair in enumerate(pairs):
-            survivor = self._stress_filter_one_pair(
+            survivor, report_row = self._stress_filter_one_pair(
                 pair=pair,
                 pair_index=pair_index,
                 pair_count=len(pairs),
@@ -68,6 +75,7 @@ class PairStressFilter:
             )
             if survivor is not None:
                 surviving_pairs.append(survivor)
+            report_rows.append(report_row)
 
         candidate_path = write_candidate_pair_artifact(
             pair_rows=surviving_pairs,
@@ -75,7 +83,14 @@ class PairStressFilter:
             exchange=exchange,
             base_dir=output_artifact_base_dir,
         )
+        report_path = write_pair_stress_report(
+            report_rows=report_rows,
+            timeframe=timeframe,
+            exchange=exchange,
+            base_dir=output_artifact_base_dir,
+        )
         logger.info(f"Pair stress filter wrote candidate artifact: {candidate_path}")
+        logger.info(f"Pair stress filter wrote trace report: {report_path}")
         return candidate_path
 
     def _stress_filter_one_pair(
@@ -90,7 +105,7 @@ class PairStressFilter:
         friction: FrictionEngine,
         bars_per_year: int,
         strategy_cfg: StrategyConfig,
-    ) -> dict[str, Any] | None:
+    ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         asset_x = pair["Asset_X"]
         asset_y = pair["Asset_Y"]
         hedge_ratio = pair["Hedge_Ratio"]
@@ -98,30 +113,35 @@ class PairStressFilter:
 
         unified = build_unified_ohlcv(self.storage, asset_x, asset_y, timeframe, exchange)
         if unified is None:
-            return None
+            return None, build_rejected_pair_report(pair, "source_data_unavailable")
+        source_window = extract_source_window(unified)
         unified = inject_volatility_parity(
             unified,
             strategy_cfg.execution.volatility_lookback_bars,
         )
 
-        best_params, best_stats, best_net_pnl = find_best_parameters(
-            unified=unified,
-            hedge_ratio=hedge_ratio,
-            grid=grid,
-            simulator=simulator,
-            friction=friction,
-            bars_per_year=bars_per_year,
-            exit_z=strategy_cfg.execution.exit_z_score,
-        )
+        try:
+            best_params, best_stats, best_net_pnl, best_net_df = find_best_parameters(
+                unified=unified,
+                hedge_ratio=hedge_ratio,
+                grid=grid,
+                simulator=simulator,
+                friction=friction,
+                bars_per_year=bars_per_year,
+                exit_z=strategy_cfg.execution.exit_z_score,
+            )
+        except ValueError as exc:
+            logger.warning(f"Rejected pair {asset_x} / {asset_y}: invalid stress data ({exc})")
+            return None, build_rejected_pair_report(pair, f"invalid_stress_data: {exc}", source_window)
         if best_net_pnl <= 0 or best_params is None or best_stats is None:
             logger.warning(f"Rejected pair {asset_x} / {asset_y}: best pnl={best_net_pnl * 100:.2f}%")
-            return None
+            return None, build_rejected_pair_report(pair, f"non_positive_best_pnl: {best_net_pnl:.8f}", source_window)
 
         logger.info(
             f"Survived {asset_x} / {asset_y}: "
             f"pnl={best_stats['final_pnl_pct']:.2f}% sharpe={best_stats['sharpe_ratio']:.2f}"
         )
-        return {
+        survivor = {
             "Cohort": pair["Cohort"],
             "Asset_X": asset_x,
             "Asset_Y": asset_y,
@@ -131,6 +151,17 @@ class PairStressFilter:
             "Best_Params": best_params,
             "Performance": best_stats,
         }
+        report_row = build_surviving_pair_report(
+            pair=pair,
+            source_window=source_window,
+            stress_params={
+                "lookback_bars": best_params["lookback_bars"],
+                "entry_z": best_params["entry_z"],
+                "exit_z": strategy_cfg.execution.exit_z_score,
+            },
+            net_df=best_net_df,
+        )
+        return survivor, report_row
 
 
 def find_best_parameters(
@@ -141,10 +172,11 @@ def find_best_parameters(
     friction: FrictionEngine,
     bars_per_year: int,
     exit_z: float,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None, float]:
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, float, Any]:
     best_net_pnl = float("-inf")
     best_params = None
     best_stats = None
+    best_net_df = None
     for lookback_bars, entry_z in grid:
         net_df = simulate_parameter_set(
             unified=unified,
@@ -163,4 +195,5 @@ def find_best_parameters(
             best_net_pnl = final_pnl
             best_params = {"lookback_bars": lookback_bars, "entry_z": entry_z}
             best_stats = build_performance_stats(net_df, bars_per_year)
-    return best_params, best_stats, best_net_pnl
+            best_net_df = net_df
+    return best_params, best_stats, best_net_pnl, best_net_df

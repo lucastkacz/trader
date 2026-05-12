@@ -115,7 +115,6 @@ async def research_flow(
 ):
     logger = get_run_logger()
     timeframe = pipeline_cfg.timeframe
-    exchange = pipeline_cfg.execution.exchange
     
     logger.info(f"Starting E2E Research Validation (Timeframe: {timeframe})")
     

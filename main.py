@@ -5,6 +5,7 @@ from src.engine.trader.config import (
     load_backtest_config,
     load_pipeline_config,
     load_risk_config,
+    load_run_profile_config,
     load_strategy_config,
     load_universe_config,
 )
@@ -25,6 +26,10 @@ async def main():
     research_parser.add_argument("--backtest", type=str, required=True, help="Path to backtest YAML config")
     research_parser.add_argument("--strategy", type=str, required=True, help="Path to strategy YAML config")
     research_parser.add_argument("--skip-fetch", action="store_true", help="Dirty Run: Skip API Fetch")
+
+    # --- RUN PROFILE COMMAND ---
+    run_parser = subparsers.add_parser("run", help="Run research from a typed run profile")
+    run_parser.add_argument("--config", type=str, required=True, help="Path to run profile YAML config")
 
     # --- EXECUTE COMMAND ---
     execute_parser = subparsers.add_parser("execute", help="Launch the Live Trading Execution Engine")
@@ -50,6 +55,21 @@ async def main():
             backtest_cfg=backtest_cfg,
             strategy_cfg=strategy_cfg,
             skip_fetch=args.skip_fetch
+        )
+
+    elif args.command == "run":
+        run_profile = load_run_profile_config(args.config)
+        pipeline_cfg = load_pipeline_config(run_profile.pipeline)
+        universe_cfg = load_universe_config(run_profile.universe)
+        backtest_cfg = load_backtest_config(run_profile.backtest)
+        strategy_cfg = load_strategy_config(run_profile.strategy)
+
+        await research_flow(
+            pipeline_cfg=pipeline_cfg,
+            universe_cfg=universe_cfg,
+            backtest_cfg=backtest_cfg,
+            strategy_cfg=strategy_cfg,
+            skip_fetch=run_profile.skip_fetch,
         )
 
     elif args.command == "execute":
