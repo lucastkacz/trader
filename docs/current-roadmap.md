@@ -2,25 +2,28 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Research Math Consistency And Dev Dry-Run Traceability
+## Now: Dev State-Only Dry Run From Promoted Candidate Artifact
 
 Goal:
 
 ```text
-make research artifacts mathematically consistent and auditable enough for
-simulated dev dry runs before designing scheduled refresh behavior
+prove the execution flow can safely consume a manually promoted dev candidate
+artifact in state-only mode before designing scheduled refresh behavior
 ```
 
 Required behavior:
 
-- Align spread, hedge-ratio, raw-price, and log-price semantics across
-  cointegration discovery, pair stress filtering, artifact output, and live
-  signal evaluation.
-- Reject non-positive or non-finite market data at explicit research boundaries
-  with behavior tests instead of flow crashes or double-log surprises.
-- Add traceable dev/research stress reporting that can reconstruct the tested
-  pairs, source data window, stress parameters, simulated entries and exits,
-  gross/net returns, and friction drag.
+- Rerun dev 1m research with `skip_fetch` against existing local data and write
+  a candidate artifact plus pair stress report.
+- Inspect the stress report for source data windows, tested pairs, simulated
+  entries and exits, gross/net returns, friction drag, and rejection reasons
+  before promotion.
+- Manually promote only an inspected dev candidate artifact for state-only
+  execution loading.
+- Run a bounded state-only execution dry run that loads the promoted artifact on
+  boot and records signal/position state without exchange mutation.
+- Compare execution signal behavior against the research stress report for the
+  promoted pairs.
 - Keep development-only 1m universe and stress tuning separate from canonical
   alpha configuration.
 - Preserve the research-to-candidate, operator-promotion, promoted-on-boot
@@ -48,8 +51,8 @@ lifecycle. Production readiness is a separate gate defined in
 ## Next: Scheduled Refresh Preparation
 
 ```text
-design scheduled pair refresh from the traceable manual artifact lifecycle
-without changing live execution reload behavior
+design scheduled pair refresh only after the manual dev dry-run lifecycle is
+traceable from research report through state-only execution behavior
 ```
 
 Preparation must define the operator cadence and traceable research-run

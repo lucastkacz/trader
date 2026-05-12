@@ -31,6 +31,8 @@ class FrictionEngine:
         carry_cost = out["position"].abs() * self.hourly_funding_bleed
         
         # 3. Netting
+        out["fee_drag"] = transaction_cost
+        out["funding_drag"] = carry_cost
         out["net_returns"] = out["gross_returns"] - transaction_cost - carry_cost
         
         return out

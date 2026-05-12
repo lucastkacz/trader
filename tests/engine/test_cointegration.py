@@ -62,8 +62,8 @@ def test_cointegration_returns_canonical_x_on_y_hedge_ratio():
     """Stored hedge ratio should match downstream spread: X - beta * Y."""
     np.random.seed(7)
     n = 500
-    y = np.cumsum(np.random.normal(0, 0.01, n)) + 4.0
-    x = 1.7 * y + np.random.normal(0, 0.001, n)
+    log_y = np.cumsum(np.random.normal(0, 0.01, n)) + 4.0
+    log_x = 1.7 * log_y + np.random.normal(0, 0.001, n)
 
     universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
     result = CointegrationEngine(
@@ -71,9 +71,49 @@ def test_cointegration_returns_canonical_x_on_y_hedge_ratio():
         max_half_life_bars=1000.0,
         ewma_span_bars=universe_cfg.cointegration.ewma_span_bars,
     ).evaluate(
-        pd.Series(x),
-        pd.Series(y),
+        pd.Series(np.exp(log_x)),
+        pd.Series(np.exp(log_y)),
     )
 
     assert result["is_cointegrated"]
     assert result["hedge_ratio"] == pytest.approx(1.7, rel=0.02)
+
+
+def test_cointegration_logs_raw_prices_once():
+    np.random.seed(11)
+    n = 700
+    log_y = np.cumsum(np.random.normal(0, 0.003, n)) + 5.0
+    log_x = 0.6 * log_y + np.random.normal(0, 0.0005, n)
+
+    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    result = CointegrationEngine(
+        p_value_threshold=universe_cfg.cointegration.p_value_threshold,
+        max_half_life_bars=1000.0,
+        ewma_span_bars=universe_cfg.cointegration.ewma_span_bars,
+    ).evaluate(
+        pd.Series(np.exp(log_x)),
+        pd.Series(np.exp(log_y)),
+    )
+
+    assert result["is_cointegrated"]
+    assert result["hedge_ratio"] == pytest.approx(0.6, rel=0.02)
+
+
+def test_cointegration_rejects_non_positive_or_non_finite_raw_prices():
+    engine = CointegrationEngine(
+        p_value_threshold=0.05,
+        max_half_life_bars=100.0,
+        ewma_span_bars=20,
+    )
+
+    with pytest.raises(ValueError, match="positive finite raw prices"):
+        engine.evaluate(
+            pd.Series([100.0, 101.0, 0.0, 103.0]),
+            pd.Series([50.0, 51.0, 52.0, 53.0]),
+        )
+
+    with pytest.raises(ValueError, match="positive finite raw prices"):
+        engine.evaluate(
+            pd.Series([100.0, 101.0, np.inf, 103.0]),
+            pd.Series([50.0, 51.0, 52.0, 53.0]),
+        )

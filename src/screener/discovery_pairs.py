@@ -8,6 +8,7 @@ from statsmodels.tools.sm_exceptions import MissingDataError
 
 from src.core.logger import logger
 from src.engine.analysis.cointegration import CointegrationEngine
+from src.engine.analysis.spread_math import require_positive_finite_prices
 from src.engine.trader.config import StrategyConfig, UniverseConfig
 
 
@@ -71,7 +72,11 @@ def _evaluate_member_pair(
     cointegration_engine: CointegrationEngine,
     strategy_cfg: StrategyConfig,
 ) -> dict[str, Any] | None:
-    df_pair = _build_positive_log_pair(mature_pool[asset_x], mature_pool[asset_y])
+    try:
+        df_pair = _build_positive_price_pair(mature_pool[asset_x], mature_pool[asset_y])
+    except ValueError as exc:
+        logger.warning(f"Rejected {asset_x}/{asset_y}: invalid raw price data ({exc})")
+        return None
     if len(df_pair) < 500:
         return None
 
@@ -100,7 +105,7 @@ def _evaluate_member_pair(
     }
 
 
-def _build_positive_log_pair(
+def _build_positive_price_pair(
     asset_x: pd.DataFrame,
     asset_y: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -111,7 +116,8 @@ def _build_positive_log_pair(
         ],
         axis=1,
     )
-    prices = prices.replace([np.inf, -np.inf], np.nan).dropna()
-    prices = prices[(prices.iloc[:, 0] > 0) & (prices.iloc[:, 1] > 0)]
-    logs = np.log(prices)
-    return logs.replace([np.inf, -np.inf], np.nan).dropna()
+    prices.columns = ["asset_x_close", "asset_y_close"]
+    return pd.DataFrame({
+        "asset_x_close": require_positive_finite_prices(prices["asset_x_close"], "asset_x"),
+        "asset_y_close": require_positive_finite_prices(prices["asset_y_close"], "asset_y"),
+    })

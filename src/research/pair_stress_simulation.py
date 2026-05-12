@@ -15,7 +15,9 @@ def build_pair_zscore(
     lookback_bars: int,
     hedge_ratio: float,
 ) -> pd.DataFrame:
+    df = df.copy()
     spread = build_hedged_log_spread(df["A_close"], df["B_close"], hedge_ratio)
+    df["spread"] = spread
     df["z_score"] = build_rolling_zscore(
         spread,
         lookback_bars,
@@ -50,7 +52,13 @@ def simulate_parameter_set(
     friction: FrictionEngine,
 ) -> pd.DataFrame | None:
     df = build_pair_zscore(unified.copy(), lookback_bars, hedge_ratio)
-    df = df.dropna(subset=["z_score"]).reset_index(drop=True)
+    df = df.dropna(subset=["z_score"])
+    if "timestamp" not in df.columns:
+        df = df.reset_index()
+        if "timestamp" not in df.columns:
+            df = df.rename(columns={"index": "timestamp"})
+    else:
+        df = df.reset_index(drop=True)
     if len(df) < 200:
         return None
 
