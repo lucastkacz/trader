@@ -1,0 +1,15 @@
+universe:
+  name: "DEV 1M Broader Liquid Universe"
+  filters:
+    exclude_top_n_mega_caps: 2
+    volume_lookback_bars: 1440
+    min_volume_liquidity: 10000
+    max_volume_liquidity: 2000000
+    min_data_maturity_bars: 1080
+  clustering:
+    returns_clip_percentile: 0.01
+    louvain_correlation_threshold: 0.4
+  cointegration:
+    p_value_threshold: 0.10
+    max_half_life_bars: 180
+    ewma_span_bars: 48
