@@ -55,6 +55,9 @@ def test_pessimism_and_funding_drag():
     # Position should be 1.0 (Long) starting at index 11 (T+1 execution)
     assert gross_df["position"].iloc[11] == 1.0
     assert gross_df["position"].iloc[9] == 0.0
+    assert gross_df["signal"].iloc[50] == 0.0
+    assert gross_df["position"].iloc[50] == 1.0
+    assert gross_df["position"].iloc[51] == 0.0
     
     # Assert the entry friction was calculated against the High/Low, not Close!
     # Because we long A at T+1, we pay the High (102 instead of 100).
@@ -76,3 +79,62 @@ def test_pessimism_and_funding_drag():
     
     # Absolute Truth: Net PnL must be strictly worse than Theoretical Gross PnL
     assert net_pnl < raw_pnl
+
+
+def test_simulator_long_spread_exits_when_z_crosses_mean_with_zero_exit_band():
+    periods = 20
+    df = _flat_ohlcv_frame(periods)
+    df["z_score"] = [0.0] * 5 + [-2.5] * 5 + [-0.5, -0.1, 0.1, 0.3] + [0.0] * 6
+
+    gross_df = Simulator().run(df, entry_z=2.0, exit_z=0.0)
+
+    assert gross_df["signal"].iloc[5] == 1.0
+    assert gross_df["position"].iloc[6] == 1.0
+    assert gross_df["signal"].iloc[12] == 0.0
+    assert gross_df["position"].iloc[12] == 1.0
+    assert gross_df["position"].iloc[13] == 0.0
+
+
+def test_simulator_short_spread_exits_when_z_crosses_mean_with_zero_exit_band():
+    periods = 20
+    df = _flat_ohlcv_frame(periods)
+    df["z_score"] = [0.0] * 5 + [2.5] * 5 + [0.5, 0.1, -0.1, -0.3] + [0.0] * 6
+
+    gross_df = Simulator().run(df, entry_z=2.0, exit_z=0.0)
+
+    assert gross_df["signal"].iloc[5] == -1.0
+    assert gross_df["position"].iloc[6] == -1.0
+    assert gross_df["signal"].iloc[12] == 0.0
+    assert gross_df["position"].iloc[12] == -1.0
+    assert gross_df["position"].iloc[13] == 0.0
+
+
+def test_simulator_uses_exit_band_side_aware():
+    periods = 20
+    long_df = _flat_ohlcv_frame(periods)
+    long_df["z_score"] = [0.0] * 5 + [-2.5] * 5 + [-0.4, -0.2, 0.0] + [0.0] * 7
+    short_df = _flat_ohlcv_frame(periods)
+    short_df["z_score"] = [0.0] * 5 + [2.5] * 5 + [0.4, 0.2, 0.0] + [0.0] * 7
+
+    long_result = Simulator().run(long_df, entry_z=2.0, exit_z=0.25)
+    short_result = Simulator().run(short_df, entry_z=2.0, exit_z=0.25)
+
+    assert long_result["signal"].iloc[10] == 1.0
+    assert long_result["signal"].iloc[11] == 0.0
+    assert short_result["signal"].iloc[10] == -1.0
+    assert short_result["signal"].iloc[11] == 0.0
+
+
+def _flat_ohlcv_frame(periods):
+    dates = pd.date_range("2023-01-01", periods=periods, freq="h")
+    close_a = np.ones(periods) * 100
+    close_b = np.ones(periods) * 50
+    return pd.DataFrame({
+        "timestamp": dates,
+        "A_close": close_a,
+        "A_high": close_a + 2,
+        "A_low": close_a - 2,
+        "B_close": close_b,
+        "B_high": close_b + 1,
+        "B_low": close_b - 1,
+    })

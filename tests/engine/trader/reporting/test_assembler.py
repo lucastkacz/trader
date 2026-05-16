@@ -3,6 +3,7 @@ Tests for the Trade Report Engine.
 Uses in-memory SQLite with synthetic data to verify metric computations.
 """
 
+import json
 import math
 import pytest
 from datetime import datetime, timezone, timedelta
@@ -116,6 +117,33 @@ def test_report_cli_requires_surviving_pairs_path():
     ):
         with pytest.raises(SystemExit):
             report_main()
+
+
+def test_report_cli_json_stdout_is_parseable(tmp_path, capsys):
+    db_path = tmp_path / "trades.db"
+    state = TradeStateManager(db_path=str(db_path))
+    state.close()
+
+    with patch(
+        "sys.argv",
+        [
+            "report_generator",
+            "--db-path",
+            str(db_path),
+            "--min-sharpe",
+            "1.0",
+            "--surviving-pairs-path",
+            str(tmp_path / "missing_surviving_pairs.json"),
+            "--json",
+        ],
+    ):
+        report_main()
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert captured.out.lstrip().startswith("{")
+    assert payload["status"] == "HEALTHY"
 
 
 def test_sharpe_ratio_calculation(state):

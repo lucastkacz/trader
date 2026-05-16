@@ -7,6 +7,7 @@ Comprehensive reporting interface for the trading system.
 import argparse
 import json
 
+from src.core.logger import configure_logger
 from src.engine.trader.report_engine import TradeReport, generate_report
 from src.engine.trader.reporting.export import export_json, export_markdown
 from src.engine.trader.reporting.render_terminal import (
@@ -52,6 +53,9 @@ def main() -> None:
     parser.add_argument("--json", action="store_true", help="Output full report as JSON to stdout")
     parser.add_argument("--export", action="store_true", help="Save JSON + Markdown reports to data/reports/")
     args = parser.parse_args()
+
+    if args.json:
+        configure_logger(log_level="silent")
 
     state = TradeStateManager(db_path=args.db_path)
 

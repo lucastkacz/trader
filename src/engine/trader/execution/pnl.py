@@ -19,7 +19,7 @@ def calculate_unrealized_pnl(
             continue
 
         current_a, current_b = pair_prices[label]
-        unrealized = _calculate_position_pnl(pos, current_a, current_b)
+        unrealized = calculate_position_pnl(pos, current_a, current_b)
         total_unrealized += unrealized
 
     return total_unrealized
@@ -39,9 +39,23 @@ def calculate_per_pair_pnl(
             continue
 
         current_a, current_b = pair_prices[label]
-        per_pair[label] = _calculate_position_pnl(pos, current_a, current_b)
+        per_pair[label] = calculate_position_pnl(pos, current_a, current_b)
 
     return per_pair
+
+
+def calculate_position_pnl(
+    position: dict[str, Any],
+    current_a: float,
+    current_b: float,
+) -> float:
+    """Calculate unrealized PnL for one spread position at current prices."""
+    ret_a = (current_a - position["entry_price_a"]) / position["entry_price_a"]
+    ret_b = (current_b - position["entry_price_b"]) / position["entry_price_b"]
+
+    if position["side"] == "LONG_SPREAD":
+        return position["weight_a"] * ret_a - position["weight_b"] * ret_b
+    return -position["weight_a"] * ret_a + position["weight_b"] * ret_b
 
 
 def _calculate_position_pnl(
@@ -49,9 +63,4 @@ def _calculate_position_pnl(
     current_a: float,
     current_b: float,
 ) -> float:
-    ret_a = (current_a - position["entry_price_a"]) / position["entry_price_a"]
-    ret_b = (current_b - position["entry_price_b"]) / position["entry_price_b"]
-
-    if position["side"] == "LONG_SPREAD":
-        return position["weight_a"] * ret_a - position["weight_b"] * ret_b
-    return -position["weight_a"] * ret_a + position["weight_b"] * ret_b
+    return calculate_position_pnl(position, current_a, current_b)

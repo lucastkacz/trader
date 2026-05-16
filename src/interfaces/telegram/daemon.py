@@ -18,6 +18,10 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from src.core.config import settings
 from src.engine.trader.config import TelegramConfig
 from src.engine.trader.config import load_telegram_config as load_typed_telegram_config
+from src.engine.trader.reporting.position_inspector import (
+    PositionInspection,
+    inspect_open_position,
+)
 from src.engine.trader.state_manager import TradeStateManager
 
 # Minimal basic logging for the listener itself
@@ -25,6 +29,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 TELEGRAM_DB_PATH: Optional[str] = None
 TELEGRAM_ENVIRONMENT: Optional[str] = None
@@ -73,6 +79,74 @@ def format_duration(minutes: float) -> str:
     if minutes < 60:
         return f"{minutes:.0f}m"
     return f"{minutes / 60.0:g}h"
+
+
+def format_pct(value: float | None) -> str:
+    """Format a decimal percentage for Telegram display."""
+    if value is None:
+        return "N/A"
+    return f"{value * 100:+.2f}%"
+
+
+def format_price(value: float | None) -> str:
+    """Format an asset price for compact Telegram display."""
+    if value is None:
+        return "N/A"
+    return f"{value:.6g}"
+
+
+def format_z(value: float | None) -> str:
+    """Format a z-score for compact Telegram display."""
+    if value is None:
+        return "N/A"
+    return f"{value:.2f}"
+
+
+def format_leg_statuses(status_counts: dict[str, dict[str, int]]) -> str:
+    """Format leg lifecycle counts by role."""
+    if not status_counts:
+        return "none"
+    parts = []
+    for role, counts in status_counts.items():
+        summary = ", ".join(f"{status} x{count}" for status, count in counts.items())
+        parts.append(f"{role}: {summary}")
+    return "\n".join(parts)
+
+
+def render_position_inspection(inspection: PositionInspection) -> str:
+    """Render one position inspection snapshot as a Telegram HTML message."""
+    position = inspection.position
+    latest = inspection.latest_signal or {}
+    duration = format_duration(holding_duration_minutes(position))
+    mark_label = "Latest Recorded Mark" if inspection.latest_signal else "Latest Recorded Mark"
+    current_price_a = latest.get("price_a")
+    current_price_b = latest.get("price_b")
+
+    return (
+        f"🔎 <b>POSITION INSPECTOR #{position['id']}</b>\n"
+        f"Pair: <b>{position['pair_label']}</b>\n"
+        f"Side: {position['side']}\n"
+        f"Opened: {position['opened_at']}\n"
+        f"Duration: {duration}\n\n"
+        f"<b>Entry</b>\n"
+        f"{position['asset_x']}: {format_price(position['entry_price_a'])}\n"
+        f"{position['asset_y']}: {format_price(position['entry_price_b'])}\n"
+        f"Entry Z: {format_z(position['entry_z'])}\n"
+        f"Weights: {position['weight_a']:.2f} / {position['weight_b']:.2f}\n"
+        f"Lookback: {position['lookback_bars']} bars\n\n"
+        f"<b>{mark_label}</b>\n"
+        f"{position['asset_x']}: {format_price(current_price_a)}\n"
+        f"{position['asset_y']}: {format_price(current_price_b)}\n"
+        f"Z-Score: {format_z(latest.get('z_score'))}\n"
+        f"Signal: {latest.get('signal', 'N/A')}\n"
+        f"Action: {latest.get('action', 'N/A')}\n"
+        f"Signal Time: {latest.get('timestamp', 'N/A')}\n\n"
+        f"<b>PnL</b>\n"
+        f"Unrealized: {format_pct(inspection.unrealized_pnl)}\n\n"
+        f"<b>Execution State</b>\n"
+        f"{format_leg_statuses(inspection.leg_status_counts)}\n"
+        f"Exchange/client IDs present: {'YES' if inspection.has_exchange_identifiers else 'NO'}"
+    )
 
 
 def require_auth(func):
@@ -125,10 +199,33 @@ async def bot_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "📂 <b>OPEN POSITIONS</b>\n\n"
     for p in open_pos:
         duration = format_duration(holding_duration_minutes(p))
-        msg += f"• <b>{p['pair_label']}</b> ({p['side']})\n"
+        msg += f"• <b>#{p['id']} {p['pair_label']}</b> ({p['side']})\n"
         msg += f"  Duration: {duration}\n"
         
     await update.message.reply_text(msg, parse_mode="HTML")
+
+@require_auth
+async def bot_inspect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/inspect <ID|PAIR> - Shows detailed read-only state for one open position."""
+    if not context.args:
+        await update.message.reply_text("⚠️ Usage: /inspect 1 or /inspect BTC/USDT|ETH/USDT")
+        return
+
+    identifier = " ".join(context.args).strip()
+    state = open_state_manager()
+    try:
+        inspection = inspect_open_position(state, identifier)
+    finally:
+        state.close()
+
+    if inspection is None:
+        await update.message.reply_text(
+            f"📭 No open position found for <code>{identifier}</code>.",
+            parse_mode="HTML",
+        )
+        return
+
+    await update.message.reply_text(render_position_inspection(inspection), parse_mode="HTML")
 
 @require_auth
 async def bot_stop_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -192,6 +289,7 @@ async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤖 <b>Stat-Arb Controller</b>\n\n"
         "/status - System PNL & Open Count\n"
         "/positions - Detailed layout of active pairs\n"
+        "/inspect [ID|PAIR] - Deep read-only position view\n"
         "/pause - Skip new trades (Holds existing)\n"
         "/resume - Revert pause mechanism\n"
         "/stop [PAIR] - Requests one forced local-state close\n"
@@ -211,6 +309,7 @@ def build_application():
     app.add_handler(CommandHandler("help", bot_help))
     app.add_handler(CommandHandler("status", bot_status))
     app.add_handler(CommandHandler("positions", bot_positions))
+    app.add_handler(CommandHandler("inspect", bot_inspect))
     app.add_handler(CommandHandler("stop_all", bot_stop_all))
     app.add_handler(CommandHandler("stop", bot_stop_pair))
     app.add_handler(CommandHandler("pause", bot_pause))

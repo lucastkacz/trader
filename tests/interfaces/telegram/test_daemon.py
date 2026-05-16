@@ -79,11 +79,97 @@ async def test_positions_use_configured_holding_bar_minutes(configured_daemon):
     update.message.reply_text.assert_awaited_once()
     message = update.message.reply_text.await_args.args[0]
     assert "OPEN POSITIONS" in message
+    assert "#1 BTC|ETH" in message
     assert "BTC|ETH" in message
     assert "Duration:" in message
     assert daemon.holding_duration_minutes({"holding_bars": 6}) == 6
     assert daemon.format_duration(6) == "6m"
     assert daemon.format_duration(240) == "4h"
+
+
+@pytest.mark.asyncio
+async def test_inspect_position_by_id_shows_deep_read_only_snapshot(configured_daemon):
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        spread_id = state.open_position(
+            "BTC|ETH",
+            "BTC",
+            "ETH",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            14,
+        )
+        state.record_tick_signal(
+            pair_label="BTC|ETH",
+            z_score=-0.5,
+            weight_a=0.5,
+            weight_b=0.5,
+            signal="LONG_SPREAD",
+            action="HOLD",
+            price_a=110.0,
+            price_b=51.0,
+        )
+    finally:
+        state.close()
+
+    update = FakeUpdate(chat_id="123")
+    await daemon.bot_inspect(update, _context(args=[str(spread_id)]))
+
+    update.message.reply_text.assert_awaited_once()
+    message = update.message.reply_text.await_args.args[0]
+    assert "POSITION INSPECTOR #1" in message
+    assert "Pair: <b>BTC|ETH</b>" in message
+    assert "Entry Z: -2.00" in message
+    assert "Z-Score: -0.50" in message
+    assert "Signal: LONG_SPREAD" in message
+    assert "Action: HOLD" in message
+    assert "Unrealized: +4.00%" in message
+    assert "OPEN: TARGET_RECORDED x2" in message
+    assert "Exchange/client IDs present: NO" in message
+
+
+@pytest.mark.asyncio
+async def test_inspect_position_by_pair_handles_missing_latest_signal(configured_daemon):
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        state.open_position(
+            "BTC|ETH",
+            "BTC",
+            "ETH",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            14,
+        )
+    finally:
+        state.close()
+
+    update = FakeUpdate(chat_id="123")
+    await daemon.bot_inspect(update, _context(args=["BTC|ETH"]))
+
+    message = update.message.reply_text.await_args.args[0]
+    assert "POSITION INSPECTOR #1" in message
+    assert "Z-Score: N/A" in message
+    assert "Signal: N/A" in message
+    assert "Unrealized: N/A" in message
+
+
+@pytest.mark.asyncio
+async def test_inspect_position_reports_missing_identifier(configured_daemon):
+    update = FakeUpdate(chat_id="123")
+
+    await daemon.bot_inspect(update, _context(args=["999"]))
+
+    message = update.message.reply_text.await_args.args[0]
+    assert "No open position found" in message
+    assert "999" in message
 
 
 @pytest.mark.asyncio

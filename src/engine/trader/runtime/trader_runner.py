@@ -27,7 +27,10 @@ async def run_trader_loop(
     order_adapter = _build_order_adapter(execution_cfg, api_key, api_secret)
     _log_startup(pipeline_cfg, risk_cfg)
 
-    notifier = notifier or TelegramNotifier()
+    notifier = notifier or TelegramNotifier(
+        environment=pipeline_cfg.name,
+        execution_mode=execution_cfg.order_execution.mode,
+    )
     await notifier.send(f"🟢 <b>System Boot:</b> Engine Synchronized on {pipeline_cfg.timeframe}")
 
     pairs = trader.load_tier1_pairs(
