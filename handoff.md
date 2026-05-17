@@ -1,6 +1,6 @@
 # Handoff: Local Readiness Before Cloud Infra
 
-Updated: 2026-05-16
+Updated: 2026-05-17
 
 ## Purpose
 
@@ -72,6 +72,21 @@ local-readiness-drills
 
 Do not push, merge, or enable live exchange mutation unless explicitly asked.
 
+Latest local commit:
+
+```text
+09beeb5c Add env strategy configs and Telegram health controls
+```
+
+Current git state immediately after that commit:
+
+```text
+working tree clean
+```
+
+This handoff update may be a later documentation-only change if it has not been
+committed yet.
+
 ## Completed In This Session
 
 Local Telegram and state-only readiness work completed:
@@ -88,6 +103,44 @@ Local Telegram and state-only readiness work completed:
   local SQLite state.
 - Ran a wide state-only observer drill with a 12-pair workflow-test artifact.
 - Confirmed state-only leg rows did not record exchange or client order ids.
+- Split `configs/strategy/alpha_v1.yml` into environment-specific strategy
+  config files:
+  - `configs/strategy/dev.yml`
+  - `configs/strategy/uat.yml`
+  - `configs/strategy/prod.yml`
+- Updated workflow/config/test references to use the environment-specific
+  strategy files.
+- Made the dev workflow more permissive, without touching UAT/prod trading
+  posture:
+  - `configs/pipelines/dev.yml`: `max_symbols: 150`, `min_sharpe: 0.5`
+  - `configs/universe/alpha_v1_dev_1m.yml`: wider workflow-drill filters
+  - `configs/backtest/stress_test_dev_1m.yml`: wider entry/lookback grid and
+    lower workflow-drill friction
+  - `configs/strategy/dev.yml`: `entry_z_score: 1.5`
+- Re-fetched missing 1m data after local `data/` deletion:
+  - 150 symbols total
+  - 0 fetch failures
+  - 13 discovery candidates
+  - 4 stress survivors
+- Promoted the 4-pair 1m dev eligible pair artifact:
+  - `APT/USDT|BCH/USDT`
+  - `1000PEPE/USDT|BCH/USDT`
+  - `BCH/USDT|1000BONK/USDT`
+  - `BCH/USDT|AVAX/USDT`
+- Added Telegram `/pairs` and `/promoted_pairs` to show the promoted artifact.
+- Added inline `Inspect #id` buttons to `/positions`.
+- Added Telegram `/health` for runtime health and staleness.
+- Added runtime boot health notifications and max-tick auto-stop notifications.
+- Refactored the Telegram daemon into:
+  - `src/interfaces/telegram/context.py`
+  - `src/interfaces/telegram/handlers.py`
+  - `src/interfaces/telegram/renderers.py`
+  - thin `src/interfaces/telegram/daemon.py`
+- Added `src/engine/trader/runtime/health.py`.
+- Enabled real Telegram notifications from the dev state-only observer, instead
+  of the previous local `NoopNotifier`.
+- Fixed report annualization to prefer the surviving-pairs artifact timeframe
+  and render sub-hour intervals correctly.
 
 Signal logic issue found and fixed:
 
@@ -103,30 +156,81 @@ Signal logic issue found and fixed:
 Latest safe offline test result:
 
 ```text
-202 passed, 3 deselected
+215 passed, 3 deselected
 ```
 
 Command used:
 
 ```bash
-PYTHONPATH=. .venv/bin/pytest
+.venv/bin/python -m pytest
 ```
 
 ## Highest Priority Next Run
 
-Run a fresh, more realistic dev/local workflow drill.
+Continue the local state-only observer drill and review the UAT/prod deployment
+shape.
 
-Goal:
+Immediate local status at handoff time:
 
-- Avoid force-promoting hand-picked pairs.
-- Tune dev-only research and stress configuration so more pairs are promoted
-  through the normal candidate artifact and promotion path.
-- Keep the run strictly read-only and state-only.
-- Leave the Telegram daemon and observer running for 2-3 hours.
-- Confirm positions open, close naturally, and remain inspectable through
-  Telegram and reports.
+- Telegram daemon is running:
+  - `com.quant.dev-telegram-daemon`
+- Wide dev state-only observer is running:
+  - `com.quant.dev-wide-state-only-observer`
+  - `QUANT_OBSERVER_MAX_TICKS=180`
+  - `QUANT_OBSERVER_HEARTBEAT_SECONDS=60`
+- `/health` is fresh but reports `RECONCILIATION_WARNING` because local dev has
+  no exchange snapshot provider:
 
-This is a workflow-safety drill, not a profitability drill.
+```text
+Mode: DEV
+Status: RECONCILIATION_WARNING
+Open Positions: 1
+Paused: NO
+Latest Tick: 2026-05-17T14:42:50.446217+00:00
+Equity: +0.5435%
+Realized: +0.4156%
+Unrealized: +0.1279%
+Reconciliation: SKIPPED_NO_SNAPSHOT_PROVIDER | Deltas: 0
+```
+
+Current open local state-only position at handoff time:
+
+```text
+7|1000PEPE/USDT|BCH/USDT|LONG_SPREAD|entry_z=-2.0573|opened_at=2026-05-17T13:44:38.862406+00:00
+```
+
+State-only safety invariant at handoff time:
+
+```text
+0 live/client order ids
+```
+
+Important note:
+
+- The observer previously auto-stopped after `max_ticks=180` while two positions
+  were open. Restarting resumed from persisted local state and both stale
+  positions closed on the next fresh tick.
+- This proved useful recovery behavior for dev, but UAT/prod should run on a VPS
+  with process supervision, not a laptop.
+
+Recommended next discussion:
+
+1. Define the real UAT/prod hosting model on a cloud VPS.
+2. Decide process supervision:
+   - systemd service
+   - restart policy
+   - log rotation
+   - health checks
+3. Decide reconciliation expectations for UAT/prod:
+   - snapshot provider available
+   - boot warning vs halt behavior
+   - stale local/exchange mismatch policy
+4. Decide whether to add runtime decay/time-stop controls:
+   - alert-only after `N * Half_Life`
+   - optional dev-only state close after max holding bars
+   - no hidden forced closes from pair-set changes
+
+This is still a workflow-safety drill, not a profitability drill.
 
 ## Fresh Data Reset Plan
 
@@ -172,6 +276,8 @@ Current decision:
 
 - `data` was deleted locally, so `configs/runs/dev_1m_research.yml` now uses
   `skip_fetch: false`.
+- Current `data/parquet` has been rebuilt by the dev 1m fetch process. If a new
+  chat deletes `data/` again, keep `skip_fetch: false` or fetch again first.
 
 ## Dev Config Tuning For Natural Promotion
 
@@ -226,6 +332,13 @@ Recommended approach for the drill:
 
 Do not change UAT or prod config for this drill.
 
+Current promoted dev 1m artifact:
+
+```text
+data/universes/1m/surviving_pairs.json
+pair_count=4
+```
+
 ## Drill Acceptance Checklist
 
 During or after the 2-3 hour run, confirm:
@@ -235,7 +348,10 @@ During or after the 2-3 hour run, confirm:
 - Promotion appends `data/universes/1m/promotion_audit.jsonl`.
 - Observer loads promoted pairs on boot.
 - Telegram `/status` responds.
+- Telegram `/health` responds and reports fresh tick age.
+- Telegram `/pairs` shows the promoted 4-pair artifact.
 - Telegram `/positions` lists open position ids.
+- Telegram `/positions` includes inline `Inspect #id` buttons.
 - Telegram `/inspect <ID|PAIR>` shows entry, current z-score, prices, and PnL.
 - At least one position opens naturally.
 - At least one position closes naturally, if market movement permits.
@@ -267,7 +383,7 @@ Any non-zero result is a stop-and-investigate event.
 Run safe offline tests:
 
 ```bash
-PYTHONPATH=. .venv/bin/pytest
+.venv/bin/python -m pytest
 ```
 
 Generate a text report:
@@ -275,7 +391,7 @@ Generate a text report:
 ```bash
 .venv/bin/python -m src.engine.trader.report_generator \
   --db-path data/dev/trades_1m.db \
-  --min-sharpe 1.0 \
+  --min-sharpe 0.5 \
   --surviving-pairs-path data/universes/1m/surviving_pairs.json
 ```
 
@@ -284,9 +400,15 @@ Generate parse-safe JSON:
 ```bash
 .venv/bin/python -m src.engine.trader.report_generator \
   --db-path data/dev/trades_1m.db \
-  --min-sharpe 1.0 \
+  --min-sharpe 0.5 \
   --surviving-pairs-path data/universes/1m/surviving_pairs.json \
   --json
+```
+
+Render current Telegram health in the terminal:
+
+```bash
+.venv/bin/python -c "from src.interfaces.telegram import context as c; from src.engine.trader.runtime.health import build_trader_health_snapshot, render_trader_health_snapshot; c.configure_daemon('configs/telegram/dev.yml'); s=c.open_state_manager(); snap=build_trader_health_snapshot(s, environment=c.environment_label() or 'N/A', stale_after_minutes=c.health_stale_after_minutes()); print(render_trader_health_snapshot(snap)); s.close()"
 ```
 
 Inspect positions:
