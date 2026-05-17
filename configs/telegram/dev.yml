@@ -3,3 +3,5 @@ telegram:
   bot_name: "@DevBot"
   db_path: "data/dev/trades_1m.db"
   holding_period_bar_minutes: 1
+  promoted_pairs_path: "data/universes/1m/surviving_pairs.json"
+  health_stale_after_minutes: 5

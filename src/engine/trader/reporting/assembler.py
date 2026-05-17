@@ -3,7 +3,10 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from src.engine.trader.reporting.backtest_lookup import _load_backtest_lookup
+from src.engine.trader.reporting.backtest_lookup import (
+    _load_backtest_lookup,
+    _load_backtest_timeframe,
+)
 from src.engine.trader.reporting.metrics import (
     _compute_calmar,
     _compute_max_drawdown,
@@ -21,6 +24,7 @@ from src.engine.trader.reporting.per_pair import _compute_per_pair
 from src.engine.trader.reporting.risk import _compute_risk
 from src.engine.trader.reporting.signal_quality import _compute_signal_quality
 from src.engine.trader.reporting.state_ledger import _compute_state_ledger
+from src.utils.timeframe_math import get_bars_per_year
 
 if TYPE_CHECKING:
     from src.engine.trader.state_manager import TradeStateManager
@@ -43,8 +47,12 @@ def generate_report(
     reconciliation_runs = state.get_reconciliation_runs()
     reconciliation_deltas = state.get_reconciliation_deltas()
     backtest_lookup = _load_backtest_lookup(surviving_pairs_path)
+    artifact_timeframe = _load_backtest_timeframe(surviving_pairs_path)
 
-    bars_per_year = _detect_bars_per_year(equity_curve)
+    if artifact_timeframe is not None:
+        bars_per_year = float(get_bars_per_year(artifact_timeframe))
+    else:
+        bars_per_year = _detect_bars_per_year(equity_curve)
 
     realized = sum(t.get("realized_pnl_pct") or 0.0 for t in closed_trades)
     unrealized = 0.0

@@ -45,7 +45,7 @@ def test_task_discover_alpha_passes_typed_research_config(monkeypatch):
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
     universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
-    strategy_cfg = load_strategy_config("configs/strategy/alpha_v1.yml")
+    strategy_cfg = load_strategy_config("configs/strategy/dev.yml")
 
     result = master_flow.task_discover_alpha.fn(pipeline_cfg, universe_cfg, strategy_cfg)
 
@@ -66,7 +66,7 @@ def test_task_vector_stress_passes_typed_research_config_and_artifact_paths(monk
     monkeypatch.setattr(master_flow.PairStressFilter, "run", fake_run)
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
-    strategy_cfg = load_strategy_config("configs/strategy/alpha_v1.yml")
+    strategy_cfg = load_strategy_config("configs/strategy/dev.yml")
     backtest_cfg = master_flow.BacktestConfig.model_validate({
         "name": "test",
         "grid_search": {"entry_z_scores": [2.0], "lookback_bars": [60]},
@@ -98,7 +98,7 @@ async def test_task_execute_trader_passes_typed_risk_config(monkeypatch):
     monkeypatch.setattr(master_flow.LiveTrader, "run", fake_run)
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
-    strategy_cfg = load_strategy_config("configs/strategy/alpha_v1.yml")
+    strategy_cfg = load_strategy_config("configs/strategy/dev.yml")
     risk_cfg = load_risk_config("configs/risk/alpha_v1.yml")
 
     result = await master_flow.task_execute_trader.fn(pipeline_cfg, strategy_cfg, risk_cfg)

@@ -1,11 +1,15 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from src.core.config import settings
+from src.engine.trader.runtime.pairs import build_pair_artifact
 from src.engine.trader.state_manager import TradeStateManager
 from src.interfaces.telegram import daemon
+from src.interfaces.telegram import context as telegram_context
+from src.interfaces.telegram import renderers
 
 
 class FakeUpdate:
@@ -14,9 +18,20 @@ class FakeUpdate:
         self.message = SimpleNamespace(reply_text=AsyncMock())
 
 
+class FakeCallbackUpdate:
+    def __init__(self, chat_id: str, callback_data: str):
+        self.effective_chat = SimpleNamespace(id=chat_id)
+        self.callback_query = SimpleNamespace(
+            data=callback_data,
+            answer=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+
+
 @pytest.fixture
 def configured_daemon(tmp_path):
     db_path = tmp_path / "trader.db"
+    pairs_path = tmp_path / "surviving_pairs.json"
     cfg_path = tmp_path / "telegram.yml"
     cfg_path.write_text(
         "telegram:\n"
@@ -24,6 +39,8 @@ def configured_daemon(tmp_path):
         "  bot_name: '@TestBot'\n"
         f"  db_path: '{db_path}'\n"
         "  holding_period_bar_minutes: 1\n"
+        f"  promoted_pairs_path: '{pairs_path}'\n"
+        "  health_stale_after_minutes: 5\n"
     )
 
     settings.telegram_chat_id = "123"
@@ -31,9 +48,7 @@ def configured_daemon(tmp_path):
     assert cfg.environment == "TEST"
     assert cfg.db_path == str(db_path)
     yield db_path
-    daemon.TELEGRAM_DB_PATH = None
-    daemon.TELEGRAM_ENVIRONMENT = None
-    daemon.TELEGRAM_HOLDING_PERIOD_BAR_MINUTES = None
+    telegram_context.reset_daemon_context()
 
 
 def _context(args=None):
@@ -77,14 +92,164 @@ async def test_positions_use_configured_holding_bar_minutes(configured_daemon):
     await daemon.bot_positions(update, _context())
 
     update.message.reply_text.assert_awaited_once()
+    reply_kwargs = update.message.reply_text.await_args.kwargs
+    keyboard = reply_kwargs["reply_markup"].inline_keyboard
     message = update.message.reply_text.await_args.args[0]
     assert "OPEN POSITIONS" in message
     assert "#1 BTC|ETH" in message
     assert "BTC|ETH" in message
     assert "Duration:" in message
-    assert daemon.holding_duration_minutes({"holding_bars": 6}) == 6
-    assert daemon.format_duration(6) == "6m"
-    assert daemon.format_duration(240) == "4h"
+    assert keyboard[0][0].text == "Inspect #1"
+    assert keyboard[0][0].callback_data == "inspect_position:1"
+    assert renderers.holding_duration_minutes({"holding_bars": 6}, 1) == 6
+    assert renderers.format_duration(6) == "6m"
+    assert renderers.format_duration(240) == "4h"
+
+
+@pytest.mark.asyncio
+async def test_position_inspect_button_renders_snapshot(configured_daemon):
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        spread_id = state.open_position(
+            "BTC|ETH",
+            "BTC",
+            "ETH",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            14,
+        )
+    finally:
+        state.close()
+
+    update = FakeCallbackUpdate(
+        chat_id="123",
+        callback_data=f"inspect_position:{spread_id}",
+    )
+    await daemon.bot_inspect_position_callback(update, _context())
+
+    update.callback_query.answer.assert_awaited_once()
+    update.callback_query.message.reply_text.assert_awaited_once()
+    message = update.callback_query.message.reply_text.await_args.args[0]
+    assert "POSITION INSPECTOR #1" in message
+    assert "Pair: <b>BTC|ETH</b>" in message
+
+
+@pytest.mark.asyncio
+async def test_position_inspect_button_reports_stale_position(configured_daemon):
+    update = FakeCallbackUpdate(chat_id="123", callback_data="inspect_position:999")
+
+    await daemon.bot_inspect_position_callback(update, _context())
+
+    update.callback_query.answer.assert_awaited_once()
+    message = update.callback_query.message.reply_text.await_args.args[0]
+    assert "No open position found" in message
+    assert "999" in message
+
+
+@pytest.mark.asyncio
+async def test_promoted_pairs_lists_configured_artifact(configured_daemon):
+    pairs_path = configured_daemon.parent / "surviving_pairs.json"
+    pairs_path.write_text(
+        json.dumps(
+            build_pair_artifact(
+                pair_rows=[
+                    {
+                        "Asset_X": "BTC/USDT",
+                        "Asset_Y": "ETH/USDT",
+                        "Hedge_Ratio": 1.2,
+                        "Half_Life": 42.0,
+                        "P_Value": 0.03,
+                        "Best_Params": {"lookback_bars": 120, "entry_z": 2.0},
+                        "Performance": {
+                            "final_pnl_pct": 1.25,
+                            "sharpe_ratio": 3.5,
+                        },
+                    }
+                ],
+                timeframe="1m",
+                exchange="bybit",
+                generated_at="2026-05-16T23:50:56+00:00",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    update = FakeUpdate(chat_id="123")
+    await daemon.bot_promoted_pairs(update, _context())
+
+    update.message.reply_text.assert_awaited_once()
+    message = update.message.reply_text.await_args.args[0]
+    assert "PROMOTED PAIRS" in message
+    assert "Mode: TEST" in message
+    assert "bybit 1m | Count: 1" in message
+    assert "BTC/USDT|ETH/USDT" in message
+    assert "Sharpe: 3.50" in message
+    assert "PnL: +1.25%" in message
+    assert "Entry Z: 2.00" in message
+    assert "Lookback: 120 bars" in message
+
+
+@pytest.mark.asyncio
+async def test_promoted_pairs_reports_missing_artifact(configured_daemon):
+    update = FakeUpdate(chat_id="123")
+
+    await daemon.bot_promoted_pairs(update, _context())
+
+    message = update.message.reply_text.await_args.args[0]
+    assert "PROMOTED PAIRS" in message
+    assert "No promoted pair artifact found" in message
+
+
+@pytest.mark.asyncio
+async def test_health_reports_runtime_state(configured_daemon):
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        state.open_position(
+            "BTC|ETH",
+            "BTC",
+            "ETH",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            14,
+        )
+        state.record_tick_signal(
+            pair_label="BTC|ETH",
+            z_score=-1.0,
+            weight_a=0.5,
+            weight_b=0.5,
+            signal="LONG_SPREAD",
+            action="HOLD",
+            price_a=101.0,
+            price_b=49.0,
+        )
+        state.snapshot_equity(
+            total_equity_pct=0.03,
+            open_positions=1,
+            realized_pnl_pct=0.01,
+            unrealized_pnl_pct=0.02,
+        )
+    finally:
+        state.close()
+
+    update = FakeUpdate(chat_id="123")
+    await daemon.bot_health(update, _context())
+
+    update.message.reply_text.assert_awaited_once()
+    message = update.message.reply_text.await_args.args[0]
+    assert "TRADER HEALTH" in message
+    assert "Mode: TEST" in message
+    assert "Open Positions: 1" in message
+    assert "Equity: +3.0000%" in message
+    assert "Realized: +1.0000%" in message
+    assert "Unrealized: +2.0000%" in message
 
 
 @pytest.mark.asyncio

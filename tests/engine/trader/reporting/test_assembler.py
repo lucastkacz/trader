@@ -19,6 +19,7 @@ from src.engine.trader.report_engine import (
     _compute_returns,
 )
 from src.engine.trader.report_generator import main as report_main, render_state_ledger
+from src.engine.trader.reporting.render_terminal import _format_bar_interval
 
 
 @pytest.fixture
@@ -44,6 +45,25 @@ def _inject_snapshots(state, equities, interval_hours=4.0):
             (ts, eq, 0, eq, 0.0, ""),
         )
     state.conn.commit()
+
+
+def _write_surviving_pairs_artifact(tmp_path, timeframe="1m"):
+    artifact_path = tmp_path / "surviving_pairs.json"
+    artifact_path.write_text(
+        json.dumps({
+            "metadata": {
+                "schema_version": 1,
+                "artifact_type": "surviving_pairs",
+                "generated_at": "2026-01-01T00:00:00+00:00",
+                "timeframe": timeframe,
+                "exchange": "bybit",
+                "pair_count": 0,
+            },
+            "pairs": [],
+        }),
+        encoding="utf-8",
+    )
+    return artifact_path
 
 
 def _inject_trade(state, pair_label, side, entry_a, entry_b, exit_a, exit_b,
@@ -384,3 +404,25 @@ def test_bars_per_year_fallback_insufficient_data():
 
     bpy_empty = _detect_bars_per_year([])
     assert abs(bpy_empty - 2190.0) < 1.0
+
+
+def test_bar_interval_rendering_uses_minutes_for_subhour_timeframes():
+    assert _format_bar_interval(525600.0) == "1.0m (525600/yr)"
+    assert _format_bar_interval(2190.0) == "4.0h (2190/yr)"
+
+
+def test_report_bars_per_year_uses_artifact_timeframe_when_curve_has_one_snapshot(
+    state,
+    tmp_path,
+):
+    """A fresh 1m drill with one snapshot should not render as a 4h report."""
+    _inject_snapshots(state, [0.0])
+    artifact_path = _write_surviving_pairs_artifact(tmp_path, timeframe="1m")
+
+    report = generate_report(
+        state,
+        min_sharpe=1.0,
+        surviving_pairs_path=str(artifact_path),
+    )
+
+    assert abs(report.bars_per_year - 525600.0) < 1.0

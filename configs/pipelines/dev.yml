@@ -2,14 +2,14 @@ pipeline:
   name: "DEV 1M Sandbox"
   timeframe: "1m"
   historical_days: 1
-  max_symbols: 100
+  max_symbols: 150
   execution:
     exchange: "bybit"
     credential_tier: "readonly"
     market_data_base_dir: "data/parquet"
     artifact_base_dir: "data/universes"
     db_path: "data/dev/trades_1m.db"
-    min_sharpe: 1.0
+    min_sharpe: 0.5
     max_ticks: null
     heartbeat_seconds: 60
     sync_to_boundary: false

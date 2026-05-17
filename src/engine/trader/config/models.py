@@ -122,3 +122,5 @@ class TelegramConfig(StrictConfigModel):
     bot_name: str
     db_path: str
     holding_period_bar_minutes: float
+    promoted_pairs_path: str
+    health_stale_after_minutes: float = Field(gt=0)

@@ -35,16 +35,24 @@ def test_valid_operator_configs_parse():
     universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
     assert universe_cfg.filters.min_volume_liquidity == 20_000_000
     assert universe_cfg.cointegration.ewma_span_bars == 48
-    assert load_strategy_config("configs/strategy/alpha_v1.yml").execution.volatility_lookback_bars == 60
+    assert load_strategy_config("configs/strategy/dev.yml").execution.volatility_lookback_bars == 60
+    assert load_strategy_config("configs/strategy/uat.yml").name == "UAT Institutional Mean Reversion V1"
+    assert load_strategy_config("configs/strategy/prod.yml").name == "PROD Institutional Mean Reversion V1"
     assert load_backtest_config("configs/backtest/stress_test.yml").friction.taker_fee == 0.0006
     run_profile = load_run_profile_config("configs/runs/dev_1m_research.yml")
     assert run_profile.pipeline == "configs/pipelines/dev.yml"
-    assert run_profile.skip_fetch is True
+    assert run_profile.skip_fetch is False
     assert load_risk_config("configs/risk/alpha_v1.yml").max_leverage == 10.0
     assert load_telegram_config("configs/telegram/dev.yml").environment == "DEV"
     assert load_telegram_config("configs/telegram/dev.yml").holding_period_bar_minutes == 1
+    assert (
+        load_telegram_config("configs/telegram/dev.yml").promoted_pairs_path
+        == "data/universes/1m/surviving_pairs.json"
+    )
+    assert load_telegram_config("configs/telegram/dev.yml").health_stale_after_minutes == 5
     assert load_telegram_config("configs/telegram/uat.yml").environment == "UAT"
     assert load_telegram_config("configs/telegram/uat.yml").holding_period_bar_minutes == 240
+    assert load_telegram_config("configs/telegram/uat.yml").health_stale_after_minutes == 720
     assert load_telegram_config("configs/telegram/prod.yml").environment == "PROD"
     assert load_telegram_config("configs/telegram/prod.yml").holding_period_bar_minutes == 240
 
@@ -56,6 +64,15 @@ def test_all_shipped_pipeline_configs_keep_order_execution_state_only():
     parsed = [load_pipeline_config(path) for path in pipeline_paths]
 
     assert {cfg.execution.order_execution.mode for cfg in parsed} == {"state_only"}
+
+
+def test_all_shipped_strategy_configs_parse():
+    strategy_paths = sorted(Path("configs/strategy").glob("*.yml"))
+    assert [path.name for path in strategy_paths] == ["dev.yml", "prod.yml", "uat.yml"]
+
+    parsed = [load_strategy_config(path) for path in strategy_paths]
+
+    assert {cfg.execution.exit_z_score for cfg in parsed} == {0.0}
 
 
 def test_unsupported_order_execution_mode_fails_loudly(tmp_path):
@@ -135,7 +152,7 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             "ewma_span_bars",
         ),
         (
-            "configs/strategy/alpha_v1.yml",
+            "configs/strategy/dev.yml",
             "strategy",
             ("execution", "volatility_lookback_bars"),
             load_strategy_config,
@@ -182,6 +199,20 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("holding_period_bar_minutes",),
             load_telegram_config,
             "holding_period_bar_minutes",
+        ),
+        (
+            "configs/telegram/dev.yml",
+            "telegram",
+            ("promoted_pairs_path",),
+            load_telegram_config,
+            "promoted_pairs_path",
+        ),
+        (
+            "configs/telegram/dev.yml",
+            "telegram",
+            ("health_stale_after_minutes",),
+            load_telegram_config,
+            "health_stale_after_minutes",
         ),
         (
             "configs/risk/alpha_v1.yml",

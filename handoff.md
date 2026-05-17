@@ -159,7 +159,7 @@ Current run profile:
 
 ```yaml
 run:
-  skip_fetch: true
+  skip_fetch: false
 ```
 
 Decision before the fresh drill:
@@ -167,6 +167,11 @@ Decision before the fresh drill:
 - If keeping `data/parquet`, leave `skip_fetch: true`.
 - If deleting all `data`, set the dev run profile to fetch fresh data or run the
   relevant data download step first.
+
+Current decision:
+
+- `data` was deleted locally, so `configs/runs/dev_1m_research.yml` now uses
+  `skip_fetch: false`.
 
 ## Dev Config Tuning For Natural Promotion
 
@@ -176,21 +181,26 @@ Relevant files:
 - `configs/pipelines/dev.yml`
 - `configs/universe/alpha_v1_dev_1m.yml`
 - `configs/backtest/stress_test_dev_1m.yml`
-- `configs/strategy/alpha_v1.yml`
+- `configs/strategy/dev.yml`
+- `configs/strategy/uat.yml`
+- `configs/strategy/prod.yml`
 
 Current important gates:
 
 - `configs/pipelines/dev.yml`
   - `credential_tier: "readonly"`
   - `order_execution.mode: "state_only"`
-  - `min_sharpe: 1.0`
+  - `min_sharpe: 0.5`
+  - `max_symbols: 150`
 - `configs/universe/alpha_v1_dev_1m.yml`
   - broader local universe filters than canonical config
-  - `p_value_threshold: 0.10`
-  - `max_half_life_bars: 180`
+  - `p_value_threshold: 0.15`
+  - `max_half_life_bars: 240`
+  - `louvain_correlation_threshold: 0.3`
 - `configs/backtest/stress_test_dev_1m.yml`
-  - entry grid: `[1.25, 1.5, 2.0, 2.5]`
-  - lookback grid: `[60, 120, 180, 240, 360]`
+  - entry grid: `[1.0, 1.25, 1.5, 2.0, 2.5]`
+  - lookback grid: `[45, 60, 120, 180, 240, 360]`
+  - workflow-drill friction: maker `0.0001`, taker `0.0004`, annual funding `0.05`
 - `src/research/pair_stress_filter.py`
   - rejects candidates with `best_net_pnl <= 0`
 
@@ -309,4 +319,3 @@ sqlite3 data/dev/trades_1m.db \
 - Do not implement automatic rebalancing.
 - Do not force-close positions because of pair-set changes.
 - Do not push unless explicitly asked.
-

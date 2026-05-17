@@ -21,3 +21,16 @@ def _load_backtest_lookup(surviving_pairs_path: str) -> dict[str, dict[str, Any]
         label = f"{p['Asset_X']}|{p['Asset_Y']}"
         lookup[label] = p
     return lookup
+
+
+def _load_backtest_timeframe(surviving_pairs_path: str) -> str | None:
+    """Load the artifact timeframe used for report annualization fallback."""
+    try:
+        with open(surviving_pairs_path) as f:
+            artifact = json.load(f)
+    except FileNotFoundError:
+        return None
+
+    metadata = artifact.get("metadata") if isinstance(artifact, dict) else None
+    timeframe = metadata.get("timeframe") if isinstance(metadata, dict) else None
+    return timeframe if isinstance(timeframe, str) else None

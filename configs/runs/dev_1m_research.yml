@@ -2,5 +2,5 @@ run:
   pipeline: "configs/pipelines/dev.yml"
   universe: "configs/universe/alpha_v1_dev_1m.yml"
   backtest: "configs/backtest/stress_test_dev_1m.yml"
-  strategy: "configs/strategy/alpha_v1.yml"
-  skip_fetch: true
+  strategy: "configs/strategy/dev.yml"
+  skip_fetch: false

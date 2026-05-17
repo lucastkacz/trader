@@ -10,6 +10,10 @@ from src.engine.trader.config import PipelineConfig, RiskConfig, StrategyConfig
 from src.engine.trader.execution.orders import CCXTOrderExecutionAdapter
 from src.engine.trader.reconciliation import ExchangeSnapshotProvider, run_boot_reconciliation
 from src.engine.trader.runtime.credentials import resolve_credentials
+from src.engine.trader.runtime.health import (
+    build_trader_health_snapshot,
+    render_trader_health_snapshot,
+)
 from src.engine.trader.state_manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
@@ -47,6 +51,7 @@ async def run_trader_loop(
     state = TradeStateManager(db_path=execution_cfg.db_path)
     try:
         await _run_boot_reconciliation(state, reconciliation_snapshot_provider, api_key, api_secret, notifier)
+        await _notify_boot_health(state, pipeline_cfg, notifier)
         await _run_ticks(
             trader=trader,
             state=state,
@@ -159,7 +164,30 @@ async def _run_ticks(
         tick_count += 1
         if pipeline_cfg.execution.max_ticks is not None and tick_count >= pipeline_cfg.execution.max_ticks:
             logger.info(f"Completed {pipeline_cfg.execution.max_ticks} ticks. Auto-stopping.")
+            await notifier.send(
+                "🛑 <b>Runtime Auto-Stopped</b>\n"
+                f"Completed max_ticks={pipeline_cfg.execution.max_ticks}.\n"
+                "No further ticks will run until the process is restarted."
+            )
             break
+
+
+async def _notify_boot_health(
+    state: TradeStateManager,
+    pipeline_cfg: PipelineConfig,
+    notifier: TelegramNotifier,
+) -> None:
+    stale_after_minutes = max(1.0, pipeline_cfg.execution.heartbeat_seconds * 2.0 / 60.0)
+    snapshot = build_trader_health_snapshot(
+        state,
+        environment=pipeline_cfg.name,
+        stale_after_minutes=stale_after_minutes,
+    )
+    if snapshot.open_positions == 0 and snapshot.status == "HEALTHY":
+        return
+    await notifier.send(
+        render_trader_health_snapshot(snapshot, title="BOOT HEALTH")
+    )
 
 
 async def _sleep_until_next_tick(

@@ -68,14 +68,14 @@ jobs:
           PY
 
       - name: Build CI 4H universe
-        run: python main.py research --pipeline ci_4h_runtime.yml --universe configs/universe/alpha_v1.yml --backtest configs/backtest/stress_test.yml --strategy configs/strategy/alpha_v1.yml
+        run: python main.py research --pipeline ci_4h_runtime.yml --universe configs/universe/alpha_v1.yml --backtest configs/backtest/stress_test.yml --strategy configs/strategy/uat.yml
         env:
           PYTHONPATH: .
           EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
           EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
       - name: Run 4H validation (${{ github.event.inputs.ticks }} ticks)
-        run: python main.py execute --pipeline ci_4h_runtime.yml --strategy configs/strategy/alpha_v1.yml --risk configs/risk/alpha_v1.yml
+        run: python main.py execute --pipeline ci_4h_runtime.yml --strategy configs/strategy/uat.yml --risk configs/risk/alpha_v1.yml
         env:
           PYTHONPATH: .
           EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
