@@ -1,6 +1,7 @@
 """Telegram command and callback handlers for the operator daemon."""
 
 import html
+from io import BytesIO
 import logging
 
 from telegram import Update
@@ -12,13 +13,25 @@ from src.engine.trader.runtime.health import (
     build_trader_health_snapshot,
     render_trader_health_snapshot,
 )
+from src.engine.trader.runtime.pairs import validate_pair_artifact_file
 from src.interfaces.telegram import context as telegram_context
 from src.interfaces.telegram.renderers import (
-    build_position_inspect_keyboard,
+    build_position_action_keyboard,
+    build_position_select_keyboard,
     format_duration,
     holding_duration_minutes,
+    pair_label,
+    render_position_action_menu,
     render_position_inspection,
     render_promoted_pairs,
+)
+from src.interfaces.telegram.plots import (
+    PlotDependencyError,
+    PlotError,
+    build_position_plot_keyboard,
+    build_position_zscore_plot,
+    render_position_plot_caption,
+    render_position_zscore_plot_png,
 )
 
 
@@ -81,7 +94,7 @@ async def bot_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         msg,
         parse_mode="HTML",
-        reply_markup=build_position_inspect_keyboard(open_pos),
+        reply_markup=build_position_select_keyboard(open_pos),
     )
 
 
@@ -90,7 +103,12 @@ async def bot_promoted_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """/pairs - Lists the currently promoted pair artifact."""
     try:
         path = telegram_context.promoted_pairs_path()
-        message = render_promoted_pairs(path, telegram_context.environment_label())
+        latest_signals = _latest_promoted_pair_signals(path)
+        message = render_promoted_pairs(
+            path,
+            telegram_context.environment_label(),
+            latest_signals_by_pair=latest_signals,
+        )
     except FileNotFoundError:
         path = telegram_context.promoted_pairs_path()
         message = (
@@ -104,6 +122,21 @@ async def bot_promoted_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
     await update.message.reply_text(message, parse_mode="HTML")
+
+
+def _latest_promoted_pair_signals(path) -> dict[str, dict]:
+    artifact = validate_pair_artifact_file(path)
+    state = telegram_context.open_state_manager()
+    try:
+        latest_signals = {}
+        for pair in artifact.pairs:
+            label = pair_label(pair)
+            signals = state.get_tick_signals(label)
+            if signals:
+                latest_signals[label] = signals[-1]
+        return latest_signals
+    finally:
+        state.close()
 
 
 @require_auth
@@ -156,6 +189,39 @@ async def bot_inspect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @require_auth
+async def bot_position_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inline button callback for choosing summary or plot for a position."""
+    query = update.callback_query
+    await query.answer()
+    _, position_id = query.data.split(":", 1)
+
+    state = telegram_context.open_state_manager()
+    try:
+        position = next(
+            (
+                item for item in state.get_open_positions()
+                if str(item["id"]) == position_id
+            ),
+            None,
+        )
+    finally:
+        state.close()
+
+    if position is None:
+        await query.message.reply_text(
+            f"📭 No open position found for <code>{html.escape(position_id)}</code>.",
+            parse_mode="HTML",
+        )
+        return
+
+    await query.message.reply_text(
+        render_position_action_menu(position),
+        parse_mode="HTML",
+        reply_markup=build_position_action_keyboard(position_id),
+    )
+
+
+@require_auth
 async def bot_inspect_position_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Inline button callback for one-tap position inspection."""
     query = update.callback_query
@@ -181,6 +247,75 @@ async def bot_inspect_position_callback(update: Update, context: ContextTypes.DE
             telegram_context.holding_period_bar_minutes(),
         ),
         parse_mode="HTML",
+    )
+
+
+@require_auth
+async def bot_plot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/plot <ID|PAIR> - Sends a read-only z-score/PnL chart."""
+    if not context.args:
+        await update.message.reply_text("⚠️ Usage: /plot 7")
+        return
+
+    identifier = " ".join(context.args).strip()
+    state = telegram_context.open_state_manager()
+    try:
+        try:
+            plot = build_position_zscore_plot(state, identifier)
+            png = render_position_zscore_plot_png(plot)
+        except PlotDependencyError as exc:
+            await update.message.reply_text(f"⚠️ {html.escape(str(exc))}")
+            return
+        except PlotError as exc:
+            await update.message.reply_text(
+                f"📭 {html.escape(str(exc))}",
+                parse_mode="HTML",
+            )
+            return
+    finally:
+        state.close()
+
+    photo = BytesIO(png)
+    photo.name = f"position_{plot.position['id']}_zscore.png"
+    await update.message.reply_photo(
+        photo=photo,
+        caption=render_position_plot_caption(plot),
+        parse_mode="HTML",
+        reply_markup=build_position_plot_keyboard(plot.position["id"]),
+    )
+
+
+@require_auth
+async def bot_plot_position_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inline button callback for refreshing one position plot."""
+    query = update.callback_query
+    await query.answer()
+    _, position_id = query.data.split(":", 1)
+
+    state = telegram_context.open_state_manager()
+    try:
+        try:
+            plot = build_position_zscore_plot(state, position_id)
+            png = render_position_zscore_plot_png(plot)
+        except PlotDependencyError as exc:
+            await query.message.reply_text(f"⚠️ {html.escape(str(exc))}")
+            return
+        except PlotError as exc:
+            await query.message.reply_text(
+                f"📭 {html.escape(str(exc))}",
+                parse_mode="HTML",
+            )
+            return
+    finally:
+        state.close()
+
+    photo = BytesIO(png)
+    photo.name = f"position_{plot.position['id']}_zscore.png"
+    await query.message.reply_photo(
+        photo=photo,
+        caption=render_position_plot_caption(plot),
+        parse_mode="HTML",
+        reply_markup=build_position_plot_keyboard(plot.position["id"]),
     )
 
 
@@ -253,6 +388,7 @@ async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/positions - Detailed layout of active pairs\n"
         "/pairs - Currently promoted research pairs\n"
         "/inspect [ID|PAIR] - Deep read-only position view\n"
+        "/plot [ID|PAIR] - Z-score and PnL chart\n"
         "/pause - Skip new trades (Holds existing)\n"
         "/resume - Revert pause mechanism\n"
         "/stop [PAIR] - Requests one forced local-state close\n"

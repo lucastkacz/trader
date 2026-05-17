@@ -114,13 +114,13 @@ def render_position_inspection(
     )
 
 
-def build_position_inspect_keyboard(open_positions: list[dict]) -> InlineKeyboardMarkup:
-    """Build one-tap inspection buttons for the current open positions."""
+def build_position_select_keyboard(open_positions: list[dict]) -> InlineKeyboardMarkup:
+    """Build first-step position selector buttons."""
     rows = [
         [
             InlineKeyboardButton(
-                text=f"Inspect #{position['id']}",
-                callback_data=f"inspect_position:{position['id']}",
+                text=f"Position #{position['id']}",
+                callback_data=f"position_menu:{position['id']}",
             )
         ]
         for position in open_positions
@@ -128,14 +128,47 @@ def build_position_inspect_keyboard(open_positions: list[dict]) -> InlineKeyboar
     return InlineKeyboardMarkup(rows)
 
 
+def build_position_action_keyboard(position_id: int | str) -> InlineKeyboardMarkup:
+    """Build second-step view choices for one selected position."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text="Summary",
+                    callback_data=f"inspect_position:{position_id}",
+                ),
+                InlineKeyboardButton(
+                    text="Plot",
+                    callback_data=f"plot_position:{position_id}",
+                ),
+            ]
+        ]
+    )
+
+
+def render_position_action_menu(position: dict) -> str:
+    """Render the second-step position action prompt."""
+    return (
+        f"📌 <b>POSITION #{position['id']}</b>\n"
+        f"Pair: <b>{html.escape(position['pair_label'])}</b>\n"
+        f"Side: {html.escape(position['side'])}\n\n"
+        "Choose a view:"
+    )
+
+
 def pair_label(pair: dict) -> str:
     return f"{pair['Asset_X']}|{pair['Asset_Y']}"
 
 
-def render_promoted_pairs(path: Path, environment: str | None) -> str:
+def render_promoted_pairs(
+    path: Path,
+    environment: str | None,
+    latest_signals_by_pair: dict[str, dict] | None = None,
+) -> str:
     """Render the promoted pair artifact as a compact Telegram HTML message."""
     artifact = validate_pair_artifact_file(path)
     metadata = artifact.metadata
+    latest_signals_by_pair = latest_signals_by_pair or {}
 
     if not artifact.pairs:
         return (
@@ -162,6 +195,7 @@ def render_promoted_pairs(path: Path, environment: str | None) -> str:
         label = html.escape(pair_label(pair))
         sharpe = performance.get("sharpe_ratio")
         final_pnl_pct = performance.get("final_pnl_pct")
+        latest_signal = latest_signals_by_pair.get(pair_label(pair))
         lines.extend(
             [
                 f"{index}. <b>{label}</b>",
@@ -173,6 +207,30 @@ def render_promoted_pairs(path: Path, environment: str | None) -> str:
                     f"   Entry Z: {best_params['entry_z']:.2f} | "
                     f"Lookback: {best_params['lookback_bars']} bars"
                 ),
+                f"   {_render_pair_signal_status(latest_signal, best_params['entry_z'])}",
             ]
         )
     return "\n".join(lines)
+
+
+def _render_pair_signal_status(
+    latest_signal: dict | None,
+    entry_z: float,
+) -> str:
+    if latest_signal is None:
+        return "Latest Z: N/A"
+
+    z_score = latest_signal["z_score"]
+    threshold = abs(entry_z)
+    gap = threshold - abs(z_score)
+    if gap <= 0 and z_score <= -threshold:
+        proximity = "Entry Zone: LONG"
+    elif gap <= 0 and z_score >= threshold:
+        proximity = "Entry Zone: SHORT"
+    else:
+        proximity = f"Entry Gap: {gap:.2f}"
+
+    return (
+        f"Latest Z: {format_z(z_score)} | {proximity} | "
+        f"Action: {html.escape(latest_signal['action'])}"
+    )

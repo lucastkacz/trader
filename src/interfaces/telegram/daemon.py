@@ -20,6 +20,9 @@ from src.interfaces.telegram.handlers import (
     bot_inspect,
     bot_inspect_position_callback,
     bot_pause,
+    bot_position_menu_callback,
+    bot_plot,
+    bot_plot_position_callback,
     bot_positions,
     bot_promoted_pairs,
     bot_resume,
@@ -52,8 +55,15 @@ def build_application():
     app.add_handler(CommandHandler("pairs", bot_promoted_pairs))
     app.add_handler(CommandHandler("promoted_pairs", bot_promoted_pairs))
     app.add_handler(CommandHandler("inspect", bot_inspect))
+    app.add_handler(CommandHandler("plot", bot_plot))
+    app.add_handler(
+        CallbackQueryHandler(bot_position_menu_callback, pattern="^position_menu:")
+    )
     app.add_handler(
         CallbackQueryHandler(bot_inspect_position_callback, pattern="^inspect_position:")
+    )
+    app.add_handler(
+        CallbackQueryHandler(bot_plot_position_callback, pattern="^plot_position:")
     )
     app.add_handler(CommandHandler("stop_all", bot_stop_all))
     app.add_handler(CommandHandler("stop", bot_stop_pair))

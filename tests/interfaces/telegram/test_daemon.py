@@ -9,13 +9,17 @@ from src.engine.trader.runtime.pairs import build_pair_artifact
 from src.engine.trader.state_manager import TradeStateManager
 from src.interfaces.telegram import daemon
 from src.interfaces.telegram import context as telegram_context
+from src.interfaces.telegram import plots
 from src.interfaces.telegram import renderers
 
 
 class FakeUpdate:
     def __init__(self, chat_id: str):
         self.effective_chat = SimpleNamespace(id=chat_id)
-        self.message = SimpleNamespace(reply_text=AsyncMock())
+        self.message = SimpleNamespace(
+            reply_text=AsyncMock(),
+            reply_photo=AsyncMock(),
+        )
 
 
 class FakeCallbackUpdate:
@@ -24,7 +28,10 @@ class FakeCallbackUpdate:
         self.callback_query = SimpleNamespace(
             data=callback_data,
             answer=AsyncMock(),
-            message=SimpleNamespace(reply_text=AsyncMock()),
+            message=SimpleNamespace(
+                reply_text=AsyncMock(),
+                reply_photo=AsyncMock(),
+            ),
         )
 
 
@@ -99,11 +106,50 @@ async def test_positions_use_configured_holding_bar_minutes(configured_daemon):
     assert "#1 BTC|ETH" in message
     assert "BTC|ETH" in message
     assert "Duration:" in message
-    assert keyboard[0][0].text == "Inspect #1"
-    assert keyboard[0][0].callback_data == "inspect_position:1"
+    assert keyboard[0][0].text == "Position #1"
+    assert keyboard[0][0].callback_data == "position_menu:1"
     assert renderers.holding_duration_minutes({"holding_bars": 6}, 1) == 6
     assert renderers.format_duration(6) == "6m"
     assert renderers.format_duration(240) == "4h"
+
+
+@pytest.mark.asyncio
+async def test_position_menu_button_offers_summary_or_plot(configured_daemon):
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        spread_id = state.open_position(
+            "BTC|ETH",
+            "BTC",
+            "ETH",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            14,
+        )
+    finally:
+        state.close()
+
+    update = FakeCallbackUpdate(
+        chat_id="123",
+        callback_data=f"position_menu:{spread_id}",
+    )
+    await daemon.bot_position_menu_callback(update, _context())
+
+    update.callback_query.answer.assert_awaited_once()
+    update.callback_query.message.reply_text.assert_awaited_once()
+    message = update.callback_query.message.reply_text.await_args.args[0]
+    keyboard = update.callback_query.message.reply_text.await_args.kwargs[
+        "reply_markup"
+    ].inline_keyboard
+    assert "POSITION #1" in message
+    assert "BTC|ETH" in message
+    assert keyboard[0][0].text == "Summary"
+    assert keyboard[0][0].callback_data == "inspect_position:1"
+    assert keyboard[0][1].text == "Plot"
+    assert keyboard[0][1].callback_data == "plot_position:1"
 
 
 @pytest.mark.asyncio
@@ -177,6 +223,20 @@ async def test_promoted_pairs_lists_configured_artifact(configured_daemon):
         ),
         encoding="utf-8",
     )
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        state.record_tick_signal(
+            pair_label="BTC/USDT|ETH/USDT",
+            z_score=-1.75,
+            weight_a=0.5,
+            weight_b=0.5,
+            signal="FLAT",
+            action="SKIP",
+            price_a=100.0,
+            price_b=50.0,
+        )
+    finally:
+        state.close()
 
     update = FakeUpdate(chat_id="123")
     await daemon.bot_promoted_pairs(update, _context())
@@ -191,6 +251,9 @@ async def test_promoted_pairs_lists_configured_artifact(configured_daemon):
     assert "PnL: +1.25%" in message
     assert "Entry Z: 2.00" in message
     assert "Lookback: 120 bars" in message
+    assert "Latest Z: -1.75" in message
+    assert "Entry Gap: 0.25" in message
+    assert "Action: SKIP" in message
 
 
 @pytest.mark.asyncio
@@ -334,6 +397,149 @@ async def test_inspect_position_reports_missing_identifier(configured_daemon):
 
     message = update.message.reply_text.await_args.args[0]
     assert "No open position found" in message
+    assert "999" in message
+
+
+def test_position_zscore_plot_filters_signals_and_renders_png(configured_daemon):
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        spread_id = state.open_position(
+            "BTC|ETH",
+            "BTC",
+            "ETH",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            14,
+        )
+        state.record_tick_signal(
+            pair_label="BTC|ETH",
+            z_score=-2.0,
+            weight_a=0.5,
+            weight_b=0.5,
+            signal="LONG_SPREAD",
+            action="ENTRY",
+            price_a=100.0,
+            price_b=50.0,
+        )
+        state.record_tick_signal(
+            pair_label="BTC|ETH",
+            z_score=-1.2,
+            weight_a=0.5,
+            weight_b=0.5,
+            signal="LONG_SPREAD",
+            action="HOLD",
+            price_a=104.0,
+            price_b=49.0,
+        )
+
+        plot = plots.build_position_zscore_plot(state, str(spread_id))
+        png = plots.render_position_zscore_plot_png(plot)
+    finally:
+        state.close()
+
+    assert len(plot.signals) == 2
+    assert plot.latest_signal["z_score"] == -1.2
+    assert plot.pnl_values[-1] == pytest.approx(0.03)
+    assert png.startswith(b"\x89PNG")
+
+
+@pytest.mark.asyncio
+async def test_plot_command_sends_zscore_png(configured_daemon):
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        spread_id = state.open_position(
+            "BTC|ETH",
+            "BTC",
+            "ETH",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            14,
+        )
+        state.record_tick_signal(
+            pair_label="BTC|ETH",
+            z_score=-1.0,
+            weight_a=0.5,
+            weight_b=0.5,
+            signal="LONG_SPREAD",
+            action="HOLD",
+            price_a=101.0,
+            price_b=49.0,
+        )
+    finally:
+        state.close()
+
+    update = FakeUpdate(chat_id="123")
+    await daemon.bot_plot(update, _context(args=[str(spread_id)]))
+
+    update.message.reply_photo.assert_awaited_once()
+    kwargs = update.message.reply_photo.await_args.kwargs
+    assert kwargs["photo"].getvalue().startswith(b"\x89PNG")
+    assert "Z-SCORE PLOT #1" in kwargs["caption"]
+    assert "Latest Z: -1.00" in kwargs["caption"]
+    keyboard = kwargs["reply_markup"].inline_keyboard
+    assert keyboard[0][0].text == "Refresh Plot #1"
+    assert keyboard[0][0].callback_data == "plot_position:1"
+
+
+@pytest.mark.asyncio
+async def test_plot_refresh_button_sends_updated_png(configured_daemon):
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        spread_id = state.open_position(
+            "BTC|ETH",
+            "BTC",
+            "ETH",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            14,
+        )
+        state.record_tick_signal(
+            pair_label="BTC|ETH",
+            z_score=-0.8,
+            weight_a=0.5,
+            weight_b=0.5,
+            signal="LONG_SPREAD",
+            action="HOLD",
+            price_a=102.0,
+            price_b=49.5,
+        )
+    finally:
+        state.close()
+
+    update = FakeCallbackUpdate(
+        chat_id="123",
+        callback_data=f"plot_position:{spread_id}",
+    )
+    await daemon.bot_plot_position_callback(update, _context())
+
+    update.callback_query.answer.assert_awaited_once()
+    update.callback_query.message.reply_photo.assert_awaited_once()
+    kwargs = update.callback_query.message.reply_photo.await_args.kwargs
+    assert kwargs["photo"].getvalue().startswith(b"\x89PNG")
+    assert "Latest Z: -0.80" in kwargs["caption"]
+
+
+@pytest.mark.asyncio
+async def test_plot_reports_missing_position(configured_daemon):
+    update = FakeUpdate(chat_id="123")
+
+    await daemon.bot_plot(update, _context(args=["999"]))
+
+    update.message.reply_photo.assert_not_awaited()
+    message = update.message.reply_text.await_args.args[0]
+    assert "No position found" in message
     assert "999" in message
 
 

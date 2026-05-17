@@ -78,14 +78,24 @@ Latest local commit:
 09beeb5c Add env strategy configs and Telegram health controls
 ```
 
-Current git state immediately after that commit:
+Current git state immediately after that commit was:
 
 ```text
 working tree clean
 ```
 
-This handoff update may be a later documentation-only change if it has not been
-committed yet.
+Current working tree has uncommitted local-readiness changes from the latest
+Telegram/operator slice plus this handoff update. Review before committing:
+
+```text
+requirements.txt
+src/interfaces/telegram/daemon.py
+src/interfaces/telegram/handlers.py
+src/interfaces/telegram/renderers.py
+src/interfaces/telegram/plots.py
+tests/interfaces/telegram/test_daemon.py
+handoff.md
+```
 
 ## Completed In This Session
 
@@ -128,8 +138,21 @@ Local Telegram and state-only readiness work completed:
   - `BCH/USDT|1000BONK/USDT`
   - `BCH/USDT|AVAX/USDT`
 - Added Telegram `/pairs` and `/promoted_pairs` to show the promoted artifact.
-- Added inline `Inspect #id` buttons to `/positions`.
+- Added initial inline `Inspect #id` buttons to `/positions`, later replaced
+  by the two-step `Position #id -> Summary | Plot` flow.
 - Added Telegram `/health` for runtime health and staleness.
+- Added Telegram z-score/PnL plotting:
+  - new `src/interfaces/telegram/plots.py`
+  - `/plot <ID|PAIR>` sends a PNG chart
+  - plot includes z-score path, mean/exit guide, entry guide, entry marker,
+    exit marker when closed, and PnL subplot
+  - `Refresh Plot #id` inline button sends an updated chart
+- Changed `/positions` into a two-step operator flow:
+  - `/positions` lists open positions
+  - tapping `Position #id` opens a menu with `Summary` and `Plot`
+  - direct `/inspect <ID|PAIR>` and `/plot <ID|PAIR>` still work
+- Enhanced `/pairs` to include latest observed z-score from persisted
+  `tick_signals`, entry gap, and latest action for every promoted pair.
 - Added runtime boot health notifications and max-tick auto-stop notifications.
 - Refactored the Telegram daemon into:
   - `src/interfaces/telegram/context.py`
@@ -156,7 +179,7 @@ Signal logic issue found and fixed:
 Latest safe offline test result:
 
 ```text
-215 passed, 3 deselected
+220 passed, 3 deselected
 ```
 
 Command used:
@@ -165,38 +188,40 @@ Command used:
 .venv/bin/python -m pytest
 ```
 
-## Highest Priority Next Run
+## Latest Drill Results
 
-Continue the local state-only observer drill and review the UAT/prod deployment
-shape.
+The latest bounded local state-only observer drill completed successfully.
 
-Immediate local status at handoff time:
+Final local status at handoff time:
 
 - Telegram daemon is running:
   - `com.quant.dev-telegram-daemon`
-- Wide dev state-only observer is running:
+- Wide dev state-only observer is not running:
   - `com.quant.dev-wide-state-only-observer`
   - `QUANT_OBSERVER_MAX_TICKS=180`
   - `QUANT_OBSERVER_HEARTBEAT_SECONDS=60`
-- `/health` is fresh but reports `RECONCILIATION_WARNING` because local dev has
-  no exchange snapshot provider:
+  - latest run completed `180` ticks and auto-stopped cleanly
+- `/health` reports `STALE` because the bounded observer stopped, not because
+  the DB is corrupt:
 
 ```text
 Mode: DEV
-Status: RECONCILIATION_WARNING
+Status: STALE
 Open Positions: 1
 Paused: NO
-Latest Tick: 2026-05-17T14:42:50.446217+00:00
-Equity: +0.5435%
-Realized: +0.4156%
-Unrealized: +0.1279%
+Latest Tick: 2026-05-17T18:25:46.144809+00:00
+Tick Age: 63.6m
+Equity: +1.5729%
+Realized: +1.5348%
+Unrealized: +0.0381%
 Reconciliation: SKIPPED_NO_SNAPSHOT_PROVIDER | Deltas: 0
 ```
 
-Current open local state-only position at handoff time:
+Current open local state-only position at handoff time is left over from the
+bounded run:
 
 ```text
-7|1000PEPE/USDT|BCH/USDT|LONG_SPREAD|entry_z=-2.0573|opened_at=2026-05-17T13:44:38.862406+00:00
+10|BCH/USDT|1000BONK/USDT|SHORT_SPREAD|entry_z=3.3009|opened_at=2026-05-17T17:57:04.473046+00:00
 ```
 
 State-only safety invariant at handoff time:
@@ -205,27 +230,116 @@ State-only safety invariant at handoff time:
 0 live/client order ids
 ```
 
-Important note:
+Position lifecycle results:
+
+- `10` total local state-only positions recorded.
+- `9` positions closed via `SIGNAL_EXIT`.
+- `1` position remains open only because the bounded observer completed before
+  it reached natural exit.
+- Position `#7`, the previously watched open position, closed naturally:
+  - pair: `1000PEPE/USDT|BCH/USDT`
+  - side: `LONG_SPREAD`
+  - opened: `2026-05-17T13:44:38.862406+00:00`
+  - closed: `2026-05-17T17:44:10.763934+00:00`
+  - close reason: `SIGNAL_EXIT`
+  - realized PnL: `+0.3799%`
+- Two additional positions opened and closed naturally after that:
+  - `#8 BCH/USDT|1000BONK/USDT SHORT_SPREAD`
+  - `#9 BCH/USDT|AVAX/USDT SHORT_SPREAD`
+
+Report checks:
+
+- Text report works.
+- JSON report parses cleanly.
+- Latest report summary:
+  - total equity: `+1.5729%`
+  - realized: `+1.5348%`
+  - unrealized: `+0.0381%`
+  - closed trades: `9`
+  - win rate: `77.8%`
+  - order events: `19`
+  - leg targets: `OPEN: 20`, `CLOSE: 18`
+  - user commands: none recorded in this drill window
+
+Recovery behavior observed:
 
 - The observer previously auto-stopped after `max_ticks=180` while two positions
   were open. Restarting resumed from persisted local state and both stale
   positions closed on the next fresh tick.
-- This proved useful recovery behavior for dev, but UAT/prod should run on a VPS
-  with process supervision, not a laptop.
+- The latest observer run also auto-stopped after `max_ticks=180`, this time
+  leaving one open state-only position. This is expected for a bounded dev drill,
+  but Telegram `/health` currently only reports this as `STALE`.
+- This proved useful recovery behavior for dev, but UAT/prod should run on a
+  VPS with process supervision, not a laptop.
 
-Recommended next discussion:
+Operational interpretation:
 
-1. Define the real UAT/prod hosting model on a cloud VPS.
-2. Decide process supervision:
+- The green PnL is a pleasant side effect, not proof of production alpha.
+- The real success is that the execution flow is now observable:
+  promoted artifact loading, entries, natural exits, state-only leg targets,
+  reports, Telegram health, position summary, plots, and `/pairs` z-score
+  proximity all worked from persisted runtime state.
+
+## Highest Priority Next Run
+
+Focus on local dev operations, not UAT/prod yet.
+
+Start the next chat from `main`, then create a fresh feature branch before
+editing:
+
+```bash
+git switch main
+git pull --ff-only origin main
+git switch -c dev-run-status-drill
+```
+
+Do not continue new implementation work directly on `main`. Keep the next
+branch focused on local run-status/drill-status operations.
+
+Recommended next implementation slice:
+
+1. Add a Telegram `/drill` or `/run_status` command that explains the local run
+   lifecycle in one place:
+   - whether the observer process is running or stopped
+   - whether the latest stale health is expected because max ticks completed
+   - latest tick age
+   - open/closed position counts
+   - current open position ids
+   - state-only order-id invariant
+   - latest reconciliation status and delta count
+   - report JSON parse status
+2. Distinguish operationally between:
+   - actively running and fresh
+   - cleanly stopped after bounded max ticks
+   - stale unexpectedly
+3. Consider a max-tick completion Telegram notification that explicitly says:
+
+```text
+Observer completed 180 ticks.
+Open local positions remain: 1.
+No exchange exposure exists in state-only mode.
+Restart observer to continue natural-exit evaluation.
+```
+
+4. Add or document restart/resume drills for:
+   - observer stops mid-tick and resumes without duplicate entry/exit events
+   - `/pause` persists across restart and blocks new entries
+   - `/stop_all` is claimed once across restart
+   - same-pair re-entry works after natural exit, never while already open
+
+Recommended later discussion, after dev operations are tighter:
+
+- Define the real UAT/prod hosting model on a cloud VPS.
+- Decide process supervision:
    - systemd service
    - restart policy
    - log rotation
    - health checks
-3. Decide reconciliation expectations for UAT/prod:
+- Decide reconciliation expectations for UAT/prod:
    - snapshot provider available
    - boot warning vs halt behavior
    - stale local/exchange mismatch policy
-4. Decide whether to add runtime decay/time-stop controls:
+- Decide whether to add runtime decay/time-stop controls:
    - alert-only after `N * Half_Life`
    - optional dev-only state close after max holding bars
    - no hidden forced closes from pair-set changes
@@ -350,9 +464,13 @@ During or after the 2-3 hour run, confirm:
 - Telegram `/status` responds.
 - Telegram `/health` responds and reports fresh tick age.
 - Telegram `/pairs` shows the promoted 4-pair artifact.
+- Telegram `/pairs` shows latest z-score, entry gap, and latest action for each
+  promoted pair.
 - Telegram `/positions` lists open position ids.
-- Telegram `/positions` includes inline `Inspect #id` buttons.
+- Telegram `/positions` opens the two-step `Position #id -> Summary | Plot`
+  menu.
 - Telegram `/inspect <ID|PAIR>` shows entry, current z-score, prices, and PnL.
+- Telegram `/plot <ID|PAIR>` sends a z-score/PnL PNG and refresh button.
 - At least one position opens naturally.
 - At least one position closes naturally, if market movement permits.
 - Exit notifications format PnL correctly.
