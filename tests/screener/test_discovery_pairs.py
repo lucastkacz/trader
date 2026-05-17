@@ -18,7 +18,7 @@ def test_discovery_rejects_nonpositive_prices_without_crashing():
         mature_pool=mature_pool,
         clusters={"Cohort_0": ["GOOD/USDT", "BAD/USDT"]},
         universe_cfg=load_universe_config("configs/universe/alpha_v1_dev_1m.yml"),
-        strategy_cfg=load_strategy_config("configs/strategy/alpha_v1.yml"),
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
     )
 
     assert pairs == []

@@ -6,198 +6,38 @@ Reads from and writes strictly to the SQLite database.
 Never touches trading exchanges or networking modules directly.
 """
 
-import sys
 import argparse
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+import sys
 
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler
 
 from src.core.config import settings
-from src.engine.trader.config import TelegramConfig
-from src.engine.trader.config import load_telegram_config as load_typed_telegram_config
-from src.engine.trader.state_manager import TradeStateManager
-
-# Minimal basic logging for the listener itself
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+from src.interfaces.telegram.context import configure_daemon
+from src.interfaces.telegram.handlers import (
+    bot_health,
+    bot_help,
+    bot_inspect,
+    bot_inspect_position_callback,
+    bot_pause,
+    bot_position_menu_callback,
+    bot_plot,
+    bot_plot_position_callback,
+    bot_positions,
+    bot_promoted_pairs,
+    bot_resume,
+    bot_status,
+    bot_stop_all,
+    bot_stop_pair,
 )
 
-TELEGRAM_DB_PATH: Optional[str] = None
-TELEGRAM_ENVIRONMENT: Optional[str] = None
-TELEGRAM_HOLDING_PERIOD_BAR_MINUTES: Optional[float] = None
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-
-def configure_daemon(config_path: str) -> TelegramConfig:
-    """Configure daemon process globals from YAML."""
-    global TELEGRAM_DB_PATH, TELEGRAM_ENVIRONMENT, TELEGRAM_HOLDING_PERIOD_BAR_MINUTES
-    cfg = load_typed_telegram_config(config_path)
-    TELEGRAM_DB_PATH = cfg.db_path
-    TELEGRAM_ENVIRONMENT = cfg.environment
-    TELEGRAM_HOLDING_PERIOD_BAR_MINUTES = cfg.holding_period_bar_minutes
-    return cfg
-
-
-def open_state_manager() -> TradeStateManager:
-    """Open a short-lived state connection for one command handler."""
-    if TELEGRAM_DB_PATH is None:
-        raise RuntimeError("Telegram daemon db_path is not configured")
-    return TradeStateManager(db_path=TELEGRAM_DB_PATH)
-
-
-def holding_duration_minutes(position: dict) -> float:
-    """Return display duration in minutes using explicit Telegram bar policy."""
-    if TELEGRAM_HOLDING_PERIOD_BAR_MINUTES is None:
-        raise RuntimeError("Telegram daemon holding_period_bar_minutes is not configured")
-
-    holding_bars = position.get("holding_bars")
-    if holding_bars:
-        return holding_bars * TELEGRAM_HOLDING_PERIOD_BAR_MINUTES
-
-    opened_at = position.get("opened_at")
-    if not opened_at:
-        return 0.0
-
-    try:
-        t_open = datetime.fromisoformat(opened_at.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return 0.0
-    return max(0.0, (datetime.now(timezone.utc) - t_open).total_seconds() / 60.0)
-
-
-def format_duration(minutes: float) -> str:
-    """Format a holding duration for compact Telegram display."""
-    if minutes < 60:
-        return f"{minutes:.0f}m"
-    return f"{minutes / 60.0:g}h"
-
-
-def require_auth(func):
-    """Decorator to instantly reject strangers securely."""
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if str(update.effective_chat.id) != settings.telegram_chat_id:
-            logging.warning(f"Unauthorized access attempt from {update.effective_chat.id}")
-            return
-        return await func(update, context)
-    return wrapper
-
-@require_auth
-async def bot_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/status - Replies with the current open positional state of the bot."""
-    state = open_state_manager()
-    try:
-        open_pos = state.get_open_positions()
-        equity = state.get_equity_curve()
-
-        eq_str = "No history yet."
-        if equity:
-            last = equity[-1]
-            rpnl = last["realized_pnl_pct"] * 100
-            upnl = last["unrealized_pnl_pct"] * 100
-            eq_str = f"Realized: {rpnl:.2f}%\nUnrealized: {upnl:.2f}%"
-    finally:
-        state.close()
-
-    msg = (
-        f"📊 <b>TRADER STATUS</b>\n"
-        f"Mode: {TELEGRAM_ENVIRONMENT}\n\n"
-        f"<b>Portfolio:</b>\n{eq_str}\n\n"
-        f"<b>Open Spreads:</b> {len(open_pos)}"
-    )
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-@require_auth
-async def bot_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/positions - Lists all open pairs clearly."""
-    state = open_state_manager()
-    try:
-        open_pos = state.get_open_positions()
-    finally:
-        state.close()
-
-    if not open_pos:
-        await update.message.reply_text("📭 No open positions at the moment.")
-        return
-
-    msg = "📂 <b>OPEN POSITIONS</b>\n\n"
-    for p in open_pos:
-        duration = format_duration(holding_duration_minutes(p))
-        msg += f"• <b>{p['pair_label']}</b> ({p['side']})\n"
-        msg += f"  Duration: {duration}\n"
-        
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-@require_auth
-async def bot_stop_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/stop_all - Instructs the Trader to immediately liquidate."""
-    state = open_state_manager()
-    try:
-        state.write_command("/stop_all")
-    finally:
-        state.close()
-    
-    await update.message.reply_text(
-        "🚨 <b>COMMAND LOGGED: LOCAL STATE STOP ALL</b>\n"
-        "The executing trader will record forced local closes on its next command sweep.",
-        parse_mode="HTML"
-    )
-
-@require_auth
-async def bot_stop_pair(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/stop <PAIR> - Instructs immediate liquidation for one pair."""
-    if not context.args:
-        await update.message.reply_text("⚠️ Usage: /stop BTC/USDT")
-        return
-        
-    target = context.args[0].upper()
-    state = open_state_manager()
-    try:
-        state.write_command("/stop", target_pair=target)
-    finally:
-        state.close()
-    
-    await update.message.reply_text(
-        f"🚨 <b>COMMAND LOGGED: LOCAL STATE STOP {target}</b>\n"
-        "The executing trader will record a forced local close on its next command sweep.",
-        parse_mode="HTML"
-    )
-
-@require_auth
-async def bot_pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/pause - Tells Trader to skip future entries."""
-    state = open_state_manager()
-    try:
-        state.write_command("/pause")
-    finally:
-        state.close()
-    await update.message.reply_text("⏳ <b>COMMAND LOGGED: PAUSE</b>", parse_mode="HTML")
-
-@require_auth
-async def bot_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/resume - Tells Trader to resume normal tick execution."""
-    state = open_state_manager()
-    try:
-        state.write_command("/resume")
-    finally:
-        state.close()
-    await update.message.reply_text("▶️ <b>COMMAND LOGGED: RESUME</b>", parse_mode="HTML")
-
-@require_auth
-async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/help - Command list."""
-    msg = (
-        "🤖 <b>Stat-Arb Controller</b>\n\n"
-        "/status - System PNL & Open Count\n"
-        "/positions - Detailed layout of active pairs\n"
-        "/pause - Skip new trades (Holds existing)\n"
-        "/resume - Revert pause mechanism\n"
-        "/stop [PAIR] - Requests one forced local-state close\n"
-        "/stop_all - Requests forced local-state close for everything"
-    )
-    await update.message.reply_text(msg, parse_mode="HTML")
 
 def build_application():
     """Build the Telegram polling application."""
@@ -209,8 +49,22 @@ def build_application():
 
     app.add_handler(CommandHandler("start", bot_help))
     app.add_handler(CommandHandler("help", bot_help))
+    app.add_handler(CommandHandler("health", bot_health))
     app.add_handler(CommandHandler("status", bot_status))
     app.add_handler(CommandHandler("positions", bot_positions))
+    app.add_handler(CommandHandler("pairs", bot_promoted_pairs))
+    app.add_handler(CommandHandler("promoted_pairs", bot_promoted_pairs))
+    app.add_handler(CommandHandler("inspect", bot_inspect))
+    app.add_handler(CommandHandler("plot", bot_plot))
+    app.add_handler(
+        CallbackQueryHandler(bot_position_menu_callback, pattern="^position_menu:")
+    )
+    app.add_handler(
+        CallbackQueryHandler(bot_inspect_position_callback, pattern="^inspect_position:")
+    )
+    app.add_handler(
+        CallbackQueryHandler(bot_plot_position_callback, pattern="^plot_position:")
+    )
     app.add_handler(CommandHandler("stop_all", bot_stop_all))
     app.add_handler(CommandHandler("stop", bot_stop_pair))
     app.add_handler(CommandHandler("pause", bot_pause))
@@ -229,5 +83,6 @@ def main():
     logging.info("Telegram UI Daemon Started. Listening for commands...")
     app.run_polling()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

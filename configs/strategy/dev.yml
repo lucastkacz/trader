@@ -1,0 +1,8 @@
+strategy:
+  name: "DEV Lenient Workflow Mean Reversion V1"
+  execution:
+    entry_z_score: 1.5
+    exit_z_score: 0.0
+    stop_loss_z_score: 4.0
+    ew_ols_lookback_bars: 540
+    volatility_lookback_bars: 60

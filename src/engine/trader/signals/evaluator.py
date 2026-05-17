@@ -28,7 +28,9 @@ def evaluate_signal(
     df_a : Recent OHLCV DataFrame for Asset A (must have 'close' column)
     df_b : Recent OHLCV DataFrame for Asset B (must have 'close' column)
     entry_z : Z-score threshold to trigger entry
-    exit_z : Z-score threshold to trigger exit (typically 0.0)
+    exit_z : Side-aware mean-reversion threshold to trigger exit.
+        LONG_SPREAD exits when z_score >= -exit_z.
+        SHORT_SPREAD exits when z_score <= exit_z.
     lookback_bars : Rolling window for spread mean/std
     vol_lookback_bars : Rolling window for volatility parity
     hedge_ratio : Canonical hedge ratio for log(A) - hedge_ratio * log(B)
@@ -76,7 +78,7 @@ def evaluate_signal(
 
     # 4. Signal Logic (State Machine)
     #    - If we are FLAT: check entry thresholds
-    #    - If we are in a position: check exit threshold
+    #    - If we are in a position: check side-aware mean reversion
     if current_side is None:
         # No position - evaluate entry
         if z_score <= -entry_z:
@@ -86,9 +88,11 @@ def evaluate_signal(
         else:
             signal = "FLAT"
     else:
-        # In a position - evaluate exit (mean reversion)
-        if abs(z_score) <= exit_z:
-            signal = "FLAT"            # Z-score reverted to mean -> close
+        exit_band = abs(exit_z)
+        if current_side == "LONG_SPREAD" and z_score >= -exit_band:
+            signal = "FLAT"            # Undervalued spread reverted toward/through mean
+        elif current_side == "SHORT_SPREAD" and z_score <= exit_band:
+            signal = "FLAT"            # Overvalued spread reverted toward/through mean
         else:
             signal = current_side      # Hold current position
 

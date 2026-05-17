@@ -7,10 +7,13 @@ from typing import Any, Optional
 from src.core.logger import logger
 
 
-def _detect_bars_per_year(equity_curve: list[dict[str, Any]]) -> float:
+def _detect_bars_per_year(
+    equity_curve: list[dict[str, Any]],
+    fallback_bars_per_year: float | None = None,
+) -> float:
     """Auto-detect annualization factor from equity snapshot intervals."""
     if len(equity_curve) < 2:
-        return 6.0 * 365.0
+        return fallback_bars_per_year or 6.0 * 365.0
 
     intervals = []
     for i in range(1, len(equity_curve)):
@@ -28,13 +31,13 @@ def _detect_bars_per_year(equity_curve: list[dict[str, Any]]) -> float:
             continue
 
     if not intervals:
-        return 6.0 * 365.0
+        return fallback_bars_per_year or 6.0 * 365.0
 
     intervals.sort()
     median_hours = intervals[len(intervals) // 2]
 
     if median_hours <= 0:
-        return 6.0 * 365.0
+        return fallback_bars_per_year or 6.0 * 365.0
 
     bars_per_day = 24.0 / median_hours
     bars_per_year = bars_per_day * 365.0

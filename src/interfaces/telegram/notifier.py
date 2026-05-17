@@ -3,15 +3,37 @@ import asyncio
 from src.core.config import settings
 from src.core.logger import logger
 
+
+def _build_prefix_tag(environment: str | None = None, execution_mode: str | None = None) -> str:
+    parts = ["TRADER"]
+    if environment:
+        environment_label = environment.replace("_", " ").replace("-", " ").strip().upper()
+        if execution_mode != "live":
+            environment_label = " ".join(
+                part for part in environment_label.split() if part != "LIVE"
+            )
+        if environment_label:
+            parts.append(environment_label)
+
+    if execution_mode == "live":
+        parts.append("LIVE")
+    elif execution_mode == "state_only":
+        parts.append("STATE-ONLY")
+    else:
+        parts.append("NON-LIVE")
+
+    return f"[{' '.join(parts)}]"
+
+
 class TelegramNotifier:
     """
     Decoupled 1-Way Push Notifier.
     Used exclusively by the Trader Engine execution loop to safely dispatch state updates.
     """
-    def __init__(self):
+    def __init__(self, environment: str | None = None, execution_mode: str | None = None):
         self.token = settings.telegram_bot_token
         self.chat_id = settings.telegram_chat_id
-        self.prefix_tag = "[TRADER PAPER]" if settings.log_level != "info" else "[TRADER LIVE]"
+        self.prefix_tag = _build_prefix_tag(environment, execution_mode)
 
     def _send_sync(self, message: str):
         """Synchronous HTTP dispatch with strict strict timeouts to prevent freezing."""

@@ -90,6 +90,48 @@ def test_short_spread_when_spread_is_deeply_positive():
     assert result.z_score > 2.0
 
 
+def test_long_spread_exits_after_crossing_mean():
+    """LONG_SPREAD should close once a negative spread reverts to/above zero."""
+    n = 200
+    base = np.ones(n) * 5.0
+    prices_a = np.exp(base.copy())
+    prices_b = np.exp(base.copy())
+    prices_a[-10:] = prices_a[-10:] * 1.50
+
+    df_a = _make_df(prices_a, "A/USDT")
+    df_b = _make_df(prices_b, "B/USDT")
+
+    result = evaluate_signal(
+        df_a, df_b, entry_z=2.0, exit_z=0.0,
+        lookback_bars=14 * 6, vol_lookback_bars=14 * 6,
+        hedge_ratio=1.0, current_side="LONG_SPREAD"
+    )
+
+    assert result.z_score > 0.0
+    assert result.signal == "FLAT"
+
+
+def test_short_spread_exits_after_crossing_mean():
+    """SHORT_SPREAD should close once a positive spread reverts to/below zero."""
+    n = 200
+    base = np.ones(n) * 5.0
+    prices_a = np.exp(base.copy())
+    prices_b = np.exp(base.copy())
+    prices_a[-10:] = prices_a[-10:] * 0.70
+
+    df_a = _make_df(prices_a, "A/USDT")
+    df_b = _make_df(prices_b, "B/USDT")
+
+    result = evaluate_signal(
+        df_a, df_b, entry_z=2.0, exit_z=0.0,
+        lookback_bars=14 * 6, vol_lookback_bars=14 * 6,
+        hedge_ratio=1.0, current_side="SHORT_SPREAD"
+    )
+
+    assert result.z_score < 0.0
+    assert result.signal == "FLAT"
+
+
 def test_hold_when_already_in_position():
     """When already in a position and Z-score hasn't reverted, should HOLD."""
     n = 200
@@ -109,6 +151,27 @@ def test_hold_when_already_in_position():
 
     # Should hold the existing position (z_score still deeply negative)
     assert result.signal == "LONG_SPREAD"
+
+
+def test_short_spread_holds_before_reversion():
+    """SHORT_SPREAD should hold while z-score remains above the mean."""
+    n = 200
+    base = np.ones(n) * 5.0
+    prices_a = np.exp(base.copy())
+    prices_b = np.exp(base.copy())
+    prices_a[-10:] = prices_a[-10:] * 1.50
+
+    df_a = _make_df(prices_a, "A/USDT")
+    df_b = _make_df(prices_b, "B/USDT")
+
+    result = evaluate_signal(
+        df_a, df_b, entry_z=2.0, exit_z=0.0,
+        lookback_bars=14 * 6, vol_lookback_bars=14 * 6,
+        hedge_ratio=1.0, current_side="SHORT_SPREAD"
+    )
+
+    assert result.z_score > 0.0
+    assert result.signal == "SHORT_SPREAD"
 
 
 def test_exit_when_zscore_reverts_to_zero():

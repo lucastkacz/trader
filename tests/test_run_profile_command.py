@@ -22,7 +22,7 @@ async def test_run_profile_command_loads_referenced_typed_configs(monkeypatch):
     await main.main()
 
     assert captured["pipeline_cfg"].name == "DEV 1M Sandbox"
-    assert captured["universe_cfg"].name == "DEV 1M Broader Liquid Universe"
-    assert captured["backtest_cfg"].name == "DEV 1M Vector Stress Engine"
-    assert captured["strategy_cfg"].name == "Institutional Mean Reversion V1"
-    assert captured["skip_fetch"] is True
+    assert captured["universe_cfg"].name == "DEV 1M Lenient Workflow Universe"
+    assert captured["backtest_cfg"].name == "DEV 1M Lenient Workflow Stress Engine"
+    assert captured["strategy_cfg"].name == "DEV Lenient Workflow Mean Reversion V1"
+    assert captured["skip_fetch"] is False

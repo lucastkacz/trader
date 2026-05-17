@@ -44,6 +44,10 @@ For pair recalculation or eligible pair artifacts:
 - `docs/system-design.md`
 - `docs/current-roadmap.md`
 
+For local state-only operator drills:
+
+- `docs/local-operator-runbook.md`
+
 ## Documentation Policy
 
 - Keep canonical docs short and current.

@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+
 class Simulator:
     """
     Vectorized Execution Engine.
@@ -13,10 +14,7 @@ class Simulator:
         
         # 1. State Triggers (1 = Long Spread, -1 = Short Spread, 0 = Flat)
         z = out["z_score"]
-        signals = np.where(z <= -entry_z, 1.0, np.where(z >= entry_z, -1.0, np.nan))
-        signals = np.where((z > -exit_z) & (z < exit_z), 0.0, signals)
-        
-        out["signal"] = pd.Series(signals).ffill().fillna(0.0)
+        out["signal"] = _build_side_aware_signals(z, entry_z=entry_z, exit_z=exit_z)
         
         # We can only enter the market on the NEXT bar after the signal
         out["position"] = out["signal"].shift(1).fillna(0.0)
@@ -52,3 +50,35 @@ class Simulator:
         out["gross_returns"] = gross.fillna(0.0)
         
         return out
+
+
+def _build_side_aware_signals(
+    z_scores: pd.Series,
+    entry_z: float,
+    exit_z: float,
+) -> pd.Series:
+    """Build target spread state using the same side-aware exit policy as live execution."""
+    exit_band = abs(exit_z)
+    current = 0.0
+    signals = []
+
+    for z_score in z_scores:
+        if not np.isfinite(z_score):
+            signals.append(current)
+            continue
+
+        if current == 0.0:
+            if z_score <= -entry_z:
+                current = 1.0
+            elif z_score >= entry_z:
+                current = -1.0
+        elif current == 1.0:
+            if z_score >= -exit_band:
+                current = 0.0
+        elif current == -1.0:
+            if z_score <= exit_band:
+                current = 0.0
+
+        signals.append(current)
+
+    return pd.Series(signals, index=z_scores.index)

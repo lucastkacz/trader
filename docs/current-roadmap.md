@@ -13,8 +13,9 @@ artifact in state-only mode before designing scheduled refresh behavior
 
 Required behavior:
 
-- Rerun dev 1m research with `skip_fetch` against existing local data and write
-  a candidate artifact plus pair stress report.
+- Rerun dev 1m research from the dev run profile, fetching fresh data when
+  local parquet data is absent, and write a candidate artifact plus pair stress
+  report.
 - Inspect the stress report for source data windows, tested pairs, simulated
   entries and exits, gross/net returns, friction drag, and rejection reasons
   before promotion.

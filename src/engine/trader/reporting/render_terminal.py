@@ -38,6 +38,13 @@ def _metric(label: str, value: str, width: int = 32) -> str:
     return f"  {C.DIM}{label + ':':<{width}}{C.RESET} {C.BOLD}{value}{C.RESET}"
 
 
+def _format_bar_interval(bars_per_year: float) -> str:
+    interval_hours = 24 * 365 / bars_per_year
+    if interval_hours < 1.0:
+        return f"{interval_hours * 60:.1f}m ({bars_per_year:.0f}/yr)"
+    return f"{interval_hours:.1f}h ({bars_per_year:.0f}/yr)"
+
+
 def _header(title: str) -> None:
     line = "═" * 62
     print(f"\n{C.CYAN}{line}{C.RESET}")
@@ -58,7 +65,7 @@ def render_executive_summary(report: TradeReport) -> None:
     print(_metric("Active Pairs", str(report.active_pairs)))
     print(_metric("Total Trades", str(report.total_trades)))
     print(_metric("Uptime", f"{report.uptime_hours:.1f}h"))
-    print(_metric("Bar Interval", f"{24*365/report.bars_per_year:.1f}h ({report.bars_per_year:.0f}/yr)"))
+    print(_metric("Bar Interval", _format_bar_interval(report.bars_per_year)))
 
 
 def render_portfolio_metrics(report: TradeReport) -> None:

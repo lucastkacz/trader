@@ -11,6 +11,12 @@ from src.engine.trader.state_manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
 
+def _format_pnl_percent(pnl: float | None) -> str:
+    if pnl is None:
+        return "N/A"
+    return f"{pnl * 100:.2f}%"
+
+
 async def route_signal_transition(
     pair: dict[str, Any],
     pair_label: str,
@@ -83,7 +89,7 @@ async def _close_spread(
     await notifier.send(
         f"🏁 <b>EXIT SIGNAL: {pair_label}</b>\n"
         f"• Z-Score: {result.z_score:.2f}\n"
-        f"• PNL: <b>{pnl*100:.2f}%</b> if pnl else 'N/A'\n"
+        f"• PNL: <b>{_format_pnl_percent(pnl)}</b>\n"
         f"• Action: CLOSE Spread"
     )
 
@@ -123,7 +129,7 @@ async def _flip_spread(
     await _execute_leg_orders(state, new_spread_id, "OPEN", order_execution_cfg, order_execution_adapter)
     await notifier.send(
         f"🔄 <b>FLIP SIGNAL: {pair_label}</b>\n"
-        f"• Old Side Closed | PNL: <b>{pnl*100:.2f}%</b> if pnl else 'N/A'\n"
+        f"• Old Side Closed | PNL: <b>{_format_pnl_percent(pnl)}</b>\n"
         f"• New Side: {result.signal}\n"
         f"• Z-Score: {result.z_score:.2f}"
     )

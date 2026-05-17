@@ -1,5 +1,5 @@
 strategy:
-  name: "Institutional Mean Reversion V1"
+  name: "PROD Institutional Mean Reversion V1"
   execution:
     entry_z_score: 2.0
     exit_z_score: 0.0
