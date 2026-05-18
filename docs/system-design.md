@@ -125,11 +125,42 @@ new candidate artifact on an operator-chosen cadence. The cadence, data window,
 exchange, timeframe, storage, and runtime policy must enter through typed
 config, explicit parameters, or adapters.
 
-The first safe implementation should be read-only diagnostics and operator
-visibility. Later entry gating may block new entries for pairs whose quantified
-diagnostics exceed configured limits. Existing positions must continue under
-natural exit unless an explicit operator command, auditor action, or tested risk
-kill switch says otherwise.
+The current safe implementation is read-only report visibility:
+
+```text
+promoted artifact
+-> explicit readonly OHLCV refresh for promoted symbols
+-> local parquet update
+-> report pair-validity diagnostics
+-> operator review
+```
+
+The refresh command uses readonly credentials, fetches only market data for
+symbols in the promoted artifact, and writes local parquet. It does not write a
+new promoted artifact, automate promotion, hot-reload execution, submit orders,
+or force-close positions.
+
+Later Telegram visibility may surface the same diagnostics. Later entry gating
+may block new entries for pairs whose quantified diagnostics exceed configured
+limits. Existing positions must continue under natural exit unless an explicit
+operator command, auditor action, or tested risk kill switch says otherwise.
+
+## Runtime Package Shape
+
+Runtime modules are grouped by trading concept:
+
+- `runtime/artifacts/`: eligible-pair artifact contracts, validation,
+  lifecycle paths, promotion, and promotion audit records.
+- `runtime/monitoring/`: read-only health and run-status snapshots for operator
+  visibility.
+- `runtime/pair_validity/`: read-only pair-validity reports, market-data
+  refresh helpers, drift statistics, runtime-state summaries, and typed models.
+- `runtime/`: execution loop modules that still directly drive trading behavior,
+  such as tick evaluation, signal transitions, and trader runner orchestration.
+
+The remaining root-level trader compatibility facades should be removed once
+callers use canonical package paths. Long-lived duplicate import paths reduce
+locality and should not become part of the architecture.
 
 ## Configuration
 

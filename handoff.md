@@ -1,6 +1,6 @@
 # Handoff: Local Readiness Before Cloud Infra
 
-Updated: 2026-05-17
+Updated: 2026-05-18
 
 ## Purpose
 
@@ -67,42 +67,141 @@ git branch --show-current
 Expected active branch:
 
 ```text
-dev-run-status-drill
+pair-validity-readonly-diagnostics
 ```
 
-Do not push, merge, or enable live exchange mutation unless explicitly asked.
+Do not merge or enable live exchange mutation unless explicitly asked. The user
+has asked to commit and push the current branch after this handoff/docs update.
 
-Latest local commit:
+Branch started clean from:
 
 ```text
-09beeb5c Add env strategy configs and Telegram health controls
+main
 ```
 
-Current git state immediately after that commit was:
+Latest verified offline test result in this continuation:
 
 ```text
-working tree clean
+230 passed, 3 deselected
 ```
 
-Current working tree has uncommitted local-readiness changes from the latest
-Telegram/operator slice, docs updates, and this handoff update. Review before
-committing:
+Current working tree before commit contains:
 
 ```text
-CONTEXT.md
+handoff.md
+docs/index.md
+docs/local-operator-runbook.md
+docs/engineering-rules.md
 docs/current-roadmap.md
 docs/system-design.md
-src/interfaces/telegram/daemon.py
-src/interfaces/telegram/renderers.py
-src/interfaces/telegram/handlers/
-src/interfaces/telegram/rendering/
-src/engine/trader/runtime/run_status.py
+src/engine/trader/report_generator.py
+src/engine/trader/refresh_pair_data.py
+src/engine/trader/reporting/
+src/engine/trader/runtime/artifacts/
+src/engine/trader/runtime/monitoring/
+src/engine/trader/runtime/pair_validity/
+src/engine/trader/runtime/pairs.py
 src/engine/trader/runtime/trader_runner.py
+src/interfaces/telegram/handlers/runtime.py
+src/interfaces/telegram/rendering/runtime.py
+src/research/pair_stress_report.py
+tests/engine/trader/runtime/test_pair_data_refresh.py
+tests/engine/trader/runtime/test_pair_validity.py
+tests/engine/trader/runtime/test_health.py
 tests/interfaces/telegram/test_daemon.py
-handoff.md
 ```
 
+Local `data/parquet` was refreshed for promoted dev symbols during inspection,
+but data files are not part of the git commit.
+
 ## Completed In This Session
+
+Continuation work completed on `2026-05-18`:
+
+- Added read-only pair-validity diagnostics behind
+  `src/engine/trader/runtime/pair_validity/`.
+- Added optional report CLI pair-validity output:
+  - artifact/data age in bars/time
+  - hedge-ratio drift
+  - correlation drift
+  - cointegration p-value drift
+  - half-life drift
+  - execution behavior counts
+  - review reasons
+  - explicit missing-baseline notes
+- Added readonly promoted-symbol OHLCV refresh CLI:
+  - `src/engine/trader/refresh_pair_data.py`
+  - fetches only symbols present in the promoted artifact
+  - requires `execution.credential_tier: "readonly"`
+  - writes local parquet only
+  - does not promote artifacts, hot-reload execution, submit orders, or close
+    positions
+- Ran the refresh against the current dev promoted artifact:
+  - symbols: `1000BONK/USDT`, `1000PEPE/USDT`, `APT/USDT`, `AVAX/USDT`,
+    `BCH/USDT`
+  - each symbol now has `3433` local 1m rows
+  - local parquet range for those symbols:
+    `2026-05-15T22:50:00+00:00` to `2026-05-18T08:02:00+00:00`
+- Reran pair-validity diagnostics after refresh:
+  - stale-data warnings cleared
+  - all promoted pairs show `1931` bars since artifact generation
+  - only review item is open local state-only position `#10`
+    `BCH/USDT|1000BONK/USDT`
+  - position `#10` shows `844` bars open and `10.71x` research half-life
+  - review reason: `open_position_exceeds_half_life_multiple`
+- Fixed pair-validity diagnostics so stale local parquet is explicitly reported
+  as:
+  - `market_data_older_than_artifact_generation`
+  - `market_data_older_than_promotion`
+  - `market_data_older_than_open_position`
+- Added offline tests with fake fetchers for refresh behavior. Unit tests do
+  not call the network.
+- Refactored runtime package shape:
+  - `src/engine/trader/runtime/artifacts/` for eligible-pair artifact contract,
+    lifecycle, rows, and promotion audit
+  - `src/engine/trader/runtime/monitoring/` for health and run-status snapshots
+  - `src/engine/trader/runtime/pair_validity/` for diagnostics, refresh,
+    statistics, market-data loading, state summaries, and typed models
+- Removed old root runtime files:
+  - `runtime/health.py`
+  - `runtime/run_status.py`
+  - `runtime/pair_artifact_contract.py`
+  - `runtime/pair_artifact_lifecycle.py`
+  - `runtime/pair_artifact_promotion_audit.py`
+  - `runtime/pair_artifact_rows.py`
+- Updated docs:
+  - `docs/engineering-rules.md`
+  - `docs/current-roadmap.md`
+  - `docs/system-design.md`
+  - `docs/index.md`
+  - `docs/local-operator-runbook.md`
+
+Important architecture gap still open:
+
+- `src/engine/trader/` still has root-level compatibility facades and CLI
+  entrypoints:
+  - `live_trader.py`
+  - `signal_engine.py`
+  - `state_manager.py`
+  - `report_engine.py`
+  - `promote_pairs.py`
+  - `report_generator.py`
+  - `refresh_pair_data.py`
+- Preferred next architecture slice:
+  - move CLI entrypoints under `src/engine/trader/cli/`
+  - update callers to canonical paths:
+    `state.manager`, `signals`, `runtime.trader`, `reporting`, and `cli`
+  - delete root-level facades instead of preserving duplicate import paths
+
+Remaining functional gaps:
+
+- Telegram does not yet show pair-validity diagnostics.
+- Candidate/promoted artifacts still lack full research baseline fields:
+  research window start/end, bars used, baseline correlation, spread mean/std,
+  and z-score distribution stats.
+- Entry gating has not been implemented and should remain deferred until
+  diagnostics and thresholds are operator-reviewed.
+- Scheduled refresh/candidate regeneration remains later work.
 
 Local Telegram and state-only readiness work completed:
 
@@ -514,8 +613,7 @@ Phase 2: Build read-only diagnostics module
 Candidate module shape:
 
 ```text
-src/engine/trader/runtime/pair_validity.py
-src/engine/trader/runtime/pair_validity_models.py
+src/engine/trader/runtime/pair_validity/
 ```
 
 Responsibilities:
@@ -814,7 +912,11 @@ Generate a text report:
 .venv/bin/python -m src.engine.trader.report_generator \
   --db-path data/dev/trades_1m.db \
   --min-sharpe 0.5 \
-  --surviving-pairs-path data/universes/1m/surviving_pairs.json
+  --surviving-pairs-path data/universes/1m/surviving_pairs.json \
+  --market-data-base-dir data/parquet \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3
 ```
 
 Generate parse-safe JSON:
@@ -824,13 +926,27 @@ Generate parse-safe JSON:
   --db-path data/dev/trades_1m.db \
   --min-sharpe 0.5 \
   --surviving-pairs-path data/universes/1m/surviving_pairs.json \
+  --market-data-base-dir data/parquet \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3 \
   --json
+```
+
+Refresh local parquet for promoted-pair diagnostics:
+
+```bash
+.venv/bin/python -m src.engine.trader.refresh_pair_data \
+  --pipeline configs/pipelines/dev.yml \
+  --overlap-bars 5 \
+  --missing-lookback-bars 1500 \
+  --fetch-limit 1000
 ```
 
 Render current Telegram health in the terminal:
 
 ```bash
-.venv/bin/python -c "from src.interfaces.telegram import context as c; from src.engine.trader.runtime.health import build_trader_health_snapshot, render_trader_health_snapshot; c.configure_daemon('configs/telegram/dev.yml'); s=c.open_state_manager(); snap=build_trader_health_snapshot(s, environment=c.environment_label() or 'N/A', stale_after_minutes=c.health_stale_after_minutes()); print(render_trader_health_snapshot(snap)); s.close()"
+.venv/bin/python -c "from src.interfaces.telegram import context as c; from src.engine.trader.runtime.monitoring.health import build_trader_health_snapshot, render_trader_health_snapshot; c.configure_daemon('configs/telegram/dev.yml'); s=c.open_state_manager(); snap=build_trader_health_snapshot(s, environment=c.environment_label() or 'N/A', stale_after_minutes=c.health_stale_after_minutes()); print(render_trader_health_snapshot(snap)); s.close()"
 ```
 
 Inspect positions:

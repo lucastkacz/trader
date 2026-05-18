@@ -97,15 +97,32 @@ sqlite3 data/dev/trades_1m.db \
   'select id, status, started_at, finished_at from reconciliation_runs order by id;'
 ```
 
-## 5. Generate Reports
+## 5. Refresh Pair Data And Generate Validity Reports
+
+Refresh local parquet data for symbols in the promoted pair artifact before
+using pair-validity diagnostics. This is a readonly market-data operation and
+does not promote artifacts, hot-reload execution, submit orders, or close
+positions.
+
+```bash
+.venv/bin/python -m src.engine.trader.refresh_pair_data \
+  --pipeline configs/pipelines/dev.yml \
+  --overlap-bars 5 \
+  --missing-lookback-bars 1500 \
+  --fetch-limit 1000
+```
 
 Human-readable report:
 
 ```bash
 .venv/bin/python -m src.engine.trader.report_generator \
   --db-path data/dev/trades_1m.db \
-  --min-sharpe 1.0 \
-  --surviving-pairs-path data/universes/1m/surviving_pairs.json
+  --min-sharpe 0.5 \
+  --surviving-pairs-path data/universes/1m/surviving_pairs.json \
+  --market-data-base-dir data/parquet \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3
 ```
 
 Automation-safe JSON report:
@@ -113,8 +130,12 @@ Automation-safe JSON report:
 ```bash
 .venv/bin/python -m src.engine.trader.report_generator \
   --db-path data/dev/trades_1m.db \
-  --min-sharpe 1.0 \
+  --min-sharpe 0.5 \
   --surviving-pairs-path data/universes/1m/surviving_pairs.json \
+  --market-data-base-dir data/parquet \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3 \
   --json
 ```
 

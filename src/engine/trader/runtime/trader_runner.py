@@ -10,11 +10,11 @@ from src.engine.trader.config import PipelineConfig, RiskConfig, StrategyConfig
 from src.engine.trader.execution.orders import CCXTOrderExecutionAdapter
 from src.engine.trader.reconciliation import ExchangeSnapshotProvider, run_boot_reconciliation
 from src.engine.trader.runtime.credentials import resolve_credentials
-from src.engine.trader.runtime.health import (
+from src.engine.trader.runtime.monitoring.health import (
     build_trader_health_snapshot,
     render_trader_health_snapshot,
 )
-from src.engine.trader.runtime.run_status import (
+from src.engine.trader.runtime.monitoring.run_status import (
     record_observer_max_ticks_completed,
     record_observer_run_failed,
     record_observer_run_interrupted,

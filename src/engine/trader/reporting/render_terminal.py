@@ -196,6 +196,63 @@ def render_state_ledger(report: TradeReport) -> None:
             print(_metric(status, str(count)))
 
 
+def render_pair_validity(report: TradeReport, filter_pair: str = None) -> None:
+    _header("PAIR VALIDITY DIAGNOSTICS")
+    validity = report.pair_validity
+    if validity is None:
+        print(f"  {C.DIM}Not requested. Pass market-data diagnostics inputs to enable.{C.RESET}")
+        return
+    if validity.notes:
+        for note in validity.notes:
+            print(f"  {C.YELLOW}{note}{C.RESET}")
+        if not validity.snapshots:
+            return
+
+    snapshots = validity.snapshots
+    if filter_pair:
+        snapshots = [snapshot for snapshot in snapshots if snapshot.pair_label == filter_pair]
+        if not snapshots:
+            print(f"  {C.RED}No pair-validity data found for pair: {filter_pair}{C.RESET}")
+            return
+
+    print(
+        f"  {C.DIM}{'Pair':<30} {'Bars':>7} {'HR Drift':>10} "
+        f"{'Corr':>9} {'P-Value':>9} {'HL Drift':>10} {'Review':>8}{C.RESET}"
+    )
+    print(
+        f"  {C.DIM}{'─'*30} {'─'*7} {'─'*10} "
+        f"{'─'*9} {'─'*9} {'─'*10} {'─'*8}{C.RESET}"
+    )
+
+    for snapshot in snapshots:
+        review_count = (
+            len(snapshot.operator_review_reasons)
+            + len(snapshot.open_position_review_reasons)
+        )
+        review = f"{C.YELLOW}{review_count}{C.RESET}" if review_count else f"{C.GREEN}0{C.RESET}"
+        print(
+            f"  {snapshot.pair_label:<30} "
+            f"{_fmt_int(snapshot.bars_since_artifact_generation):>7} "
+            f"{_fmt_pct(snapshot.hedge_ratio_drift_pct):>10} "
+            f"{_fmt_pair(snapshot.recent_correlation, snapshot.research_correlation):>9} "
+            f"{_fmt_pair(snapshot.recent_p_value, snapshot.research_p_value):>9} "
+            f"{_fmt_pct(snapshot.half_life_drift_pct):>10} "
+            f"{review:>17}"
+        )
+        if snapshot.open_position_id is not None:
+            multiple = _fmt_float(snapshot.open_position_half_life_multiple, ".2f")
+            print(
+                f"  {C.DIM}  └─ Open #{snapshot.open_position_id}: "
+                f"{_fmt_int(snapshot.open_position_holding_bars)} bars, "
+                f"{multiple}x research half-life{C.RESET}"
+            )
+        reasons = snapshot.operator_review_reasons + snapshot.open_position_review_reasons
+        if reasons:
+            print(f"  {C.DIM}  └─ Review: {', '.join(reasons)}{C.RESET}")
+        if snapshot.notes:
+            print(f"  {C.DIM}  └─ Notes: {', '.join(snapshot.notes)}{C.RESET}")
+
+
 def render_backtest_comparison(report: TradeReport) -> None:
     _header("BACKTEST vs LIVE COMPARISON")
 
@@ -219,3 +276,23 @@ def render_backtest_comparison(report: TradeReport) -> None:
         else:
             verdict = f"{C.RED}BROKEN (Live/BT = {ratio:.2f}){C.RESET}"
         print(f"\n  {C.BOLD}Verdict:{C.RESET} {verdict}")
+
+
+def _fmt_float(value: float | None, fmt: str = ".4f") -> str:
+    return f"{value:{fmt}}" if value is not None else "N/A"
+
+
+def _fmt_int(value: int | None) -> str:
+    return str(value) if value is not None else "N/A"
+
+
+def _fmt_pct(value: float | None) -> str:
+    return f"{value:+.1f}%" if value is not None else "N/A"
+
+
+def _fmt_pair(recent: float | None, research: float | None) -> str:
+    if recent is None:
+        return "N/A"
+    if research is None:
+        return f"{recent:.3f}"
+    return f"{recent:.3f}/{research:.3f}"

@@ -49,6 +49,8 @@ For pair validity, data refresh cadence, or drift diagnostics:
 - `CONTEXT.md`
 - `docs/system-design.md`, section "Pair Validity And Refresh Cycle"
 - `docs/current-roadmap.md`
+- `docs/local-operator-runbook.md`, section "Refresh Pair Data And Generate
+  Validity Reports" for the local CLI flow
 
 For local state-only operator drills:
 

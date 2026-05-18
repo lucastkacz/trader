@@ -82,6 +82,38 @@ def render_markdown(report: TradeReport) -> str:
         )
     lines.append("")
 
+    if report.pair_validity is not None:
+        lines.append("## Pair Validity Diagnostics\n")
+        if report.pair_validity.notes:
+            for note in report.pair_validity.notes:
+                lines.append(f"- {note}")
+            lines.append("")
+        if report.pair_validity.snapshots:
+            lines.append(
+                "| Pair | Bars Since Artifact | Hedge Drift | Corr Recent/Research | "
+                "P Recent/Research | Half-Life Drift | Review Reasons |"
+            )
+            lines.append(
+                "|------|---------------------|-------------|----------------------|"
+                "-------------------|-----------------|----------------|"
+            )
+            for snapshot in report.pair_validity.snapshots:
+                reasons = (
+                    snapshot.operator_review_reasons
+                    + snapshot.open_position_review_reasons
+                )
+                reason_text = ", ".join(reasons) if reasons else "none"
+                lines.append(
+                    f"| {snapshot.pair_label} | "
+                    f"{_fmt_int(snapshot.bars_since_artifact_generation)} | "
+                    f"{_fmt_pct(snapshot.hedge_ratio_drift_pct)} | "
+                    f"{_fmt_pair(snapshot.recent_correlation, snapshot.research_correlation)} | "
+                    f"{_fmt_pair(snapshot.recent_p_value, snapshot.research_p_value)} | "
+                    f"{_fmt_pct(snapshot.half_life_drift_pct)} | "
+                    f"{reason_text} |"
+                )
+            lines.append("")
+
     if report.trade_log:
         lines.append("## Trade Log\n")
         lines.append("| ID | Pair | Side | Entry Z | PnL% | Bars |")
@@ -101,3 +133,19 @@ def render_markdown(report: TradeReport) -> str:
 
 def _fmt(value: float | None, fmt: str = ".4f") -> str:
     return f"{value:{fmt}}" if value is not None else "N/A"
+
+
+def _fmt_int(value: int | None) -> str:
+    return str(value) if value is not None else "N/A"
+
+
+def _fmt_pct(value: float | None) -> str:
+    return f"{value:+.1f}%" if value is not None else "N/A"
+
+
+def _fmt_pair(recent: float | None, research: float | None) -> str:
+    if recent is None:
+        return "N/A"
+    if research is None:
+        return f"{recent:.3f}"
+    return f"{recent:.3f}/{research:.3f}"

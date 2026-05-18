@@ -6,12 +6,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.engine.trader.runtime.pair_artifact_contract import (
+from src.engine.trader.runtime.artifacts.contract import (
     ValidatedPairArtifact,
     build_pair_artifact,
     validate_pair_artifact_file,
 )
-from src.engine.trader.runtime.pair_artifact_promotion_audit import (
+from src.engine.trader.runtime.artifacts.promotion_audit import (
     PAIR_ARTIFACT_PROMOTION_AUDIT_FILENAME,
     PairRefreshPromotionPolicy,
     append_promotion_audit_record,

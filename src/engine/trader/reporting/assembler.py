@@ -24,6 +24,11 @@ from src.engine.trader.reporting.per_pair import _compute_per_pair
 from src.engine.trader.reporting.risk import _compute_risk
 from src.engine.trader.reporting.signal_quality import _compute_signal_quality
 from src.engine.trader.reporting.state_ledger import _compute_state_ledger
+from src.engine.trader.runtime.pair_validity import build_pair_validity_report
+from src.engine.trader.runtime.pair_validity.models import (
+    PairValidityConfig,
+    PairValidityReport,
+)
 from src.utils.timeframe_math import get_bars_per_year
 
 if TYPE_CHECKING:
@@ -34,6 +39,8 @@ def generate_report(
     state: "TradeStateManager",
     min_sharpe: float,
     surviving_pairs_path: str,
+    market_data_base_dir: str | None = None,
+    pair_validity_config: PairValidityConfig | None = None,
 ) -> TradeReport:
     """Generate a complete report from the current database state."""
     all_orders = state.get_all_orders()
@@ -81,6 +88,12 @@ def generate_report(
         reconciliation_runs=reconciliation_runs,
         reconciliation_deltas=reconciliation_deltas,
     )
+    pair_validity = _compute_pair_validity_report(
+        state=state,
+        surviving_pairs_path=surviving_pairs_path,
+        market_data_base_dir=market_data_base_dir,
+        pair_validity_config=pair_validity_config,
+    )
 
     bt_avg_sharpe, bt_avg_pnl = _compute_backtest_averages(
         backtest_lookup=backtest_lookup,
@@ -108,6 +121,7 @@ def generate_report(
         signal_quality=sig_quality,
         risk=risk,
         state_ledger=state_ledger,
+        pair_validity=pair_validity,
         backtest_avg_sharpe=bt_avg_sharpe,
         backtest_avg_pnl=bt_avg_pnl,
         trade_log=[dict(t) for t in closed_trades],
@@ -135,3 +149,31 @@ def _compute_backtest_averages(
         if tier1_bt else None
     )
     return bt_avg_sharpe, bt_avg_pnl
+
+
+def _compute_pair_validity_report(
+    *,
+    state: "TradeStateManager",
+    surviving_pairs_path: str,
+    market_data_base_dir: str | None,
+    pair_validity_config: PairValidityConfig | None,
+) -> PairValidityReport | None:
+    if market_data_base_dir is None or pair_validity_config is None:
+        return None
+
+    try:
+        return build_pair_validity_report(
+            surviving_pairs_path=surviving_pairs_path,
+            market_data_base_dir=market_data_base_dir,
+            state=state,
+            config=pair_validity_config,
+        )
+    except Exception as exc:
+        return PairValidityReport(
+            artifact_path=surviving_pairs_path,
+            timeframe="unknown",
+            exchange="unknown",
+            pair_count=0,
+            snapshots=[],
+            notes=[f"pair_validity_unavailable: {exc}"],
+        )

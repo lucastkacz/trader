@@ -2,7 +2,7 @@
 
 import html
 
-from src.engine.trader.runtime.run_status import RunStatusSnapshot
+from src.engine.trader.runtime.monitoring.run_status import RunStatusSnapshot
 from src.interfaces.telegram.rendering.formatting import format_age_minutes
 
 

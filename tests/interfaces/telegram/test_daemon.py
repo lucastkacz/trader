@@ -6,7 +6,7 @@ import pytest
 
 from src.core.config import settings
 from src.engine.trader.runtime.pairs import build_pair_artifact
-from src.engine.trader.runtime.run_status import record_observer_max_ticks_completed
+from src.engine.trader.runtime.monitoring.run_status import record_observer_max_ticks_completed
 from src.engine.trader.state_manager import TradeStateManager
 from src.interfaces.telegram import daemon
 from src.interfaces.telegram import context as telegram_context

@@ -7,7 +7,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from src.engine.trader.runtime.pair_artifact_contract import ValidatedPairArtifact
+from src.engine.trader.runtime.artifacts.contract import ValidatedPairArtifact
 
 PAIR_ARTIFACT_PROMOTION_AUDIT_FILENAME = "promotion_audit.jsonl"
 
