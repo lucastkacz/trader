@@ -100,6 +100,37 @@ operator runs research
 
 Scheduled refresh and hot reload are future work.
 
+## Pair Validity And Refresh Cycle
+
+Promoted pairs are perishable execution inputs. Their useful life should be
+expressed with quantified diagnostics, not vague labels. Artifact age by itself
+is only a clock; pair validity asks whether recent data and observed execution
+behavior still resemble the research assumptions that made the pair eligible.
+
+The platform should treat these as separate concerns:
+
+- **Artifact/data age**: wall-clock time and bars elapsed since the research
+  input window ended, since the candidate artifact was generated, and since the
+  artifact was promoted.
+- **Statistical drift**: changes in hedge ratio, spread mean/std, correlation,
+  cointegration p-value, half-life, and z-score distribution when measured on a
+  recent rolling window versus the research window.
+- **Execution behavior drift**: differences between observed state-only or live
+  behavior and research expectations, including entry frequency, natural-exit
+  timing, realized PnL, friction drag, and positions exceeding expected
+  half-life multiples.
+
+Refresh cycles may fetch or append market data and recompute diagnostics or a
+new candidate artifact on an operator-chosen cadence. The cadence, data window,
+exchange, timeframe, storage, and runtime policy must enter through typed
+config, explicit parameters, or adapters.
+
+The first safe implementation should be read-only diagnostics and operator
+visibility. Later entry gating may block new entries for pairs whose quantified
+diagnostics exceed configured limits. Existing positions must continue under
+natural exit unless an explicit operator command, auditor action, or tested risk
+kill switch says otherwise.
+
 ## Configuration
 
 Config is split by concern:

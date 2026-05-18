@@ -6,6 +6,7 @@ import pytest
 
 from src.core.config import settings
 from src.engine.trader.runtime.pairs import build_pair_artifact
+from src.engine.trader.runtime.run_status import record_observer_max_ticks_completed
 from src.engine.trader.state_manager import TradeStateManager
 from src.interfaces.telegram import daemon
 from src.interfaces.telegram import context as telegram_context
@@ -313,6 +314,113 @@ async def test_health_reports_runtime_state(configured_daemon):
     assert "Equity: +3.0000%" in message
     assert "Realized: +1.0000%" in message
     assert "Unrealized: +2.0000%" in message
+
+
+@pytest.mark.asyncio
+async def test_menu_shows_operator_tree(configured_daemon):
+    update = FakeUpdate(chat_id="123")
+
+    await daemon.bot_menu(update, _context())
+
+    update.message.reply_text.assert_awaited_once()
+    message = update.message.reply_text.await_args.args[0]
+    keyboard = update.message.reply_text.await_args.kwargs["reply_markup"].inline_keyboard
+    assert "STAT-ARB CONTROLLER" in message
+    assert "Mode: TEST" in message
+    assert keyboard[0][0].text == "Runtime"
+    assert keyboard[0][0].callback_data == "menu:runtime"
+    assert keyboard[1][0].text == "Pairs"
+
+
+@pytest.mark.asyncio
+async def test_menu_runtime_section_offers_run_status(configured_daemon):
+    update = FakeCallbackUpdate(chat_id="123", callback_data="menu:runtime")
+
+    await daemon.bot_menu_callback(update, _context())
+
+    update.callback_query.answer.assert_awaited_once()
+    message = update.callback_query.message.reply_text.await_args.args[0]
+    keyboard = update.callback_query.message.reply_text.await_args.kwargs[
+        "reply_markup"
+    ].inline_keyboard
+    assert "RUNTIME" in message
+    assert keyboard[1][0].text == "Run Status"
+    assert keyboard[1][0].callback_data == "menu:run_status"
+
+
+@pytest.mark.asyncio
+async def test_run_status_reports_max_tick_completion_and_state_only_safety(
+    configured_daemon,
+):
+    pairs_path = configured_daemon.parent / "surviving_pairs.json"
+    pairs_path.write_text(
+        json.dumps(
+            build_pair_artifact(
+                pair_rows=[
+                    {
+                        "Asset_X": "BTC/USDT",
+                        "Asset_Y": "ETH/USDT",
+                        "Hedge_Ratio": 1.2,
+                        "Half_Life": 42.0,
+                        "P_Value": 0.03,
+                        "Best_Params": {"lookback_bars": 120, "entry_z": 2.0},
+                        "Performance": {
+                            "final_pnl_pct": 1.25,
+                            "sharpe_ratio": 3.5,
+                        },
+                    }
+                ],
+                timeframe="1m",
+                exchange="bybit",
+                generated_at="2026-05-16T23:50:56+00:00",
+            )
+        ),
+        encoding="utf-8",
+    )
+    state = TradeStateManager(db_path=str(configured_daemon))
+    try:
+        spread_id = state.open_position(
+            "BTC/USDT|ETH/USDT",
+            "BTC/USDT",
+            "ETH/USDT",
+            "LONG_SPREAD",
+            100.0,
+            50.0,
+            0.5,
+            0.5,
+            -2.0,
+            120,
+        )
+        state.record_tick_signal(
+            pair_label="BTC/USDT|ETH/USDT",
+            z_score=-1.0,
+            weight_a=0.5,
+            weight_b=0.5,
+            signal="LONG_SPREAD",
+            action="HOLD",
+            price_a=101.0,
+            price_b=49.0,
+        )
+        record_observer_max_ticks_completed(
+            state,
+            max_ticks=180,
+            completed_ticks=180,
+            open_position_ids=[spread_id],
+        )
+    finally:
+        state.close()
+
+    update = FakeUpdate(chat_id="123")
+    await daemon.bot_run_status(update, _context())
+
+    update.message.reply_text.assert_awaited_once()
+    message = update.message.reply_text.await_args.args[0]
+    assert "RUN STATUS" in message
+    assert "CLEANLY_STOPPED_MAX_TICKS" in message
+    assert "Completed 180 ticks" in message
+    assert "Open IDs: #1" in message
+    assert "State-only order-id invariant: PASS" in message
+    assert "Report JSON parse: OK" in message
 
 
 @pytest.mark.asyncio

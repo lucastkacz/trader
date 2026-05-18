@@ -14,6 +14,12 @@ from src.engine.trader.runtime.health import (
     build_trader_health_snapshot,
     render_trader_health_snapshot,
 )
+from src.engine.trader.runtime.run_status import (
+    record_observer_max_ticks_completed,
+    record_observer_run_failed,
+    record_observer_run_interrupted,
+    record_observer_run_started,
+)
 from src.engine.trader.state_manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
@@ -50,6 +56,7 @@ async def run_trader_loop(
 
     state = TradeStateManager(db_path=execution_cfg.db_path)
     try:
+        record_observer_run_started(state, max_ticks=execution_cfg.max_ticks)
         await _run_boot_reconciliation(state, reconciliation_snapshot_provider, api_key, api_secret, notifier)
         await _notify_boot_health(state, pipeline_cfg, notifier)
         await _run_ticks(
@@ -64,8 +71,10 @@ async def run_trader_loop(
             order_adapter=order_adapter,
         )
     except KeyboardInterrupt:
+        record_observer_run_interrupted(state)
         logger.info("Trader Engine shut down by user (KeyboardInterrupt).")
     except Exception as exc:
+        record_observer_run_failed(state, reason=str(exc))
         logger.critical(f"Trader Engine crashed: {exc}")
         await notifier.send(f"⚠️ <b>FATAL ERROR:</b> Trader Engine crashed:\n<pre>{exc}</pre>")
         raise
@@ -164,10 +173,24 @@ async def _run_ticks(
         tick_count += 1
         if pipeline_cfg.execution.max_ticks is not None and tick_count >= pipeline_cfg.execution.max_ticks:
             logger.info(f"Completed {pipeline_cfg.execution.max_ticks} ticks. Auto-stopping.")
+            open_positions = state.get_open_positions()
+            record_observer_max_ticks_completed(
+                state,
+                max_ticks=pipeline_cfg.execution.max_ticks,
+                completed_ticks=tick_count,
+                open_position_ids=[int(position["id"]) for position in open_positions],
+            )
+            exposure_line = (
+                "No exchange exposure exists in state-only mode."
+                if pipeline_cfg.execution.order_execution.mode == "state_only"
+                else "Review exchange exposure before restart."
+            )
             await notifier.send(
                 "🛑 <b>Runtime Auto-Stopped</b>\n"
-                f"Completed max_ticks={pipeline_cfg.execution.max_ticks}.\n"
-                "No further ticks will run until the process is restarted."
+                f"Completed {pipeline_cfg.execution.max_ticks} ticks.\n"
+                f"Open local positions remain: {len(open_positions)}.\n"
+                f"{exposure_line}\n"
+                "Restart observer to continue natural-exit evaluation."
             )
             break
 

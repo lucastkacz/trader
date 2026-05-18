@@ -44,6 +44,12 @@ For pair recalculation or eligible pair artifacts:
 - `docs/system-design.md`
 - `docs/current-roadmap.md`
 
+For pair validity, data refresh cadence, or drift diagnostics:
+
+- `CONTEXT.md`
+- `docs/system-design.md`, section "Pair Validity And Refresh Cycle"
+- `docs/current-roadmap.md`
+
 For local state-only operator drills:
 
 - `docs/local-operator-runbook.md`

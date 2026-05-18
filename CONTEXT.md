@@ -22,6 +22,18 @@ Canonical system documentation lives in `docs/`.
 
 **Promoted artifact**: the artifact version accepted for execution loading.
 
+**Pair validity**: quantified evidence that a promoted pair still resembles the
+research assumptions that made it eligible. This should be expressed with
+measurements such as artifact/data age, bars since research, hedge-ratio drift,
+spread distribution drift, correlation drift, cointegration drift, observed
+holding-time multiples, and execution-vs-research behavior. Avoid vague labels
+without the underlying numbers.
+
+**Refresh cycle**: the operator-governed loop that fetches or appends recent
+market data, recomputes pair validity diagnostics or a candidate artifact,
+records audit evidence, and asks an operator to decide whether to promote. A
+refresh cycle must not imply rebalancing or hidden forced closes.
+
 **Config boundary**: the layer where YAML dictionaries are parsed into typed configuration objects. Raw YAML dicts must not leak below this layer.
 
 **Live exchange mutation**: any operation that can create, modify, or cancel real orders or positions on an exchange.

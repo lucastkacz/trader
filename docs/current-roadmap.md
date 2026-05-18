@@ -2,45 +2,46 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Dev State-Only Dry Run From Promoted Candidate Artifact
+## Now: Quantified Pair Validity And Refresh Policy Design
 
 Goal:
 
 ```text
-prove the execution flow can safely consume a manually promoted dev candidate
-artifact in state-only mode before designing scheduled refresh behavior
+design how promoted pair validity, data refresh, and candidate regeneration are
+measured and surfaced before any scheduled refresh or entry gating is automated
 ```
 
 Required behavior:
 
-- Rerun dev 1m research from the dev run profile, fetching fresh data when
-  local parquet data is absent, and write a candidate artifact plus pair stress
-  report.
-- Inspect the stress report for source data windows, tested pairs, simulated
-  entries and exits, gross/net returns, friction drag, and rejection reasons
-  before promotion.
-- Manually promote only an inspected dev candidate artifact for state-only
-  execution loading.
-- Run a bounded state-only execution dry run that loads the promoted artifact on
-  boot and records signal/position state without exchange mutation.
-- Compare execution signal behavior against the research stress report for the
-  promoted pairs.
-- Keep development-only 1m universe and stress tuning separate from canonical
-  alpha configuration.
-- Preserve the research-to-candidate, operator-promotion, promoted-on-boot
-  lifecycle.
-- Keep artifact, audit, market-data, exchange, clock, and runtime policy
-  supplied through typed config, explicit parameters, or adapters.
-- Keep execution loading only the promoted artifact on boot.
-- Keep the current `pair_refresh` policy manual, on-boot, and natural-exit.
+- Define quantified pair validity diagnostics rather than vague freshness
+  labels. Required diagnostics should include artifact/data age in bars and
+  time, hedge-ratio drift, spread distribution drift, correlation drift,
+  cointegration drift, half-life drift, and execution behavior drift where data
+  is available.
+- Define the refresh cycle as a read-only/operator-governed loop:
+  fetch or append recent market data, recompute diagnostics or a candidate
+  artifact, write audit evidence, and require operator promotion before
+  execution uses a new promoted artifact.
+- Decide cadence semantics without hardcoding operational assumptions. Candidate
+  options include every `N` closed candles, every `N * median_half_life`, a
+  wall-clock schedule per timeframe, or a hybrid policy.
+- Preserve research-to-candidate, operator-promotion, promoted-on-boot loading,
+  and natural exit for existing positions.
+- Keep artifact, audit, market-data, exchange, clock, storage, cadence, and
+  runtime policy supplied through typed config, explicit parameters, or adapters.
+- Implement read-only visibility first in reports and Telegram before changing
+  entry behavior.
 
 Do not implement:
 
 - automatic rebalancing
 - forced closes from pair-set changes
-- scheduled refresh
+- automatic scheduled refresh before the quantified policy is designed and
+  tested
 - hot reload
 - exchange mutation from research
+- automatic promotion
+- hidden entry blocking without operator-visible diagnostics and tests
 - increased real-capital exposure
 
 ## Standing Gate: No Capital Increase
@@ -49,27 +50,28 @@ Do not increase real-capital exposure while the active work is artifact
 lifecycle. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
 
-## Next: Scheduled Refresh Preparation
+## Next: Read-Only Pair Validity Diagnostics
 
 ```text
-design scheduled pair refresh only after the manual dev dry-run lifecycle is
-traceable from research report through state-only execution behavior
+compute and display quantified pair validity diagnostics from recent fetched
+data and persisted state-only execution behavior
 ```
 
-Preparation must define the operator cadence and traceable research-run
-expectations before scheduled mode is implemented.
+Diagnostics should be available through reporting and Telegram, but should not
+block entries until the operator has reviewed the metrics and thresholds.
 
-## Later: Scheduled Refresh
+## Later: Scheduled Candidate Regeneration
 
 ```text
-operator chooses cadence
--> research run writes candidate artifact
--> validator and promotion publish a new promoted artifact
--> operator restarts trader
+configured cadence triggers read-only market-data refresh
+-> research run writes candidate artifact plus validity diagnostics
+-> operator reviews audit evidence
+-> operator promotes when acceptable
+-> trader restarts and loads promoted artifact on boot
 ```
 
-Scheduled mode may run research on a configured cadence, but only after the
-cadence contract and traceable research-run contract are designed.
+Scheduled mode may run research on a configured cadence, but promotion remains
+operator-controlled unless a separate audited policy is designed and tested.
 
 Scheduled mode must still preserve natural exit for existing positions.
 

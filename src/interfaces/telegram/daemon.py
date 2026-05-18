@@ -19,6 +19,8 @@ from src.interfaces.telegram.handlers import (
     bot_help,
     bot_inspect,
     bot_inspect_position_callback,
+    bot_menu,
+    bot_menu_callback,
     bot_pause,
     bot_position_menu_callback,
     bot_plot,
@@ -26,6 +28,7 @@ from src.interfaces.telegram.handlers import (
     bot_positions,
     bot_promoted_pairs,
     bot_resume,
+    bot_run_status,
     bot_status,
     bot_stop_all,
     bot_stop_pair,
@@ -47,9 +50,12 @@ def build_application():
 
     app = ApplicationBuilder().token(settings.telegram_bot_token).build()
 
-    app.add_handler(CommandHandler("start", bot_help))
+    app.add_handler(CommandHandler("start", bot_menu))
+    app.add_handler(CommandHandler("menu", bot_menu))
     app.add_handler(CommandHandler("help", bot_help))
     app.add_handler(CommandHandler("health", bot_health))
+    app.add_handler(CommandHandler("run_status", bot_run_status))
+    app.add_handler(CommandHandler("drill", bot_run_status))
     app.add_handler(CommandHandler("status", bot_status))
     app.add_handler(CommandHandler("positions", bot_positions))
     app.add_handler(CommandHandler("pairs", bot_promoted_pairs))
@@ -59,6 +65,7 @@ def build_application():
     app.add_handler(
         CallbackQueryHandler(bot_position_menu_callback, pattern="^position_menu:")
     )
+    app.add_handler(CallbackQueryHandler(bot_menu_callback, pattern="^menu:"))
     app.add_handler(
         CallbackQueryHandler(bot_inspect_position_callback, pattern="^inspect_position:")
     )
