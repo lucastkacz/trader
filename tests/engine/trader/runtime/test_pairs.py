@@ -63,6 +63,43 @@ def test_load_tier1_pairs_validates_and_filters(monkeypatch, tmp_path):
     assert tier1[0]["Performance"]["sharpe_ratio"] == 1.25
 
 
+def test_pair_artifact_validation_preserves_research_baseline_fields():
+    pair = _valid_pair()
+    pair.update({
+        "Research_Window": {
+            "start": "2026-01-01T00:00:00+00:00",
+            "end": "2026-01-01T01:00:00+00:00",
+            "bars": 61,
+        },
+        "Correlation": 0.82,
+        "Spread_Mean": 0.01,
+        "Spread_Std": 0.2,
+        "Z_Score_Distribution": {
+            "lookback_bars": 20,
+            "observations": 42,
+            "mean": 0.0,
+            "std": 1.0,
+            "min": -2.0,
+            "max": 2.1,
+            "p05": -1.4,
+            "p95": 1.5,
+        },
+    })
+
+    validated = pairs.extract_pair_artifact_pairs(
+        _artifact([pair]),
+        "artifact.json",
+        expected_timeframe="1m",
+        expected_exchange="bybit",
+    )
+
+    assert validated[0]["Research_Window"]["bars"] == 61
+    assert validated[0]["Correlation"] == 0.82
+    assert validated[0]["Spread_Mean"] == 0.01
+    assert validated[0]["Spread_Std"] == 0.2
+    assert validated[0]["Z_Score_Distribution"]["observations"] == 42
+
+
 def test_load_tier1_pairs_rejects_mismatched_artifact_metadata(monkeypatch, tmp_path):
     artifact_base_dir = _artifact_base_dir(tmp_path)
     universe_dir = artifact_base_dir / "1m"

@@ -253,6 +253,49 @@ def render_pair_validity(report: TradeReport, filter_pair: str = None) -> None:
             print(f"  {C.DIM}  └─ Notes: {', '.join(snapshot.notes)}{C.RESET}")
 
 
+def render_pair_queue(report: TradeReport, filter_pair: str = None) -> None:
+    _header("DYNAMIC PAIR QUEUE")
+    queue = report.pair_queue
+    if queue is None:
+        print(f"  {C.DIM}Not requested. Pair-validity diagnostics are required.{C.RESET}")
+        return
+
+    decisions = queue.decisions
+    if filter_pair:
+        decisions = [decision for decision in decisions if decision.pair_label == filter_pair]
+        if not decisions:
+            print(f"  {C.RED}No pair-queue decision found for pair: {filter_pair}{C.RESET}")
+            return
+
+    print(
+        f"  {C.DIM}{'Rank':>4} {'Pair':<30} {'Entry':>7} {'Total':>7} "
+        f"{'Rsrch':>7} {'Valid':>7} {'Opp':>7} {'Blocks':>7}{C.RESET}"
+    )
+    print(
+        f"  {C.DIM}{'─'*4} {'─'*30} {'─'*7} {'─'*7} "
+        f"{'─'*7} {'─'*7} {'─'*7} {'─'*7}{C.RESET}"
+    )
+
+    for decision in decisions:
+        entry = f"{C.GREEN}YES{C.RESET}" if decision.entry_allowed else f"{C.RED}NO{C.RESET}"
+        print(
+            f"  {decision.current_rank:>4} {decision.pair_label:<30} "
+            f"{entry:>16} {decision.score_total:>7.3f} "
+            f"{decision.score_research:>7.3f} {decision.score_validity:>7.3f} "
+            f"{decision.score_opportunity:>7.3f} {len(decision.block_reasons):>7}"
+        )
+        if decision.research_rank != decision.current_rank:
+            print(
+                f"  {C.DIM}  └─ Research rank: #{decision.research_rank}{C.RESET}"
+            )
+        if decision.block_reasons:
+            print(f"  {C.DIM}  └─ Blocks: {', '.join(decision.block_reasons)}{C.RESET}")
+        if decision.review_reasons:
+            print(f"  {C.DIM}  └─ Review: {', '.join(decision.review_reasons)}{C.RESET}")
+        if decision.notes:
+            print(f"  {C.DIM}  └─ Notes: {', '.join(decision.notes)}{C.RESET}")
+
+
 def render_backtest_comparison(report: TradeReport) -> None:
     _header("BACKTEST vs LIVE COMPARISON")
 

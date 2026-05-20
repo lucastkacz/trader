@@ -15,6 +15,12 @@ def test_create_exchange_valid():
     exchange = create_exchange("bybit", "test_key", "test_secret")
     assert exchange is not None
     assert exchange.apiKey == "test_key"
+    assert exchange.options["defaultType"] == "swap"
+    assert exchange.options["defaultSubType"] == "linear"
+    assert exchange.options["defaultSettle"] == "USDT"
+    assert exchange.options["adjustForTimeDifference"] is True
+    assert exchange.options["recvWindow"] == 10_000
+    assert exchange.options["fetchMarkets"]["types"] == ["linear"]
 
 
 def test_create_exchange_invalid():

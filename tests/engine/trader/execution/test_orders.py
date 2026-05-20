@@ -8,7 +8,7 @@ from src.engine.trader.execution.orders import (
     _to_ccxt_derivative_symbol,
     execute_spread_leg_orders,
 )
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 class FakeOrderAdapter:

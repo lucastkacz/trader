@@ -7,7 +7,7 @@ from src.engine.trader.execution.orders import (
     OrderExecutionAdapter,
     execute_spread_leg_orders,
 )
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
 

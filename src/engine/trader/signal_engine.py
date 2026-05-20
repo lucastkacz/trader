@@ -1,6 +1,0 @@
-"""Import-compatible facade for trader signal evaluation."""
-
-from src.engine.trader.signals.evaluator import evaluate_signal
-from src.engine.trader.signals.models import SignalResult
-
-__all__ = ["SignalResult", "evaluate_signal"]

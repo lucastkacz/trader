@@ -11,8 +11,8 @@ from src.engine.trader.execution.orders import OrderExecutionAdapter
 from src.engine.trader.execution.pnl import calculate_per_pair_pnl, calculate_unrealized_pnl
 from src.engine.trader.runtime.actions import determine_action
 from src.engine.trader.runtime.signal_transition import route_signal_transition
-from src.engine.trader.signal_engine import evaluate_signal
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.signals.evaluator import evaluate_signal
+from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
 

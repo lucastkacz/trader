@@ -9,17 +9,24 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 
-from src.engine.trader.state_manager import TradeStateManager
-from src.engine.trader.report_engine import (
-    generate_report,
-    _detect_bars_per_year,
-    _compute_sharpe,
-    _compute_sortino,
+from src.engine.trader.cli.report_generator import (
+    main as report_main,
+    render_state_ledger,
+)
+from src.engine.trader.reporting.assembler import generate_report
+from src.engine.trader.reporting.metrics import (
     _compute_max_drawdown,
     _compute_returns,
+    _compute_sharpe,
+    _compute_sortino,
+    _detect_bars_per_year,
 )
-from src.engine.trader.report_generator import main as report_main, render_state_ledger
+from src.engine.trader.state.manager import TradeStateManager
 from src.engine.trader.reporting.render_terminal import _format_bar_interval
+from src.engine.trader.runtime.pair_validity.models import (
+    PairValidityReport,
+    PairValiditySnapshot,
+)
 
 
 @pytest.fixture
@@ -47,8 +54,9 @@ def _inject_snapshots(state, equities, interval_hours=4.0):
     state.conn.commit()
 
 
-def _write_surviving_pairs_artifact(tmp_path, timeframe="1m"):
+def _write_surviving_pairs_artifact(tmp_path, timeframe="1m", pairs=None):
     artifact_path = tmp_path / "surviving_pairs.json"
+    rows = pairs or []
     artifact_path.write_text(
         json.dumps({
             "metadata": {
@@ -57,13 +65,79 @@ def _write_surviving_pairs_artifact(tmp_path, timeframe="1m"):
                 "generated_at": "2026-01-01T00:00:00+00:00",
                 "timeframe": timeframe,
                 "exchange": "bybit",
-                "pair_count": 0,
+                "pair_count": len(rows),
             },
-            "pairs": [],
+            "pairs": rows,
         }),
         encoding="utf-8",
     )
     return artifact_path
+
+
+def _surviving_pair(asset_x, asset_y, sharpe=1.5, entry_z=2.0):
+    return {
+        "Asset_X": asset_x,
+        "Asset_Y": asset_y,
+        "Hedge_Ratio": 1.0,
+        "Best_Params": {"lookback_bars": 60, "entry_z": entry_z},
+        "Performance": {"sharpe_ratio": sharpe, "final_pnl_pct": 1.0},
+    }
+
+
+def _pair_validity_snapshot(
+    pair_label,
+    recent_correlation=0.8,
+    recent_p_value=0.02,
+    operator_review_reasons=None,
+):
+    asset_x, asset_y = pair_label.split("|")
+    return PairValiditySnapshot(
+        pair_label=pair_label,
+        asset_x=asset_x,
+        asset_y=asset_y,
+        artifact_generated_at="2026-01-01T00:00:00+00:00",
+        artifact_promoted_at="2026-01-01T01:00:00+00:00",
+        latest_data_at="2026-01-01T02:00:00+00:00",
+        timeframe="1m",
+        exchange="bybit",
+        recent_window_bars=60,
+        recent_observation_bars=60,
+        wall_clock_age_minutes_since_artifact_generation=120.0,
+        bars_since_artifact_generation=120,
+        bars_since_promotion=60,
+        research_window_start=None,
+        research_window_end=None,
+        wall_clock_age_minutes_since_research_end=None,
+        bars_since_research_end=None,
+        research_hedge_ratio=1.0,
+        recent_hedge_ratio=1.0,
+        hedge_ratio_drift_pct=0.0,
+        research_correlation=0.8,
+        recent_correlation=recent_correlation,
+        correlation_delta=recent_correlation - 0.8,
+        research_p_value=0.02,
+        recent_p_value=recent_p_value,
+        p_value_delta=recent_p_value - 0.02,
+        research_half_life_bars=40.0,
+        recent_half_life_bars=40.0,
+        half_life_drift_pct=0.0,
+        research_spread_mean=None,
+        recent_spread_mean=None,
+        spread_mean_shift_sigma=None,
+        research_spread_std=None,
+        recent_spread_std=None,
+        spread_std_drift_pct=None,
+        open_position_id=None,
+        open_position_holding_bars=None,
+        open_position_half_life_multiple=None,
+        observed_entries=0,
+        observed_signal_exits=0,
+        observed_forced_exits=0,
+        observed_avg_holding_bars=None,
+        operator_review_reasons=operator_review_reasons or [],
+        open_position_review_reasons=[],
+        notes=[],
+    )
 
 
 def _inject_trade(state, pair_label, side, entry_a, entry_b, exit_a, exit_b,
@@ -164,6 +238,110 @@ def test_report_cli_json_stdout_is_parseable(tmp_path, capsys):
 
     assert captured.out.lstrip().startswith("{")
     assert payload["status"] == "HEALTHY"
+
+
+def test_report_includes_dry_run_pair_queue_when_validity_is_available(state, tmp_path):
+    artifact_path = _write_surviving_pairs_artifact(
+        tmp_path,
+        pairs=[
+            _surviving_pair("AAA/USDT", "BBB/USDT", sharpe=2.4, entry_z=2.0),
+            _surviving_pair("CCC/USDT", "DDD/USDT", sharpe=1.2, entry_z=1.5),
+        ],
+    )
+    state.record_tick_signal(
+        "AAA/USDT|BBB/USDT",
+        z_score=0.2,
+        weight_a=0.5,
+        weight_b=0.5,
+        signal="FLAT",
+        action="SKIP",
+        price_a=10.0,
+        price_b=20.0,
+    )
+    state.record_tick_signal(
+        "CCC/USDT|DDD/USDT",
+        z_score=-1.7,
+        weight_a=0.5,
+        weight_b=0.5,
+        signal="LONG_SPREAD",
+        action="ENTRY",
+        price_a=30.0,
+        price_b=40.0,
+    )
+    validity = PairValidityReport(
+        artifact_path=str(artifact_path),
+        timeframe="1m",
+        exchange="bybit",
+        pair_count=2,
+        snapshots=[
+            _pair_validity_snapshot("AAA/USDT|BBB/USDT", recent_correlation=0.7),
+            _pair_validity_snapshot("CCC/USDT|DDD/USDT", recent_correlation=0.9),
+        ],
+    )
+
+    with patch(
+        "src.engine.trader.reporting.assembler._compute_pair_validity_report",
+        return_value=validity,
+    ):
+        report = generate_report(
+            state,
+            min_sharpe=1.0,
+            surviving_pairs_path=str(artifact_path),
+            market_data_base_dir=str(tmp_path / "parquet"),
+        )
+
+    assert report.pair_queue is not None
+    assert [decision.pair_label for decision in report.pair_queue.decisions] == [
+        "CCC/USDT|DDD/USDT",
+        "AAA/USDT|BBB/USDT",
+    ]
+    top = report.pair_queue.decisions[0]
+    assert top.current_rank == 1
+    assert top.research_rank == 2
+    assert top.entry_allowed is True
+    assert top.score_opportunity == 1.0
+
+
+def test_report_pair_queue_marks_open_positions_as_entry_blocked(state, tmp_path):
+    artifact_path = _write_surviving_pairs_artifact(
+        tmp_path,
+        pairs=[_surviving_pair("AAA/USDT", "BBB/USDT")],
+    )
+    state.open_position(
+        pair_label="AAA/USDT|BBB/USDT",
+        asset_x="AAA/USDT",
+        asset_y="BBB/USDT",
+        side="LONG_SPREAD",
+        entry_price_a=10.0,
+        entry_price_b=20.0,
+        weight_a=0.5,
+        weight_b=0.5,
+        entry_z=-2.1,
+        lookback_bars=60,
+    )
+    validity = PairValidityReport(
+        artifact_path=str(artifact_path),
+        timeframe="1m",
+        exchange="bybit",
+        pair_count=1,
+        snapshots=[_pair_validity_snapshot("AAA/USDT|BBB/USDT")],
+    )
+
+    with patch(
+        "src.engine.trader.reporting.assembler._compute_pair_validity_report",
+        return_value=validity,
+    ):
+        report = generate_report(
+            state,
+            min_sharpe=1.0,
+            surviving_pairs_path=str(artifact_path),
+            market_data_base_dir=str(tmp_path / "parquet"),
+        )
+
+    decision = report.pair_queue.decisions[0]
+    assert decision.entry_allowed is False
+    assert decision.has_open_position is True
+    assert decision.block_reasons == ["pair_position_limit_reached"]
 
 
 def test_sharpe_ratio_calculation(state):

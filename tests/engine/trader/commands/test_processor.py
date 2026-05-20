@@ -9,8 +9,8 @@ import pandas as pd
 from unittest.mock import patch, AsyncMock
 
 from src.engine.trader.config import OrderExecutionConfig
-from src.engine.trader.live_trader import LiveTrader
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.runtime.trader import LiveTrader
+from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
 @pytest.fixture

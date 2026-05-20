@@ -76,6 +76,12 @@ schema version, artifact type, generation time, timeframe, exchange, and pair
 count. Execution validates the envelope on boot and rejects missing, malformed,
 mismatched, or legacy list-only artifacts.
 
+Fresh pair rows include research baseline fields for later validity diagnostics:
+research window start/end/bars, baseline log-price correlation, canonical spread
+mean/std, and z-score distribution stats for the selected lookback. These fields
+are evidence for operator review and dry-run queue scoring; they do not imply
+automatic promotion, rebalancing, or forced closes.
+
 ## Pair Recalculation Policy
 
 Pair recalculation means producing a new eligible pair artifact for future
@@ -145,6 +151,40 @@ may block new entries for pairs whose quantified diagnostics exceed configured
 limits. Existing positions must continue under natural exit unless an explicit
 operator command, auditor action, or tested risk kill switch says otherwise.
 
+## Dynamic Promoted-Pair Queue
+
+The promoted artifact defines the approved execution universe, not a permanent
+execution order. A dynamic promoted-pair queue should be recomputed from facts:
+
+```text
+promoted artifact
++ pair-validity diagnostics
++ live opportunity evidence
++ runtime state
++ capital-slot policy
+-> ranked pair decisions for future entries
+```
+
+Each decision should explain its score components, current rank, whether a new
+entry is allowed, and the exact block or review reasons. The queue is an
+auditable decision snapshot, not a hidden mutable scheduler.
+
+The current safe implementation is dry-run ranking surfaced through reports
+when pair-validity diagnostics are requested. Execution does not yet consume
+queue decisions for order selection. That integration should happen only after a
+fresh local research/promote/run drill shows that queue decisions are sane and
+tests prove that blocked pairs affect future entries only.
+
+Queue policy is explicit pipeline config under `execution.pair_queue`. Current
+supported mode is `report_only`. `null` values in allocation caps or optional
+validity thresholds mean "not enforced" and should remain typed as intentional
+configuration, not hidden defaults.
+
+Queue decisions affect future entries only. A pair falling in rank, failing
+validity, or disappearing from a later promoted artifact must not force-close an
+existing position. Existing positions continue natural exit unless an explicit
+operator command, auditor action, or tested risk kill switch says otherwise.
+
 ## Runtime Package Shape
 
 Runtime modules are grouped by trading concept:
@@ -155,12 +195,16 @@ Runtime modules are grouped by trading concept:
   visibility.
 - `runtime/pair_validity/`: read-only pair-validity reports, market-data
   refresh helpers, drift statistics, runtime-state summaries, and typed models.
+- `runtime/pair_queue/`: dry-run ranking and entry-eligibility decisions for
+  promoted pairs, using explicit runtime policy and current state as inputs.
 - `runtime/`: execution loop modules that still directly drive trading behavior,
   such as tick evaluation, signal transitions, and trader runner orchestration.
+- `cli/`: operator command entrypoints for reporting, promoted-pair data
+  refresh, and candidate artifact promotion.
 
-The remaining root-level trader compatibility facades should be removed once
-callers use canonical package paths. Long-lived duplicate import paths reduce
-locality and should not become part of the architecture.
+Root-level trader compatibility facades are not canonical package paths.
+Callers should import concepts directly from `state.manager`, `signals`,
+`runtime.trader`, `reporting`, and `cli` so each module has one obvious home.
 
 ## Configuration
 

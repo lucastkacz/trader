@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from src.engine.analysis.spread_math import build_hedged_log_spread
-from src.engine.trader.signal_engine import evaluate_signal
+from src.engine.trader.signals.evaluator import evaluate_signal
 from src.research.pair_stress_simulation import build_pair_zscore
 
 

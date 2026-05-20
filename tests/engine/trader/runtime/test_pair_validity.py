@@ -8,7 +8,7 @@ from src.data.storage.local_parquet import ParquetStorage
 from src.engine.trader.runtime.pairs import build_pair_artifact
 from src.engine.trader.runtime.pair_validity import build_pair_validity_report
 from src.engine.trader.runtime.pair_validity.models import PairValidityConfig
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 def test_pair_validity_computes_recent_drift_and_artifact_age(tmp_path):
@@ -48,6 +48,54 @@ def test_pair_validity_computes_recent_drift_and_artifact_age(tmp_path):
     assert snapshot.recent_p_value is not None
     assert "missing_research_window_end" in snapshot.notes
     assert "missing_research_spread_mean" in snapshot.notes
+
+
+def test_pair_validity_uses_research_baseline_fields_when_present(tmp_path):
+    artifact_path = _write_artifact(
+        tmp_path,
+        pair_overrides={
+            "Research_Window": {
+                "start": "2026-05-18T00:00:00+00:00",
+                "end": "2026-05-18T02:59:00+00:00",
+                "bars": 180,
+            },
+            "Correlation": 0.91,
+            "Spread_Mean": 0.12,
+            "Spread_Std": 0.04,
+        },
+    )
+    storage = ParquetStorage(base_dir=str(tmp_path / "parquet"))
+    frame_x, frame_y = _cointegrated_ohlcv_frames(periods=180)
+    storage.save_ohlcv("AAA/USDT", "1m", frame_x, {}, exchange="bybit")
+    storage.save_ohlcv("BBB/USDT", "1m", frame_y, {}, exchange="bybit")
+    state = TradeStateManager(db_path=":memory:")
+
+    try:
+        report = build_pair_validity_report(
+            surviving_pairs_path=artifact_path,
+            market_data_base_dir=tmp_path / "parquet",
+            state=state,
+            config=PairValidityConfig(
+                recent_window_bars=120,
+                min_recent_bars=60,
+                open_position_review_half_life_multiple=None,
+            ),
+            now=datetime(2026, 5, 18, 3, 0, tzinfo=timezone.utc),
+        )
+    finally:
+        state.close()
+
+    snapshot = report.snapshots[0]
+    assert snapshot.research_window_start == "2026-05-18T00:00:00+00:00"
+    assert snapshot.research_window_end == "2026-05-18T02:59:00+00:00"
+    assert snapshot.research_correlation == 0.91
+    assert snapshot.research_spread_mean == 0.12
+    assert snapshot.research_spread_std == 0.04
+    assert "missing_research_window_start" not in snapshot.notes
+    assert "missing_research_window_end" not in snapshot.notes
+    assert "missing_research_correlation" not in snapshot.notes
+    assert "missing_research_spread_mean" not in snapshot.notes
+    assert "missing_research_spread_std" not in snapshot.notes
 
 
 def test_pair_validity_records_missing_market_data_without_mutation(tmp_path):

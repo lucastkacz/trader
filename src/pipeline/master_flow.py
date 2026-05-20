@@ -15,7 +15,7 @@ from src.engine.trader.config import (
 from src.screener.discovery_engine import DiscoveryEngine
 from src.engine.trader.runtime.pairs import candidate_pair_artifact_path
 from src.research.pair_stress_filter import PairStressFilter
-from src.engine.trader.live_trader import LiveTrader
+from src.engine.trader.runtime.trader import LiveTrader
 
 # --- RESEARCH TASKS ---
 
@@ -131,7 +131,7 @@ async def execute_flow(
     pipeline_cfg: PipelineConfig,
     strategy_cfg: StrategyConfig,
     risk_cfg: RiskConfig,
-    telegram_path: str = None,
+    telegram_path: str | None = None,
 ):
     logger = get_run_logger()
     timeframe = pipeline_cfg.timeframe

@@ -52,6 +52,13 @@ For pair validity, data refresh cadence, or drift diagnostics:
 - `docs/local-operator-runbook.md`, section "Refresh Pair Data And Generate
   Validity Reports" for the local CLI flow
 
+For dynamic promoted-pair queue, entry eligibility, or capital-slot ranking:
+
+- `CONTEXT.md`
+- `docs/system-design.md`, section "Dynamic Promoted-Pair Queue"
+- `docs/current-roadmap.md`
+- `docs/engineering-rules.md`, especially natural-exit and live-mutation rules
+
 For local state-only operator drills:
 
 - `docs/local-operator-runbook.md`

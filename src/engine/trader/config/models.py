@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictConfigModel(BaseModel):
@@ -25,6 +25,74 @@ class PairRefreshConfig(StrictConfigModel):
     stale_open_position_policy: Literal["natural_exit"]
 
 
+class PairQueueScoringConfig(StrictConfigModel):
+    research_weight: float = Field(ge=0)
+    validity_weight: float = Field(ge=0)
+    opportunity_weight: float = Field(ge=0)
+    research_sharpe_score_at: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def at_least_one_weight_is_positive(self) -> "PairQueueScoringConfig":
+        if self.research_weight + self.validity_weight + self.opportunity_weight <= 0:
+            raise ValueError("at least one pair_queue scoring weight must be positive")
+        return self
+
+
+class PairQueueValidityThresholdsConfig(StrictConfigModel):
+    block_on_missing_validity: bool
+    block_on_operator_review_reasons: bool
+    max_bars_since_promotion: int | None = Field(default=None, gt=0)
+    min_recent_correlation: float | None = Field(default=None, ge=-1, le=1)
+    max_recent_p_value: float | None = Field(default=None, ge=0, le=1)
+    max_abs_hedge_ratio_drift_pct: float | None = Field(default=None, gt=0)
+    max_half_life_drift_pct: float | None = Field(default=None, gt=0)
+
+
+class PairQueueAllocationConfig(StrictConfigModel):
+    max_open_positions: int | None = Field(default=None, gt=0)
+    max_positions_per_pair: int = Field(gt=0)
+    max_positions_per_asset: int | None = Field(default=None, gt=0)
+
+
+class PairQueueConfig(StrictConfigModel):
+    enabled: bool
+    mode: Literal["report_only"]
+    require_entry_signal: bool
+    scoring: PairQueueScoringConfig
+    validity_thresholds: PairQueueValidityThresholdsConfig
+    allocation: PairQueueAllocationConfig
+
+    def to_runtime_policy_kwargs(self) -> dict[str, object]:
+        """Return kwargs for runtime PairQueuePolicy without importing runtime code."""
+        return {
+            "research_weight": self.scoring.research_weight,
+            "validity_weight": self.scoring.validity_weight,
+            "opportunity_weight": self.scoring.opportunity_weight,
+            "research_sharpe_score_at": self.scoring.research_sharpe_score_at,
+            "max_open_positions": self.allocation.max_open_positions,
+            "max_positions_per_pair": self.allocation.max_positions_per_pair,
+            "max_positions_per_asset": self.allocation.max_positions_per_asset,
+            "require_entry_signal": self.require_entry_signal,
+            "block_on_missing_validity": (
+                self.validity_thresholds.block_on_missing_validity
+            ),
+            "block_on_operator_review_reasons": (
+                self.validity_thresholds.block_on_operator_review_reasons
+            ),
+            "max_bars_since_promotion": (
+                self.validity_thresholds.max_bars_since_promotion
+            ),
+            "min_recent_correlation": self.validity_thresholds.min_recent_correlation,
+            "max_recent_p_value": self.validity_thresholds.max_recent_p_value,
+            "max_abs_hedge_ratio_drift_pct": (
+                self.validity_thresholds.max_abs_hedge_ratio_drift_pct
+            ),
+            "max_half_life_drift_pct": (
+                self.validity_thresholds.max_half_life_drift_pct
+            ),
+        }
+
+
 class PipelineExecutionConfig(StrictConfigModel):
     exchange: str
     credential_tier: Literal["readonly", "live"]
@@ -32,11 +100,12 @@ class PipelineExecutionConfig(StrictConfigModel):
     artifact_base_dir: str = Field(min_length=1)
     db_path: str
     min_sharpe: float
-    max_ticks: int | None
-    heartbeat_seconds: int
+    max_ticks: int | None = Field(gt=0)
+    heartbeat_seconds: int = Field(gt=0)
     sync_to_boundary: bool
     order_execution: OrderExecutionConfig
     pair_refresh: PairRefreshConfig
+    pair_queue: PairQueueConfig
 
 
 class PipelineConfig(StrictConfigModel):

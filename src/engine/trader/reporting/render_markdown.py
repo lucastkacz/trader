@@ -114,6 +114,28 @@ def render_markdown(report: TradeReport) -> str:
                 )
             lines.append("")
 
+    if report.pair_queue is not None:
+        lines.append("## Dynamic Pair Queue\n")
+        lines.append(
+            "| Rank | Pair | Entry Allowed | Total | Research | Validity | "
+            "Opportunity | Blocks | Review |"
+        )
+        lines.append(
+            "|------|------|---------------|-------|----------|----------|"
+            "-------------|--------|--------|"
+        )
+        for decision in report.pair_queue.decisions:
+            blocks = ", ".join(decision.block_reasons) if decision.block_reasons else "none"
+            review = ", ".join(decision.review_reasons) if decision.review_reasons else "none"
+            lines.append(
+                f"| {decision.current_rank} | {decision.pair_label} | "
+                f"{'yes' if decision.entry_allowed else 'no'} | "
+                f"{decision.score_total:.3f} | {decision.score_research:.3f} | "
+                f"{decision.score_validity:.3f} | {decision.score_opportunity:.3f} | "
+                f"{blocks} | {review} |"
+            )
+        lines.append("")
+
     if report.trade_log:
         lines.append("## Trade Log\n")
         lines.append("| ID | Pair | Side | Entry Z | PnL% | Bars |")

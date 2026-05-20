@@ -24,6 +24,13 @@ from src.engine.trader.reporting.per_pair import _compute_per_pair
 from src.engine.trader.reporting.risk import _compute_risk
 from src.engine.trader.reporting.signal_quality import _compute_signal_quality
 from src.engine.trader.reporting.state_ledger import _compute_state_ledger
+from src.engine.trader.runtime.pair_queue import (
+    OpenPositionExposure,
+    PairQueueOpportunity,
+    PairQueuePolicy,
+    PairQueueSnapshot,
+    build_pair_queue_snapshot,
+)
 from src.engine.trader.runtime.pair_validity import build_pair_validity_report
 from src.engine.trader.runtime.pair_validity.models import (
     PairValidityConfig,
@@ -32,7 +39,7 @@ from src.engine.trader.runtime.pair_validity.models import (
 from src.utils.timeframe_math import get_bars_per_year
 
 if TYPE_CHECKING:
-    from src.engine.trader.state_manager import TradeStateManager
+    from src.engine.trader.state.manager import TradeStateManager
 
 
 def generate_report(
@@ -41,6 +48,8 @@ def generate_report(
     surviving_pairs_path: str,
     market_data_base_dir: str | None = None,
     pair_validity_config: PairValidityConfig | None = None,
+    pair_queue_policy: PairQueuePolicy | None = None,
+    pair_queue_enabled: bool = True,
 ) -> TradeReport:
     """Generate a complete report from the current database state."""
     all_orders = state.get_all_orders()
@@ -94,6 +103,14 @@ def generate_report(
         market_data_base_dir=market_data_base_dir,
         pair_validity_config=pair_validity_config,
     )
+    pair_queue = _compute_pair_queue_snapshot(
+        promoted_pairs=list(backtest_lookup.values()),
+        pair_validity=pair_validity,
+        tick_signals=tick_signals,
+        open_positions=open_positions,
+        policy=pair_queue_policy,
+        enabled=pair_queue_enabled,
+    )
 
     bt_avg_sharpe, bt_avg_pnl = _compute_backtest_averages(
         backtest_lookup=backtest_lookup,
@@ -122,6 +139,7 @@ def generate_report(
         risk=risk,
         state_ledger=state_ledger,
         pair_validity=pair_validity,
+        pair_queue=pair_queue,
         backtest_avg_sharpe=bt_avg_sharpe,
         backtest_avg_pnl=bt_avg_pnl,
         trade_log=[dict(t) for t in closed_trades],
@@ -177,3 +195,82 @@ def _compute_pair_validity_report(
             snapshots=[],
             notes=[f"pair_validity_unavailable: {exc}"],
         )
+
+
+def _compute_pair_queue_snapshot(
+    *,
+    promoted_pairs: list[dict[str, Any]],
+    pair_validity: PairValidityReport | None,
+    tick_signals: list[dict[str, Any]],
+    open_positions: list[dict[str, Any]],
+    policy: PairQueuePolicy | None,
+    enabled: bool,
+) -> PairQueueSnapshot | None:
+    if not enabled or pair_validity is None or not promoted_pairs:
+        return None
+    return build_pair_queue_snapshot(
+        promoted_pairs=promoted_pairs,
+        validity_snapshots=pair_validity.snapshots,
+        opportunities=_latest_opportunities(
+            tick_signals=tick_signals,
+            promoted_pairs=promoted_pairs,
+        ),
+        open_positions=[
+            OpenPositionExposure(
+                pair_label=str(position["pair_label"]),
+                asset_x=str(position["asset_x"]),
+                asset_y=str(position["asset_y"]),
+                position_id=int(position["id"]) if position.get("id") is not None else None,
+            )
+            for position in open_positions
+        ],
+        policy=policy or PairQueuePolicy(),
+    )
+
+
+def _latest_opportunities(
+    *,
+    tick_signals: list[dict[str, Any]],
+    promoted_pairs: list[dict[str, Any]],
+) -> dict[str, PairQueueOpportunity]:
+    entry_z_by_pair = {
+        f"{pair['Asset_X']}|{pair['Asset_Y']}": float(pair["Best_Params"]["entry_z"])
+        for pair in promoted_pairs
+        if "Best_Params" in pair and "entry_z" in pair["Best_Params"]
+    }
+    latest_by_pair: dict[str, dict[str, Any]] = {}
+    for signal in tick_signals:
+        pair_label = str(signal["pair_label"])
+        previous = latest_by_pair.get(pair_label)
+        if previous is None or str(signal["timestamp"]) >= str(previous["timestamp"]):
+            latest_by_pair[pair_label] = signal
+
+    return {
+        pair_label: _opportunity_from_signal(
+            signal=signal,
+            entry_z=entry_z_by_pair.get(pair_label),
+        )
+        for pair_label, signal in latest_by_pair.items()
+    }
+
+
+def _opportunity_from_signal(
+    *,
+    signal: dict[str, Any],
+    entry_z: float | None,
+) -> PairQueueOpportunity:
+    action = str(signal["action"])
+    z_score = float(signal["z_score"])
+    entry_signal = action in {"ENTRY", "FLIP"}
+    if entry_signal:
+        score = 1.0
+    elif entry_z is not None and entry_z > 0:
+        score = min(1.0, abs(z_score) / entry_z)
+    else:
+        score = 0.0
+    return PairQueueOpportunity(
+        pair_label=str(signal["pair_label"]),
+        score=score,
+        entry_signal=entry_signal,
+        notes=[f"latest_action:{action}", f"latest_z:{z_score:.4f}"],
+    )

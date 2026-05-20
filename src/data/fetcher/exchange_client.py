@@ -38,6 +38,18 @@ def create_exchange(exchange_id: str, api_key: str, api_secret: str) -> ccxt.Exc
         "enableRateLimit": True,
         "apiKey": api_key,
         "secret": api_secret,
+        # The data/execution symbol adapter resolves pairs to linear USDT swaps
+        # (for example BTC/USDT:USDT), so keep CCXT market loading in that lane.
+        "options": {
+            "defaultType": "swap",
+            "defaultSubType": "linear",
+            "defaultSettle": "USDT",
+            "adjustForTimeDifference": True,
+            "recvWindow": 10_000,
+            "fetchMarkets": {
+                "types": ["linear"],
+            },
+        },
     })
 
 

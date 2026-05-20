@@ -10,6 +10,7 @@ from src.core.logger import logger
 from src.engine.analysis.cointegration import CointegrationEngine
 from src.engine.analysis.spread_math import require_positive_finite_prices
 from src.engine.trader.config import StrategyConfig, UniverseConfig
+from src.research.pair_baseline import apply_research_baseline_fields
 
 
 def discover_cointegrated_pairs(
@@ -87,7 +88,7 @@ def _evaluate_member_pair(
         return None
     if not result["is_cointegrated"]:
         return None
-    return {
+    return apply_research_baseline_fields({
         "Cohort": cohort_name,
         "Asset_X": asset_x,
         "Asset_Y": asset_y,
@@ -102,7 +103,7 @@ def _evaluate_member_pair(
             "sharpe_ratio": 1.0,
             "final_pnl_pct": 0.0,
         },
-    }
+    }, df_pair)
 
 
 def _build_positive_price_pair(

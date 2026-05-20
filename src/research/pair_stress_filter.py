@@ -9,6 +9,10 @@ from src.data.storage.local_parquet import ParquetStorage
 from src.engine.trader.config import BacktestConfig, StrategyConfig
 from src.engine.trader.runtime.pairs import write_candidate_pair_artifact
 from src.research.pair_stress_data import build_unified_ohlcv, load_candidate_pairs
+from src.research.pair_baseline import (
+    apply_research_baseline_fields,
+    prices_from_unified_ohlcv,
+)
 from src.research.pair_stress_report import (
     build_rejected_pair_report,
     build_surviving_pair_report,
@@ -141,7 +145,7 @@ class PairStressFilter:
             f"Survived {asset_x} / {asset_y}: "
             f"pnl={best_stats['final_pnl_pct']:.2f}% sharpe={best_stats['sharpe_ratio']:.2f}"
         )
-        survivor = {
+        survivor = apply_research_baseline_fields({
             "Cohort": pair["Cohort"],
             "Asset_X": asset_x,
             "Asset_Y": asset_y,
@@ -150,7 +154,7 @@ class PairStressFilter:
             "P_Value": pair["P_Value"],
             "Best_Params": best_params,
             "Performance": best_stats,
-        }
+        }, prices_from_unified_ohlcv(unified), lookback_bars=best_params["lookback_bars"])
         report_row = build_surviving_pair_report(
             pair=pair,
             source_window=source_window,

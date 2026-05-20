@@ -3,6 +3,7 @@
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
+from src.engine.trader.runtime.pair_queue.models import PairQueueSnapshot
 from src.engine.trader.runtime.pair_validity.models import PairValidityReport
 
 
@@ -86,6 +87,7 @@ class TradeReport:
     risk: RiskSnapshot
     state_ledger: StateLedgerSnapshot
     pair_validity: PairValidityReport | None
+    pair_queue: PairQueueSnapshot | None
 
     backtest_avg_sharpe: Optional[float]
     backtest_avg_pnl: Optional[float]

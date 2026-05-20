@@ -16,7 +16,7 @@ from src.engine.trader.runtime.pairs import load_tier1_pairs
 from src.engine.trader.runtime.scheduler import seconds_until_next_candle
 from src.engine.trader.runtime.tick import execute_tick
 from src.engine.trader.runtime.trader_runner import run_trader_loop
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
 

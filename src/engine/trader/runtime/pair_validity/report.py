@@ -39,7 +39,7 @@ from src.engine.trader.runtime.pair_validity.time import (
 from src.engine.trader.runtime.pairs import validate_pair_artifact_file
 
 if TYPE_CHECKING:
-    from src.engine.trader.state_manager import TradeStateManager
+    from src.engine.trader.state.manager import TradeStateManager
 
 
 def build_pair_validity_report(

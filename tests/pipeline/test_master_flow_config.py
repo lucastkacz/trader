@@ -88,6 +88,23 @@ def test_task_vector_stress_passes_typed_research_config_and_artifact_paths(monk
     assert captured["strategy_cfg"] == strategy_cfg
 
 
+def test_execute_flow_allows_telegram_to_be_absent():
+    pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
+    strategy_cfg = load_strategy_config("configs/strategy/dev.yml")
+    risk_cfg = load_risk_config("configs/risk/alpha_v1.yml")
+
+    parameters = master_flow.execute_flow.validate_parameters(
+        {
+            "pipeline_cfg": pipeline_cfg,
+            "strategy_cfg": strategy_cfg,
+            "risk_cfg": risk_cfg,
+            "telegram_path": None,
+        }
+    )
+
+    assert parameters["telegram_path"] is None
+
+
 @pytest.mark.asyncio
 async def test_task_execute_trader_passes_typed_risk_config(monkeypatch):
     captured = {}

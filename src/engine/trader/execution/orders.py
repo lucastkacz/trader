@@ -8,7 +8,7 @@ from src.data.fetcher.exchange_client import create_exchange
 from src.data.fetcher.symbols import to_ccxt_linear_swap_symbol
 from src.engine.trader.config import OrderExecutionConfig
 from src.engine.trader.state.order_lifecycle import LegOrderStatus
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 @dataclass(frozen=True)

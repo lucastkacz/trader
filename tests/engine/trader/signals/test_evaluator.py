@@ -6,7 +6,7 @@ Injects synthetic DataFrames to verify Z-score signals match expected behavior.
 import numpy as np
 import pandas as pd
 
-from src.engine.trader.signal_engine import evaluate_signal
+from src.engine.trader.signals.evaluator import evaluate_signal
 
 
 def _make_df(prices, symbol="TEST/USDT"):

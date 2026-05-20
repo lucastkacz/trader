@@ -20,7 +20,7 @@ from src.engine.trader.runtime.monitoring.run_status import (
     record_observer_run_interrupted,
     record_observer_run_started,
 )
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
 

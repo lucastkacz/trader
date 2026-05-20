@@ -10,7 +10,7 @@ from src.engine.trader.runtime.monitoring.health import (
     render_trader_health_snapshot,
 )
 from src.engine.trader.runtime.trader_runner import _notify_boot_health
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 def test_health_snapshot_reports_stale_tick(tmp_path):

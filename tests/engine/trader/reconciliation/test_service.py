@@ -8,7 +8,7 @@ from src.engine.trader.reconciliation import (
     run_boot_reconciliation,
     run_read_only_audit,
 )
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 class FakeSnapshotProvider:
