@@ -29,43 +29,33 @@ process is active.
 
 ## 2. Start A Bounded Dev State-Only Observer
 
-The local wrapper refuses to run unless the dev pipeline is read-only and
-state-only:
+Use the execution entrypoint with CLI-only bounds. Keep the dev pipeline on
+read-only credentials, state-only execution, and queue-driven future-entry
+selection:
 
 ```bash
-QUANT_OBSERVER_MAX_TICKS=30 \
-QUANT_OBSERVER_HEARTBEAT_SECONDS=60 \
-.venv/bin/python -u logs/run_dev_state_only_observer.py
+.venv/bin/python main.py execute \
+  --pipeline configs/pipelines/dev.yml \
+  --strategy configs/strategy/dev.yml \
+  --risk configs/risk/alpha_v1.yml \
+  --max-ticks 30 \
+  --heartbeat-seconds 60
 ```
 
-The launchd profile for longer manual drills is:
+`--max-ticks` and `--heartbeat-seconds` override only the in-memory runtime
+config for this process. They do not modify YAML. Use larger values for longer
+manual lifecycle drills.
 
-```text
-logs/com.quant.dev-state-only-observer.plist
-```
-
-The wider local workflow stress profile is:
-
-```text
-logs/com.quant.dev-wide-state-only-observer.plist
-```
-
-It runs the same state-only wrapper with a larger bounded tick count for
-multi-hour local lifecycle drills.
-
-It uses `KeepAlive=false`, so a crash or normal exit does not automatically
-restart the observer.
+With `execution.pair_queue.mode: future_entries`, execution builds dynamic queue
+decisions before each tick transition. Queue decisions may block new entries,
+but they must not force-close, rebalance, promote artifacts, hot-reload
+execution, or bypass natural-exit evaluation for existing positions.
 
 ## 3. Stop The Observer
 
-For launchd-managed runs:
-
-```bash
-launchctl bootout gui/$(id -u)/com.quant.dev-state-only-observer
-```
-
 For foreground runs, interrupt the terminal process and then repeat the process
-check in section 1.
+check in section 1. A run with `--max-ticks` should auto-stop cleanly after the
+configured number of ticks.
 
 ## 4. Inspect SQLite Runtime State
 
@@ -97,24 +87,47 @@ sqlite3 data/dev/trades_1m.db \
   'select id, status, started_at, finished_at from reconciliation_runs order by id;'
 ```
 
-## 5. Generate Reports
+## 5. Refresh Pair Data And Generate Validity Reports
+
+Refresh local parquet data for symbols in the promoted pair artifact before
+using pair-validity diagnostics. This is a readonly market-data operation and
+does not promote artifacts, hot-reload execution, submit orders, or close
+positions.
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
+  --pipeline configs/pipelines/dev.yml \
+  --overlap-bars 5 \
+  --missing-lookback-bars 1500 \
+  --fetch-limit 1000
+```
 
 Human-readable report:
 
 ```bash
-.venv/bin/python -m src.engine.trader.report_generator \
-  --db-path data/dev/trades_1m.db \
-  --min-sharpe 1.0 \
-  --surviving-pairs-path data/universes/1m/surviving_pairs.json
+.venv/bin/python -m src.engine.trader.cli.report_generator \
+  --pipeline configs/pipelines/dev.yml \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3
 ```
+
+When pair-validity diagnostics are enabled, the report also includes the dynamic
+pair queue. This queue ranks promoted pairs for future entries using the
+promoted artifact, validity diagnostics, latest persisted tick signals, and
+current open-position exposure. Report generation is read-only. In execution,
+the same configured queue policy may block new entries only; it must not place
+orders by itself, hot-reload execution, promote artifacts, force-close, or
+rebalance positions.
 
 Automation-safe JSON report:
 
 ```bash
-.venv/bin/python -m src.engine.trader.report_generator \
-  --db-path data/dev/trades_1m.db \
-  --min-sharpe 1.0 \
-  --surviving-pairs-path data/universes/1m/surviving_pairs.json \
+.venv/bin/python -m src.engine.trader.cli.report_generator \
+  --pipeline configs/pipelines/dev.yml \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3 \
   --json
 ```
 

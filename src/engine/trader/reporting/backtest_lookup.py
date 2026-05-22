@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from src.core.logger import logger
-from src.engine.trader.runtime.pairs import extract_pair_artifact_pairs
+from src.engine.trader.runtime.artifacts import extract_pair_artifact_pairs
 
 
 def _load_backtest_lookup(surviving_pairs_path: str) -> dict[str, dict[str, Any]]:

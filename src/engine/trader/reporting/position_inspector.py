@@ -8,7 +8,7 @@ import json
 from typing import Any
 
 from src.engine.trader.execution.pnl import calculate_position_pnl
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 @dataclass(frozen=True)

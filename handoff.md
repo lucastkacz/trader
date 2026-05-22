@@ -1,869 +1,654 @@
-# Handoff: Local Readiness Before Cloud Infra
+# Handoff: Dynamic Queue And Local Dev Lifecycle
 
-Updated: 2026-05-17
+Updated: 2026-05-21
 
 ## Purpose
 
-This handoff is for continuing the local readiness session. The goal is to make
-the local dev environment complete, testable, and operator-friendly before
-moving attention to UAT, production, or cloud infrastructure.
-
-The project is not being optimized for profitability yet. The immediate goal is
-to prove workflow behavior safely:
+This handoff is for continuing the local dev automation session in a fresh chat.
+The active goal is to turn the promoted-pair lifecycle into a safe, auditable
+execution workflow:
 
 ```text
-research / screening
--> candidate eligible-pair artifact
+research flow
+-> candidate artifact
 -> operator promotion
--> state-only execution
--> Telegram operator controls
--> reporting, recovery, and auditability
+-> promoted artifact
+-> read-only data refresh
+-> pair validity diagnostics
+-> dynamic promoted-pair queue
+-> state-only execution drill
+-> future-entry queue consumption
 ```
 
-Do not call this production-ready for real capital. The production readiness
-gate in `docs/engineering-rules.md` still applies.
+Do not call the system production-ready for real capital. The production
+readiness gate in `docs/engineering-rules.md` still applies.
 
-## Required Context For Every Development Session
+## Required Context For The Next Chat
 
-Read or keep present:
+Read these before changing code:
 
 - `AGENTS.md`
 - `CONTEXT.md`
 - `docs/index.md`
 - `docs/engineering-rules.md`
 - `docs/system-design.md`
-- `docs/current-roadmap.md` when touching active roadmap work
-- `.agents/skills/`
+- `docs/current-roadmap.md`
+- `docs/local-operator-runbook.md`
 
-Use project-specific skills when relevant:
+Use project skills when relevant:
 
-- `quant-code-quality-auditor` for safety, test integrity, maintainability, and
-  config-boundary scans.
-- `improve-quant-architecture` for module shape, adapters, and responsibility
-  boundaries.
-- `quant-roadmap-maintainer` when updating roadmap state or choosing the next
-  implementation slice.
+- `improve-quant-architecture` for module shape and operational seams.
+- `quant-code-quality-auditor` for safety/config/test integrity reviews.
+- `quant-roadmap-maintainer` when changing roadmap state.
 
-Important repository terms to preserve:
+Important language to preserve:
 
 - research flow
 - execution flow
-- candidate artifact
 - eligible pair artifact
+- candidate artifact
 - promoted artifact
 - pair recalculation
+- dynamic promoted-pair queue
+- pair validity
+- refresh cycle
+- capital slot
 - natural exit
-- runtime state
-- operational seam
+- live exchange mutation
+- config boundary
 
-## Current Session State
+## Branch And Latest Baseline
 
 Branch:
 
-```bash
-git branch --show-current
+```text
+pair-validity-readonly-diagnostics
 ```
 
-Expected active branch:
+Previous commit before this handoff update:
 
 ```text
-dev-run-status-drill
+231aae04 Add read-only pair validity refresh diagnostics
 ```
 
-Do not push, merge, or enable live exchange mutation unless explicitly asked.
-
-Latest local commit:
+Remote:
 
 ```text
-09beeb5c Add env strategy configs and Telegram health controls
+origin git@github.com:lucastkacz/trader.git
 ```
 
-Current git state immediately after that commit was:
+Current local work includes queue-driven future-entry execution consumption.
+Commit/push state should be checked with `git status --short` in the next chat.
+
+## Current Verified State
+
+Latest offline verification:
 
 ```text
-working tree clean
+.venv/bin/python -m pytest -q
+264 passed, 3 deselected
 ```
 
-Current working tree has uncommitted local-readiness changes from the latest
-Telegram/operator slice, docs updates, and this handoff update. Review before
-committing:
+Latest lint verification:
 
 ```text
-CONTEXT.md
-docs/current-roadmap.md
-docs/system-design.md
-src/interfaces/telegram/daemon.py
-src/interfaces/telegram/renderers.py
-src/interfaces/telegram/handlers/
-src/interfaces/telegram/rendering/
-src/engine/trader/runtime/run_status.py
-src/engine/trader/runtime/trader_runner.py
-tests/interfaces/telegram/test_daemon.py
-handoff.md
+.venv/bin/ruff check src tests
+All checks passed!
 ```
 
-## Completed In This Session
-
-Local Telegram and state-only readiness work completed:
-
-- Fixed Telegram environment labeling so `[TRADER LIVE]` is not derived from log
-  level.
-- Fixed Telegram PnL formatting for exit and flip notifications.
-- Made report `--json` output parse-safe.
-- Made default pytest runs exclude `live` tests through `pytest.ini`.
-- Added `docs/local-operator-runbook.md` and linked it from `docs/index.md`.
-- Tested dev Telegram bot setup locally.
-- Added Telegram `/inspect <ID|PAIR>` for deeper open-position inspection.
-- Verified `/pause`, `/resume`, `/stop_all`, and command consumption against
-  local SQLite state.
-- Ran a wide state-only observer drill with a 12-pair workflow-test artifact.
-- Confirmed state-only leg rows did not record exchange or client order ids.
-- Split `configs/strategy/alpha_v1.yml` into environment-specific strategy
-  config files:
-  - `configs/strategy/dev.yml`
-  - `configs/strategy/uat.yml`
-  - `configs/strategy/prod.yml`
-- Updated workflow/config/test references to use the environment-specific
-  strategy files.
-- Made the dev workflow more permissive, without touching UAT/prod trading
-  posture:
-  - `configs/pipelines/dev.yml`: `max_symbols: 150`, `min_sharpe: 0.5`
-  - `configs/universe/alpha_v1_dev_1m.yml`: wider workflow-drill filters
-  - `configs/backtest/stress_test_dev_1m.yml`: wider entry/lookback grid and
-    lower workflow-drill friction
-  - `configs/strategy/dev.yml`: `entry_z_score: 1.5`
-- Re-fetched missing 1m data after local `data/` deletion:
-  - 150 symbols total
-  - 0 fetch failures
-  - 13 discovery candidates
-  - 4 stress survivors
-- Promoted the 4-pair 1m dev eligible pair artifact:
-  - `APT/USDT|BCH/USDT`
-  - `1000PEPE/USDT|BCH/USDT`
-  - `BCH/USDT|1000BONK/USDT`
-  - `BCH/USDT|AVAX/USDT`
-- Added Telegram `/pairs` and `/promoted_pairs` to show the promoted artifact.
-- Added initial inline `Inspect #id` buttons to `/positions`, later replaced
-  by the two-step `Position #id -> Summary | Plot` flow.
-- Added Telegram `/health` for runtime health and staleness.
-- Added Telegram z-score/PnL plotting:
-  - new `src/interfaces/telegram/plots.py`
-  - `/plot <ID|PAIR>` sends a PNG chart
-  - plot includes z-score path, mean/exit guide, entry guide, entry marker,
-    exit marker when closed, and PnL subplot
-  - `Refresh Plot #id` inline button sends an updated chart
-- Changed `/positions` into a two-step operator flow:
-  - `/positions` lists open positions
-  - tapping `Position #id` opens a menu with `Summary` and `Plot`
-  - direct `/inspect <ID|PAIR>` and `/plot <ID|PAIR>` still work
-- Enhanced `/pairs` to include latest observed z-score from persisted
-  `tick_signals`, entry gap, and latest action for every promoted pair.
-- Added runtime boot health notifications and max-tick auto-stop notifications.
-- Refactored the Telegram daemon into:
-  - `src/interfaces/telegram/context.py`
-  - `src/interfaces/telegram/handlers.py`
-  - `src/interfaces/telegram/renderers.py`
-  - thin `src/interfaces/telegram/daemon.py`
-- Added Telegram `/menu` as a button-based operator tree while keeping direct
-  slash commands available.
-- Added Telegram `/run_status` and `/drill` for local run lifecycle status.
-- Added persisted observer run markers so bounded max-tick completion can be
-  distinguished from unexpected stale runtime state.
-- Updated max-tick completion notification to say how many local open positions
-  remain and, in state-only mode, that no exchange exposure exists.
-- Split Telegram renderers into `src/interfaces/telegram/rendering/` modules:
-  - `formatting.py`
-  - `menu.py`
-  - `positions.py`
-  - `pairs.py`
-  - `runtime.py`
-  - `renderers.py` now remains as a compatibility facade.
-- Split Telegram handlers into `src/interfaces/telegram/handlers/` modules:
-  - `auth.py`
-  - `menu.py`
-  - `runtime.py`
-  - `positions.py`
-  - `pairs.py`
-  - `controls.py`
-  - `handlers/__init__.py` remains as a compatibility facade.
-- Restarted `com.quant.dev-telegram-daemon` after the handler split and tested
-  `/menu` manually in Telegram.
-- Added `src/engine/trader/runtime/health.py`.
-- Enabled real Telegram notifications from the dev state-only observer, instead
-  of the previous local `NoopNotifier`.
-- Fixed report annualization to prefer the surviving-pairs artifact timeframe
-  and render sub-hour intervals correctly.
-
-Signal logic issue found and fixed:
-
-- Live exit logic previously used `abs(z_score) <= exit_z`.
-- With `exit_z_score: 0.0`, that meant "exactly zero" instead of crossing the
-  intended mean boundary.
-- Live evaluator now exits side-aware:
-  - `LONG_SPREAD` exits when `z_score >= -abs(exit_z)`.
-  - `SHORT_SPREAD` exits when `z_score <= abs(exit_z)`.
-- The promotion/backtest simulator now uses the same side-aware state machine.
-- Added regression tests for live evaluator and simulator long/short exits.
-
-Latest safe offline test result after the Telegram menu/run-status work and
-handler/renderer split:
-
-```text
-223 passed, 3 deselected
-```
-
-Command used:
+Last non-empty bounded state-only smoke command with queue execution consumption
+enabled:
 
 ```bash
-.venv/bin/python -m pytest
+.venv/bin/python main.py execute \
+  --pipeline configs/pipelines/dev.yml \
+  --strategy configs/strategy/dev.yml \
+  --risk configs/risk/alpha_v1.yml \
+  --max-ticks 1 \
+  --heartbeat-seconds 1
 ```
 
-## Latest Drill Results
-
-The latest bounded local state-only observer drill completed successfully.
-
-Final local status at handoff time:
-
-- Telegram daemon is running:
-  - `com.quant.dev-telegram-daemon`
-- Wide dev state-only observer is not running:
-  - `com.quant.dev-wide-state-only-observer`
-  - `QUANT_OBSERVER_MAX_TICKS=180`
-  - `QUANT_OBSERVER_HEARTBEAT_SECONDS=60`
-  - latest run completed `180` ticks and auto-stopped cleanly
-- `/health` reports `STALE` because the bounded observer stopped, not because
-  the DB is corrupt:
+Result:
 
 ```text
-Mode: DEV
-Status: STALE
-Open Positions: 1
-Paused: NO
-Latest Tick: 2026-05-17T18:25:46.144809+00:00
-Tick Age: 63.6m
-Equity: +1.5729%
-Realized: +1.5348%
-Unrealized: +0.0381%
-Reconciliation: SKIPPED_NO_SNAPSHOT_PROVIDER | Deltas: 0
+Completed 1 ticks. Auto-stopping.
+Prefect flow state: Completed()
+runtime_state observer_run: COMPLETED_MAX_TICKS
+open positions: 0
+exchange/client order ids: 0
 ```
 
-Current open local state-only position at handoff time is left over from the
-bounded run:
+Latest drill timestamp:
 
 ```text
-10|BCH/USDT|1000BONK/USDT|SHORT_SPREAD|entry_z=3.3009|opened_at=2026-05-17T17:57:04.473046+00:00
+started_at: 2026-05-21T20:40:22.831467+00:00
+completed_at: 2026-05-21T20:41:17.324403+00:00
+completed_ticks: 1
+open_position_ids: []
 ```
 
-State-only safety invariant at handoff time:
+Latest fresh cold lifecycle drill:
 
 ```text
-0 live/client order ids
+data directory was deleted before the run
+research command: main.py run --config configs/runs/dev_1m_research.yml
+fetched parquet files: 150
+candidate/promoted pair_count: 6
+missing baseline rows: 0
+promotion operator: codex-fresh-cold-run
+refresh: 7 unique promoted symbols
+queue report: 6 Entry YES, 0 block reasons
+execute: completed 1 bounded state-only tick
+runtime_state observer_run: COMPLETED_MAX_TICKS
+exchange/client order ids: 0
 ```
 
-Position lifecycle results:
+Local network caveat:
 
-- `10` total local state-only positions recorded.
-- `9` positions closed via `SIGNAL_EXIT`.
-- `1` position remains open only because the bounded observer completed before
-  it reached natural exit.
-- Position `#7`, the previously watched open position, closed naturally:
-  - pair: `1000PEPE/USDT|BCH/USDT`
-  - side: `LONG_SPREAD`
-  - opened: `2026-05-17T13:44:38.862406+00:00`
-  - closed: `2026-05-17T17:44:10.763934+00:00`
-  - close reason: `SIGNAL_EXIT`
-  - realized PnL: `+0.3799%`
-- Two additional positions opened and closed naturally after that:
-  - `#8 BCH/USDT|1000BONK/USDT SHORT_SPREAD`
-  - `#9 BCH/USDT|AVAX/USDT SHORT_SPREAD`
+- Bybit sometimes times out during dev fetches.
+- Telegram notifier sometimes times out locally.
+- These failures were noisy but did not create exchange mutation.
 
-Report checks:
+## What Is Implemented
 
-- Text report works.
-- JSON report parses cleanly.
-- Latest report summary:
-  - total equity: `+1.5729%`
-  - realized: `+1.5348%`
-  - unrealized: `+0.0381%`
-  - closed trades: `9`
-  - win rate: `77.8%`
-  - order events: `19`
-  - leg targets: `OPEN: 20`, `CLOSE: 18`
-  - user commands: none recorded in this drill window
+Architecture and package shape:
 
-Recovery behavior observed:
+- Trader CLI entrypoints live under `src/engine/trader/cli/`.
+- Runtime artifact lifecycle lives under `src/engine/trader/runtime/artifacts/`.
+- Runtime monitoring lives under `src/engine/trader/runtime/monitoring/`.
+- Pair validity lives under `src/engine/trader/runtime/pair_validity/`.
+- Dynamic queue ranking lives under `src/engine/trader/runtime/pair_queue/`.
+- Root trader compatibility facades were removed in favor of canonical package
+  paths.
 
-- The observer previously auto-stopped after `max_ticks=180` while two positions
-  were open. Restarting resumed from persisted local state and both stale
-  positions closed on the next fresh tick.
-- The latest observer run also auto-stopped after `max_ticks=180`, this time
-  leaving one open state-only position. This is expected for a bounded dev drill,
-  but Telegram `/health` currently only reports this as `STALE`.
-- This proved useful recovery behavior for dev, but UAT/prod should run on a
-  VPS with process supervision, not a laptop.
+Artifact lifecycle:
 
-Operational interpretation:
-
-- The green PnL is a pleasant side effect, not proof of production alpha.
-- The real success is that the execution flow is now observable:
-  promoted artifact loading, entries, natural exits, state-only leg targets,
-  reports, Telegram health, position summary, plots, and `/pairs` z-score
-  proximity all worked from persisted runtime state.
-
-## Highest Priority Next Work: Quantified Pair Validity And Refresh Cycle
-
-The Telegram operator console is now usable enough for local dev. The next
-foundation topic is the effective life of promoted statistical-arbitrage pairs.
-
-Important design position from the user:
-
-- Avoid vague artifact-age labels such as `FRESH`, `AGING`, or `STALE` as the
-  primary interface. They do not explain risk or action.
-- Prefer quantified diagnostics: exact artifact/data age, bars elapsed, drift
-  percentages, half-life multiples, p-values, correlations, z-score distribution
-  changes, and execution-vs-research deltas.
-- If a short status is shown in Telegram, it must sit beside the underlying
-  numbers and the operator action. The numbers are the product.
-
-Current implementation status:
-
-- The project has candidate and promoted eligible pair artifacts with metadata.
+- Research writes candidate artifacts.
+- `main.py promote-pairs` validates and promotes candidate artifacts.
+- Promotion appends `promotion_audit.jsonl`.
 - Execution loads only the promoted artifact on boot.
-- Existing positions use natural exit.
-- Telegram `/pairs` shows promoted pairs, latest z-score, entry gap, and latest
-  action from persisted `tick_signals`.
-- There is no first-class pair validity policy.
-- There is no quantified drift comparison between the research window and
-  recent post-promotion data.
-- There is no configured data refresh cadence for pair validity.
-- There is no scheduled candidate regeneration.
-- There is no entry gating based on pair validity.
+- No pair recalculation path force-closes or rebalances open positions.
 
-### Core Concepts For The New Feature
+Research baseline fields:
 
-Treat promoted pairs as perishable execution inputs. Their useful life is not a
-single wall-clock duration. It should be measured across three independent
-surfaces:
+- Fresh candidate/promoted artifacts now include baseline diagnostics needed by
+  pair validity:
+  - `Research_Window.start`
+  - `Research_Window.end`
+  - `Research_Window.bars`
+  - `Correlation`
+  - `Spread_Mean`
+  - `Spread_Std`
+  - `Z_Score_Distribution`
+- `src/research/pair_baseline.py` owns baseline field calculation.
+- Discovery and stress filtering refresh these fields from aligned research
+  price windows.
+- Timestamp serialization was fixed so numeric millisecond indexes become ISO
+  UTC strings, not raw numeric strings.
 
-1. Artifact/data recency:
-   - research input window start/end
-   - candidate generated time
-   - promoted time
-   - latest local market-data timestamp available for diagnostics
-   - wall-clock age since research window end
-   - bars elapsed since research window end
-   - bars elapsed since promotion
-2. Statistical relationship drift:
-   - hedge ratio now vs research hedge ratio
-   - spread mean now vs research spread mean
-   - spread standard deviation now vs research spread standard deviation
-   - correlation now vs research correlation
-   - cointegration p-value now vs research p-value
-   - half-life now vs research half-life
-   - z-score distribution shift, such as mean, standard deviation, and tail
-     frequency over a recent window
-3. Execution behavior drift:
-   - observed entry count vs research expected entry frequency
-   - observed natural-exit count and time-to-exit vs research half-life
-   - open position holding time as a multiple of the pair's research half-life
-   - realized state-only/live PnL vs stress-report expectation where comparable
-   - friction drag and slippage/funding assumptions vs realized execution data
-     when those fields become available
+Pair validity and refresh:
 
-Keep these outputs separate:
-
-- Entry eligibility for new positions.
-- Open-position monitoring for existing positions.
-
-Do not let pair decay, artifact age, or pair-set changes force-close existing
-positions implicitly. Existing positions continue natural exit unless an
-explicit operator command, auditor action, tested risk kill switch, or manual
-emergency process says otherwise.
-
-### Data Refresh Cycle Discussion
-
-Re-evaluating promoted pairs requires fresh market data. This means pair
-validity is not just a report calculation; it becomes part of a repeatable
-refresh cycle:
-
-```text
-promoted artifact
--> fetch/append recent market data
--> recompute pair validity diagnostics
--> optionally recompute candidate eligible-pair artifact
--> write audit/report output
--> operator reviews
--> operator promotes only when acceptable
--> execution loads promoted artifact on boot
-```
-
-Cadence must be explicit config or typed runtime policy, not hardcoded in the
-research or execution modules. Candidate cadence models to discuss:
-
-1. Fixed bars per timeframe:
-   - Example: revalidate every `240` closed 1m candles or every `30` closed 4h
-     candles.
-   - Benefit: stable across wall-clock drift and easy to relate to signal data.
-   - Risk: weak relationship to each pair's actual half-life.
-2. Half-life multiple:
-   - Example: revalidate after `3 * median_half_life_bars` across promoted
-     pairs, or after each pair exceeds `N * pair_half_life_bars`.
-   - Benefit: tied to strategy mechanics.
-   - Risk: promoted pairs can have very different half-lives, making one global
-     cadence awkward.
-3. Wall-clock schedule per environment/timeframe:
-   - Example: dev 1m every few hours; UAT/prod 4h daily or weekly.
-   - Benefit: operator-friendly.
-   - Risk: disconnected from market activity if used alone.
-4. Hybrid policy:
-   - Example: run no more often than every `X` minutes, no less often than every
-     `Y` bars, and force review when any pair exceeds a half-life multiple.
-   - Benefit: likely best for UAT/prod.
-   - Risk: more config and more tests.
-
-Recommended initial stance:
-
-- Implement read-only diagnostics first.
-- Store/display exact ages and drift values.
-- Do not block entries until thresholds are reviewed in dev drills.
-- Do not automate promotion.
-- Do not hot-reload execution with a new artifact.
-
-### Proposed Implementation Plan
-
-Phase 0: Design and data contracts only
-
-- Define a `PairValiditySnapshot` domain model.
-- Define a `PairValidityConfig` typed config model.
-- Decide which metrics are required in v1 and which are optional.
-- Decide how to handle missing recent data, insufficient bars, and pairs with
-  too few post-promotion observations.
-- Add docs/tests for the policy language before behavior changes.
-
-Potential v1 snapshot fields:
-
-```text
-pair_label
-artifact_generated_at
-artifact_promoted_at
-research_window_start
-research_window_end
-latest_data_at
-wall_clock_age_minutes_since_research_end
-bars_since_research_end
-bars_since_promotion
-recent_window_bars
-research_hedge_ratio
-recent_hedge_ratio
-hedge_ratio_drift_pct
-research_correlation
-recent_correlation
-correlation_delta
-research_p_value
-recent_p_value
-p_value_delta
-research_half_life_bars
-recent_half_life_bars
-half_life_drift_pct
-research_spread_mean
-recent_spread_mean
-spread_mean_shift_sigma
-research_spread_std
-recent_spread_std
-spread_std_drift_pct
-open_position_id
-open_position_holding_bars
-open_position_half_life_multiple
-observed_entries
-observed_signal_exits
-observed_forced_exits
-observed_avg_holding_bars
-notes
-```
-
-Avoid a single opaque status in the data model. If a policy output is needed,
-make it action-oriented and quantified:
-
-```text
-entry_allowed: true/false
-entry_block_reasons: list[str]
-operator_review_reasons: list[str]
-open_position_review_reasons: list[str]
-```
-
-Phase 1: Persist or expose research baseline values
-
-- Inspect current candidate/promoted artifact schema.
-- Determine whether it already contains enough baseline fields for drift:
-  - `Hedge_Ratio`
-  - `Half_Life`
-  - `P_Value`
-  - `Best_Params`
-  - `Performance`
-- Add missing research-window metadata if needed:
-  - source data start/end
-  - bars used
-  - baseline correlation
-  - baseline spread mean/std
-  - baseline z-score distribution stats
-- Keep schema versioned.
-- Promotion validation must reject malformed new fields once required.
-
-Phase 2: Build read-only diagnostics module
-
-Candidate module shape:
-
-```text
-src/engine/trader/runtime/pair_validity.py
-src/engine/trader/runtime/pair_validity_models.py
-```
-
-Responsibilities:
-
-- Load promoted artifact.
-- Read recent local market data from an explicit store/path adapter.
-- Read persisted runtime state for observed entries/exits/holding bars.
-- Compute pair-level drift metrics.
-- Return typed snapshots.
-
-Do not:
-
-- mutate exchange state
-- write new promoted artifacts
-- force-close positions
-- reach directly into hardcoded `data/` paths below config/adapter seams
-- use raw YAML dictionaries
-
-Phase 3: Add data refresh command or workflow helper
-
-Pair validity needs fresh data. The refresh operation should be explicit and
-auditable:
-
-```text
-fetch recent OHLCV for promoted pair assets
--> append/update local parquet
--> record refresh audit metadata
--> compute validity snapshots
-```
-
-Open design questions:
-
-- Should the refresh operate on all symbols in the promoted artifact, the full
-  research universe, or both?
-- Should it fetch exactly the missing range since latest parquet timestamp, or
-  refetch a rolling overlap window for correction safety?
-- How much overlap is needed to guard against exchange candle revisions?
-- Should dev 1m and UAT/prod 4h have different retention and refresh cadence?
-- Should refresh be a CLI first, with Telegram only showing results?
-
-Recommended v1:
-
-- CLI-only refresh/diagnostic command.
-- Explicit config path.
-- Read-only market-data credentials only.
-- Writes local data and diagnostic reports, not promoted artifacts.
-- Telegram reads the latest diagnostic output only after CLI proves stable.
-
-Phase 4: Surface diagnostics
-
-Add operator visibility without behavior changes:
-
-- Report CLI section: pair validity diagnostics.
-- Telegram `/pairs`: add compact quantified fields for each promoted pair.
-- Telegram `/run_status`: summarize:
-  - promoted artifact generated/promoted timestamps
-  - bars since research window end
-  - count of pairs with operator review reasons
-  - count of open positions above configured half-life multiple
-- New Telegram detail view later:
-  - `/pair_validity <PAIR>`
-  - or menu: `Pairs -> Validity -> Pair Detail`
-
-Telegram display should prioritize numbers:
-
-```text
-BCH/USDT|AVAX/USDT
-Research ended: 2026-05-17 12:00 UTC
-Age: 428 closed 1m bars / 7.1h
-Hedge ratio drift: +4.8%
-Correlation: 0.74 recent vs 0.81 research
-P-value: 0.08 recent vs 0.03 research
-Half-life: 92 bars recent vs 61 research (+50.8%)
-Open position: #10, 87 bars, 0.95x research half-life
-Entry allowed: yes
-Review reasons: none
-```
-
-Phase 5: Entry gating after visibility is proven
-
-Only after dev diagnostics are trusted:
-
-- Add typed thresholds:
-  - max bars since research end for new entries
-  - max hedge-ratio drift percentage
-  - max p-value
-  - min recent correlation
-  - max half-life drift or max half-life bars
-  - max spread std drift
-  - max open-position half-life multiple for review warnings
-- Execution flow may block new entries if thresholds fail.
-- Blocking must be visible in persisted `tick_signals` or equivalent runtime
-  audit state.
-- Open positions still natural-exit.
-
-Phase 6: Scheduled candidate regeneration
-
-Only after read-only diagnostics and optional entry gating are tested:
-
-- Scheduler triggers research flow on configured cadence.
-- Research writes a candidate artifact plus diagnostics.
-- Promotion remains operator-controlled.
-- Execution still loads promoted artifact on boot.
-- Hot reload remains later and higher risk.
-
-### Testing Requirements
-
-Add behavior tests around the module interface:
-
-- Time/bars age calculations for 1m and 4h artifacts.
-- Drift calculations with deterministic synthetic data.
-- Missing-data behavior.
-- Insufficient recent bars behavior.
-- Pair with open position beyond `N * half_life` produces review reason but no
-  forced close.
-- Pair failing entry thresholds blocks new entries only after the explicit entry
-  gating phase.
-- Refresh logic uses read-only market data and does not call order/exchange
-  mutation paths.
-- Unit tests must not call network.
-
-### Documentation Updates Already Made
-
-- `CONTEXT.md` now defines `pair validity` and `refresh cycle`.
-- `docs/system-design.md` now includes a `Pair Validity And Refresh Cycle`
-  section.
-- `docs/current-roadmap.md` now moves the active roadmap toward quantified pair
-  validity and refresh policy design before any scheduled automation.
-- `docs/index.md` now points pair-validity/data-refresh work at `CONTEXT.md`,
-  `docs/system-design.md`, and `docs/current-roadmap.md`.
-
-This remains a workflow-safety and research-validity foundation slice, not a
-profitability claim and not production approval.
-
-## Fresh Data Reset Plan
-
-Before deleting or clearing local data:
-
-- Stop the observer.
-- Consider stopping the Telegram daemon too, or be ready to restart it after
-  the DB path is recreated.
-- Confirm no matching local observer/trader process is active.
-
-Useful checks:
+- Refresh CLI:
 
 ```bash
-launchctl print gui/$(id -u)/com.quant.dev-wide-state-only-observer
-launchctl print gui/$(id -u)/com.quant.dev-state-only-observer
-launchctl print gui/$(id -u)/com.quant.dev-telegram-daemon
-ps aux | rg -i 'quant|dev-state-only|run_dev_state|main.py|execute|executor|caffeinate'
+.venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
+  --pipeline configs/pipelines/dev.yml \
+  --overlap-bars 5 \
+  --missing-lookback-bars 1500 \
+  --fetch-limit 1000
 ```
 
-Important data warning:
+- Report CLI:
 
-- Deleting `data/dev` and `data/universes/1m` clears runtime state and pair
-  artifacts.
-- Deleting the whole `data` folder also removes `data/parquet`.
-- If `data/parquet` is deleted, `configs/runs/dev_1m_research.yml` cannot keep
-  `skip_fetch: true`; the research flow must fetch data again using read-only
-  market-data access.
-
-Current run profile:
-
-```yaml
-run:
-  skip_fetch: false
+```bash
+.venv/bin/python -m src.engine.trader.cli.report_generator \
+  --pipeline configs/pipelines/dev.yml \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3
 ```
 
-Decision before the fresh drill:
+- Pair validity reports age, recent bars, hedge-ratio drift, correlation drift,
+  p-value drift, half-life drift, spread mean/std drift, execution observations,
+  and explicit review reasons.
+- Pipeline config now declares explicit execution-time pair-validity diagnostics
+  policy under `execution.pair_validity`:
+  - `recent_window_bars: 240`
+  - `min_recent_bars: 60`
+  - `open_position_review_half_life_multiple: 3.0`
+- Refresh is read-only market data work. It does not promote artifacts, reload
+  execution, submit orders, or close positions.
 
-- If keeping `data/parquet`, leave `skip_fetch: true`.
-- If deleting all `data`, set the dev run profile to fetch fresh data or run the
-  relevant data download step first.
+Dynamic promoted-pair queue:
 
-Current decision:
+- Queue is consumed by execution for future entries when pipeline config sets
+  `execution.pair_queue.mode: future_entries`.
+- Reports still surface queue decisions for operator review.
+- `src/engine/trader/runtime/trader_runner.py` builds pair-validity snapshots
+  before each tick when queue consumption is enabled.
+- `src/engine/trader/runtime/tick.py` evaluates current signal opportunity,
+  builds a dynamic queue snapshot, routes higher-ranked future entries first,
+  and blocks only new entries when a queue decision is not entry-allowed.
+- `src/engine/trader/runtime/signal_transition.py` preserves natural exit by
+  allowing blocked flip signals to close the existing position while skipping
+  the replacement entry.
+- It ranks promoted pairs using:
+  - research score
+  - pair validity score
+  - current tick opportunity score during execution
+  - latest persisted tick signals in reports
+  - open-position exposure
+  - configured allocation caps
+- Dev config has explicit `execution.pair_queue`.
+- `null` allocation caps or thresholds mean intentionally not enforced.
+- The queue does not place orders, does not promote artifacts, and does not
+  force-close or rebalance existing positions.
 
-- `data` was deleted locally, so `configs/runs/dev_1m_research.yml` now uses
-  `skip_fetch: false`.
-- Current `data/parquet` has been rebuilt by the dev 1m fetch process. If a new
-  chat deletes `data/` again, keep `skip_fetch: false` or fetch again first.
+Bounded local execution:
 
-## Dev Config Tuning For Natural Promotion
+- `main.py execute` now supports CLI-only runtime bounds:
+  - `--max-ticks`
+  - `--heartbeat-seconds`
+- Overrides are process-local and do not modify YAML.
+- Non-null `max_ticks` and `heartbeat_seconds` must be positive.
+- `docs/local-operator-runbook.md` now uses this canonical bounded command
+  instead of the old missing `logs/run_dev_state_only_observer.py` wrapper.
 
-Relevant files:
+Behavior tests added in this slice:
 
-- `configs/runs/dev_1m_research.yml`
-- `configs/pipelines/dev.yml`
-- `configs/universe/alpha_v1_dev_1m.yml`
-- `configs/backtest/stress_test_dev_1m.yml`
-- `configs/strategy/dev.yml`
-- `configs/strategy/uat.yml`
-- `configs/strategy/prod.yml`
+- `tests/engine/trader/runtime/test_tick_queue.py`
+  - blocked queue decisions prevent new entries
+  - blocked queue decisions do not prevent existing-position natural exits
+  - higher-ranked eligible pairs are routed first for future entries
+  - state-only mode records no exchange/client order ids in the tested flow
+- Config tests prove shipped pipeline configs declare explicit pair-validity
+  policy and `execution.pair_queue.mode: future_entries`.
 
-Current important gates:
+Exchange client fix:
 
-- `configs/pipelines/dev.yml`
-  - `credential_tier: "readonly"`
-  - `order_execution.mode: "state_only"`
-  - `min_sharpe: 0.5`
-  - `max_symbols: 150`
-- `configs/universe/alpha_v1_dev_1m.yml`
-  - broader local universe filters than canonical config
-  - `p_value_threshold: 0.15`
-  - `max_half_life_bars: 240`
-  - `louvain_correlation_threshold: 0.3`
-- `configs/backtest/stress_test_dev_1m.yml`
-  - entry grid: `[1.0, 1.25, 1.5, 2.0, 2.5]`
-  - lookback grid: `[45, 60, 120, 180, 240, 360]`
-  - workflow-drill friction: maker `0.0001`, taker `0.0004`, annual funding `0.05`
-- `src/research/pair_stress_filter.py`
-  - rejects candidates with `best_net_pnl <= 0`
+- Bybit CCXT creation now narrows market loading to linear USDT swaps and uses
+  time adjustment / larger recv window to avoid timestamp drift failures:
+  - `defaultType: swap`
+  - `defaultSubType: linear`
+  - `defaultSettle: USDT`
+  - `fetchMarkets.types: ["linear"]`
+  - `adjustForTimeDifference: True`
+  - `recvWindow: 10000`
 
-Important implication:
+## Latest Fresh Dev Drill
 
-- Lowering `min_sharpe` alone is not enough to naturally promote many pairs.
-- The stress filter also requires positive net PnL before a pair becomes a
-  candidate survivor.
+This drill validated the already-promoted dev artifact with execution queue
+consumption enabled. It did not rerun research or promotion.
 
-Recommended approach for the drill:
+Research/promote/refresh/report:
 
-1. Keep `configs/pipelines/dev.yml` read-only and state-only.
-2. Make dev-only research/stress settings more permissive:
-   - Lower `min_sharpe` for runtime loading/reporting.
-   - Consider lower friction assumptions in `stress_test_dev_1m.yml` for the
-     workflow drill.
-   - Consider a wider entry grid such as lower entry thresholds to create more
-     simulated trades.
-   - Consider loosening dev universe cointegration and clustering thresholds.
-3. If positive-PnL gating still leaves too few pairs, decide whether to add a
-   typed, explicit dev-only workflow-test acceptance policy. Do not hide this in
-   ad hoc code or raw config dictionaries.
-
-Do not change UAT or prod config for this drill.
-
-Current promoted dev 1m artifact:
+- Existing promoted artifact contained `7` surviving pairs.
+- Promoted artifact:
 
 ```text
 data/universes/1m/surviving_pairs.json
-pair_count=4
 ```
 
-## Drill Acceptance Checklist
-
-During or after the 2-3 hour run, confirm:
-
-- Research writes a candidate eligible-pair artifact.
-- Promotion writes `data/universes/1m/surviving_pairs.json`.
-- Promotion appends `data/universes/1m/promotion_audit.jsonl`.
-- Observer loads promoted pairs on boot.
-- Telegram `/status` responds.
-- Telegram `/health` responds and reports fresh tick age.
-- Telegram `/pairs` shows the promoted 4-pair artifact.
-- Telegram `/pairs` shows latest z-score, entry gap, and latest action for each
-  promoted pair.
-- Telegram `/positions` lists open position ids.
-- Telegram `/positions` opens the two-step `Position #id -> Summary | Plot`
-  menu.
-- Telegram `/inspect <ID|PAIR>` shows entry, current z-score, prices, and PnL.
-- Telegram `/plot <ID|PAIR>` sends a z-score/PnL PNG and refresh button.
-- At least one position opens naturally.
-- At least one position closes naturally, if market movement permits.
-- Exit notifications format PnL correctly.
-- Report CLI works in text and JSON modes.
-- `user_commands` are claimed and completed for `/pause`, `/resume`, and at
-  least one stop command.
-- `leg_fills` remains state-only.
-
-State-only safety invariant:
-
-```sql
-select count(*)
-from leg_fills
-where exchange_order_id is not null
-   or client_order_id is not null;
-```
-
-Expected result:
+- Promoted artifact validation:
 
 ```text
-0
+pairs: 7
+missing baseline rows: 0
 ```
 
-Any non-zero result is a stop-and-investigate event.
+- Promoted symbols were refreshed to recent Bybit 1m market data.
+- Refresh completed for `7` symbols.
+- Each symbol saved `4222` local rows with latest candle
+  `2026-05-21T19:11:00+00:00`.
+- Pair validity report showed `1997` recent bars for each promoted pair.
+- Queue report showed all `7` promoted pairs as `Entry YES` with `0` block
+  reasons.
+- Post-execution report used fresh persisted tick observations and still showed
+  all `7` promoted pairs as `Entry YES` with `0` block reasons.
 
-## Useful Commands
+State-only execution drill:
 
-Run safe offline tests:
+- Execution started safely with dev config:
+  - `credential_tier: readonly`
+  - `order_execution.mode: state_only`
+  - `execution.pair_queue.mode: future_entries`
+- Loaded `7` promoted pairs.
+- Boot reconciliation returned `SKIPPED_NO_SNAPSHOT_PROVIDER`.
+- One bounded tick evaluated signals and persisted `7` fresh tick observations.
+- Latest actions were all `SKIP`.
+- No open positions were created.
+- No leg fills were recorded.
+- No order events were recorded.
+- No user commands were recorded.
+- No exchange/client order ids were recorded.
+- `runtime_state observer_run` recorded `COMPLETED_MAX_TICKS` with
+  `completed_ticks: 1`.
+- Blocked queue decisions were not exercised in this live drill because all
+  queue decisions were entry-allowed; behavior tests cover blocked-entry and
+  natural-exit behavior.
+
+## Latest Fresh Cold Lifecycle Drill
+
+This drill started after the user deleted old local data and archives. It
+performed a fresh Bybit OHLCV fetch, research, promotion, promoted-pair refresh,
+report, and bounded state-only execution.
+
+Research:
 
 ```bash
-.venv/bin/python -m pytest
+.venv/bin/python main.py run --config configs/runs/dev_1m_research.yml
 ```
 
-Generate a text report:
+Result:
+
+- Bybit returned `569` assets above the configured dev volume floor.
+- Dev config limited the fetch universe to `150` symbols.
+- Fresh fetch recreated `150` parquet files.
+- Research window: `2026-05-20` to `2026-05-21`, `1m`.
+- Discovery detected `150` historical datasets.
+- Universe loading kept `23` assets in memory.
+- Maturity sieve passed `22` assets and rejected `1`.
+- Clustering wrote `data/universes/1m/clusters_20260521_2250.json`.
+- Discovery yielded `45` candidate pairs.
+- Pair stress filter accepted `6` survivors and rejected `39` candidates.
+- Surviving pairs:
+  - `AVNT/USDT|ASTER/USDT`
+  - `AVNT/USDT|ADA/USDT`
+  - `BCH/USDT|BNB/USDT`
+  - `BCH/USDT|ARB/USDT`
+  - `BCH/USDT|CHZ/USDT`
+  - `BCH/USDT|ADA/USDT`
+- Candidate artifact:
+
+```text
+data/universes/1m/candidate_surviving_pairs.json
+pair_count: 6
+generated_at: 2026-05-21T22:50:35.369541+00:00
+missing baseline rows: 0
+```
+
+Promotion:
 
 ```bash
-.venv/bin/python -m src.engine.trader.report_generator \
-  --db-path data/dev/trades_1m.db \
-  --min-sharpe 0.5 \
-  --surviving-pairs-path data/universes/1m/surviving_pairs.json
+.venv/bin/python main.py promote-pairs \
+  --pipeline configs/pipelines/dev.yml \
+  --operator codex-fresh-cold-run
 ```
 
-Generate parse-safe JSON:
+Result:
+
+- Promotion succeeded.
+- Candidate was atomically moved to
+  `data/universes/1m/surviving_pairs.json`.
+- `promotion_audit.jsonl` recorded `pair_count: 6`, operator
+  `codex-fresh-cold-run`, candidate/promoted SHA
+  `1fcb6697aced659ae4e7043b7ef21cab932083d20aa308b019a6d71b207f962f`, and
+  promoted time `2026-05-21T22:50:56.854352+00:00`.
+- Promoted artifact validation:
+
+```text
+pairs: 6
+missing baseline rows: 0
+candidate_exists: False
+```
+
+Refresh/report:
+
+- Promoted-pair refresh covered `7` unique symbols:
+  - `ADA/USDT`
+  - `ARB/USDT`
+  - `ASTER/USDT`
+  - `AVNT/USDT`
+  - `BCH/USDT`
+  - `BNB/USDT`
+  - `CHZ/USDT`
+- Each refreshed symbol saved `1458` rows with latest candle
+  `2026-05-21T22:52:00+00:00`.
+- Initial report showed all `6` queue decisions as `Entry YES` with `0` block
+  reasons.
+- Post-execution report still showed all `6` queue decisions as `Entry YES`
+  with `0` block reasons.
+- Latest post-execution queue ranking:
+  1. `AVNT/USDT|ADA/USDT`
+  2. `BCH/USDT|CHZ/USDT`
+  3. `BCH/USDT|BNB/USDT`
+  4. `BCH/USDT|ARB/USDT`
+  5. `BCH/USDT|ADA/USDT`
+  6. `AVNT/USDT|ASTER/USDT`
+
+State-only execution drill:
 
 ```bash
-.venv/bin/python -m src.engine.trader.report_generator \
-  --db-path data/dev/trades_1m.db \
-  --min-sharpe 0.5 \
-  --surviving-pairs-path data/universes/1m/surviving_pairs.json \
-  --json
+.venv/bin/python main.py execute \
+  --pipeline configs/pipelines/dev.yml \
+  --strategy configs/strategy/dev.yml \
+  --risk configs/risk/alpha_v1.yml \
+  --max-ticks 1 \
+  --heartbeat-seconds 1
 ```
 
-Render current Telegram health in the terminal:
+Result:
+
+- Execution started safely with dev config:
+  - `credential_tier: readonly`
+  - `order_execution.mode: state_only`
+  - `execution.pair_queue.mode: future_entries`
+- Loaded `6` Tier 1 pairs from `6` total survivors.
+- Boot reconciliation returned `SKIPPED_NO_SNAPSHOT_PROVIDER`.
+- One bounded tick evaluated signals and persisted `6` fresh tick observations.
+- Latest actions were all `SKIP`.
+- `runtime_state observer_run` recorded:
+
+```text
+status: COMPLETED_MAX_TICKS
+started_at: 2026-05-21T22:53:47.270126+00:00
+completed_at: 2026-05-21T22:54:37.035878+00:00
+completed_ticks: 1
+open_position_ids: []
+```
+
+State verification after execution:
+
+```text
+open positions: 0
+leg fills: 0
+order events: 0
+tick signals: 6
+user commands: 0
+reconciliation status: SKIPPED_NO_SNAPSHOT_PROVIDER
+exchange/client order ids: 0
+```
+
+Important interpretation:
+
+- The full cold research/promote/refresh/report/execution lifecycle now works
+  from a deleted local `data/` directory.
+- The current active promoted artifact is non-empty with `6` promoted pairs.
+- Queue consumption was exercised for a non-empty fresh promotion.
+- Blocked queue decisions were not exercised live because all queue decisions
+  were entry-allowed; behavior tests cover blocked-entry and natural-exit
+  behavior.
+
+## Latest Clean Lifecycle Drill
+
+This drill archived active dev runtime/artifact outputs, kept existing local
+market-data parquet, and reran research with `--skip-fetch`.
+
+Archive:
+
+```text
+data/dev/archive/clean_lifecycle_20260521_190905/
+```
+
+Archived active files:
+
+- `data/dev/trades_1m.db`
+- `data/dev/trades_1m.db-wal`
+- `data/dev/trades_1m.db-shm`
+- `data/universes/1m/surviving_pairs.json`
+- `data/universes/1m/promotion_audit.jsonl`
+- `data/universes/1m/pair_stress_report.json`
+- previous `data/universes/1m/clusters_*.json`
+
+Research:
 
 ```bash
-.venv/bin/python -c "from src.interfaces.telegram import context as c; from src.engine.trader.runtime.health import build_trader_health_snapshot, render_trader_health_snapshot; c.configure_daemon('configs/telegram/dev.yml'); s=c.open_state_manager(); snap=build_trader_health_snapshot(s, environment=c.environment_label() or 'N/A', stale_after_minutes=c.health_stale_after_minutes()); print(render_trader_health_snapshot(snap)); s.close()"
+.venv/bin/python main.py research \
+  --pipeline configs/pipelines/dev.yml \
+  --universe configs/universe/alpha_v1_dev_1m.yml \
+  --backtest configs/backtest/stress_test_dev_1m.yml \
+  --strategy configs/strategy/dev.yml \
+  --skip-fetch
 ```
 
-Inspect positions:
+Result:
+
+- Research skipped API fetch and used already-fetched local parquet data.
+- Discovery detected `150` historical datasets.
+- Filtered `17` mature assets from `18` loaded assets.
+- Clustering wrote `data/universes/1m/clusters_20260521_2211.json`.
+- Discovery yielded `4` candidate pairs.
+- Pair stress filter rejected all `4` candidate pairs:
+  - `BCH/USDT / AAVE/USDT`: best pnl `-1.48%`
+  - `ALGO/USDT / AVAX/USDT`: best pnl `-1.74%`
+  - `AAVE/USDT / ATOM/USDT`: best pnl `-2.18%`
+  - `AAVE/USDT / ADA/USDT`: best pnl `-2.91%`
+- Candidate artifact was valid but empty:
+
+```text
+data/universes/1m/candidate_surviving_pairs.json
+pair_count: 0
+generated_at: 2026-05-21T22:11:34.739854+00:00
+```
+
+Promotion:
 
 ```bash
-sqlite3 data/dev/trades_1m.db \
-  'select id, pair_label, side, status, opened_at, closed_at from spread_positions order by id;'
+.venv/bin/python main.py promote-pairs \
+  --pipeline configs/pipelines/dev.yml \
+  --operator codex-clean-lifecycle
 ```
 
-Inspect leg lifecycle:
+Result:
 
-```bash
-sqlite3 data/dev/trades_1m.db \
-  'select leg_role, status, count(*) from leg_fills group by leg_role, status order by leg_role, status;'
+- Promotion succeeded.
+- Candidate was atomically moved to
+  `data/universes/1m/surviving_pairs.json`.
+- `promotion_audit.jsonl` recorded `pair_count: 0`, operator
+  `codex-clean-lifecycle`, and promoted time
+  `2026-05-21T22:12:07.585056+00:00`.
+
+Refresh/report/execution:
+
+- Promoted-pair data refresh completed as an empty no-op:
+  - `Symbols: 0`
+  - started `2026-05-21T22:12:26.799237+00:00`
+  - finished `2026-05-21T22:12:26.799374+00:00`
+- Report was healthy with empty pair-validity and queue sections.
+- Bounded state-only execution loaded `0` Tier 1 pairs from `0` total survivors
+  and aborted before the tick loop with:
+
+```text
+No Tier 1 pairs found. Aborting.
 ```
 
-Inspect commands:
+State verification after the empty-universe execution attempt:
 
-```bash
-sqlite3 data/dev/trades_1m.db \
-  'select id, command, target_pair, status, timestamp, claimed_at, completed_at, error from user_commands order by id;'
+```text
+open positions: 0
+leg fills: 0
+order events: 0
+tick signals: 0
+user commands: 0
+reconciliation runs: 0
+runtime_state rows: 0
+exchange/client order ids: 0
 ```
 
-## Do Not Do Yet
+Important interpretation:
 
-- Do not enable live order execution.
-- Do not increase real-capital exposure.
-- Do not implement scheduled pair refresh before quantified diagnostics,
-  cadence policy, and operator review workflow are designed and tested.
-- Do not implement hot reload.
-- Do not implement automatic rebalancing.
-- Do not implement automatic promotion.
-- Do not block new entries from pair-validity diagnostics until the read-only
-  diagnostic phase has been reviewed.
-- Do not force-close positions because of pair-set changes.
-- Do not push unless explicitly asked.
+- The clean research/promote lifecycle worked mechanically from archived state
+  using old local data.
+- The latest active promoted artifact is intentionally empty because the old
+  data produced no stress-surviving pairs.
+- This did not exercise non-empty queue consumption after a fresh promotion.
+
+## Latest Code Slice
+
+Implemented:
+
+- Queue-driven future-entry selection in execution.
+- Typed `StrategyConfig` is now passed into tick execution instead of converting
+  config-origin data back into a raw dictionary.
+- Pipeline configs now set `execution.pair_queue.mode: future_entries`.
+- Pipeline configs now include explicit `execution.pair_validity` diagnostics
+  policy.
+- Docs were updated to describe `report_only` versus `future_entries` queue
+  modes.
+
+Verification:
+
+```text
+.venv/bin/python -m pytest -q
+264 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+## Current Gaps
+
+Primary missing behavior:
+
+- A promoted-artifact refresh/report/execution drill has been rerun after
+  enabling execution queue consumption.
+- A full cold research/promote/refresh/report/execution drill has now been rerun
+  from a deleted local `data/` directory and produced `6` promoted pairs.
+- Live blocked-queue behavior remains unexercised in an operator drill because
+  the current dev queue decisions were all entry-allowed; behavior tests cover
+  blocked-entry and natural-exit behavior.
+- Threshold calibration remains intentionally permissive in dev.
+
+Capital allocation gap:
+
+- Dev has no global max open positions yet.
+- No full position sizing / capital allocator exists yet.
+- `max_positions_per_pair: 1` exists, but broader capital-slot policy is still
+  future work.
+
+Threshold gap:
+
+- These are configured but currently `null` in dev:
+  - `min_recent_correlation`
+  - `max_recent_p_value`
+  - `max_abs_hedge_ratio_drift_pct`
+  - `max_half_life_drift_pct`
+  - `max_bars_since_promotion`
+
+Lifecycle gaps:
+
+- No scheduled candidate regeneration.
+- No automatic promotion.
+- No hot reload.
+- No forced closes from pair-set changes, intentionally.
+
+## Recommended Next Slice
+
+Choose the next validation slice:
+
+- Calibrate queue policy thresholds now that the active promoted artifact has
+  `6` pairs and fresh diagnostics.
+- Or add an operator drill/test fixture that intentionally blocks one queue
+  decision while proving existing-position natural exit remains protected.
+- Keep capital slot sizing separate from threshold calibration.
+
+Suggested shape:
+
+1. Keep dev on readonly credentials and state-only execution.
+2. Preserve queue consumption as future-entry-only behavior.
+3. Confirm reports expose queue diagnostics before relying on entry blocking.
+4. Confirm state-only mode still records no exchange/client order ids.
+5. Update this handoff with exact drill or calibration results.
+
+Do not implement real capital sizing, automatic scheduled refresh, hot reload,
+or automatic promotion in the same slice.

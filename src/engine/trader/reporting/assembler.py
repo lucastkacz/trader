@@ -24,16 +24,32 @@ from src.engine.trader.reporting.per_pair import _compute_per_pair
 from src.engine.trader.reporting.risk import _compute_risk
 from src.engine.trader.reporting.signal_quality import _compute_signal_quality
 from src.engine.trader.reporting.state_ledger import _compute_state_ledger
+from src.engine.trader.runtime.pair_queue import (
+    PairQueuePolicy,
+    PairQueueSnapshot,
+    build_open_position_exposures,
+    build_pair_queue_opportunities_from_signals,
+    build_pair_queue_snapshot,
+)
+from src.engine.trader.runtime.pair_validity import build_pair_validity_report_if_configured
+from src.engine.trader.runtime.pair_validity.models import (
+    PairValidityConfig,
+    PairValidityReport,
+)
 from src.utils.timeframe_math import get_bars_per_year
 
 if TYPE_CHECKING:
-    from src.engine.trader.state_manager import TradeStateManager
+    from src.engine.trader.state.manager import TradeStateManager
 
 
 def generate_report(
     state: "TradeStateManager",
     min_sharpe: float,
     surviving_pairs_path: str,
+    market_data_base_dir: str | None = None,
+    pair_validity_config: PairValidityConfig | None = None,
+    pair_queue_policy: PairQueuePolicy | None = None,
+    pair_queue_enabled: bool = True,
 ) -> TradeReport:
     """Generate a complete report from the current database state."""
     all_orders = state.get_all_orders()
@@ -81,6 +97,20 @@ def generate_report(
         reconciliation_runs=reconciliation_runs,
         reconciliation_deltas=reconciliation_deltas,
     )
+    pair_validity = build_pair_validity_report_if_configured(
+        surviving_pairs_path=surviving_pairs_path,
+        market_data_base_dir=market_data_base_dir,
+        state=state,
+        config=pair_validity_config,
+    )
+    pair_queue = _compute_pair_queue_snapshot(
+        promoted_pairs=list(backtest_lookup.values()),
+        pair_validity=pair_validity,
+        tick_signals=tick_signals,
+        open_positions=open_positions,
+        policy=pair_queue_policy,
+        enabled=pair_queue_enabled,
+    )
 
     bt_avg_sharpe, bt_avg_pnl = _compute_backtest_averages(
         backtest_lookup=backtest_lookup,
@@ -108,6 +138,8 @@ def generate_report(
         signal_quality=sig_quality,
         risk=risk,
         state_ledger=state_ledger,
+        pair_validity=pair_validity,
+        pair_queue=pair_queue,
         backtest_avg_sharpe=bt_avg_sharpe,
         backtest_avg_pnl=bt_avg_pnl,
         trade_log=[dict(t) for t in closed_trades],
@@ -135,3 +167,26 @@ def _compute_backtest_averages(
         if tier1_bt else None
     )
     return bt_avg_sharpe, bt_avg_pnl
+
+
+def _compute_pair_queue_snapshot(
+    *,
+    promoted_pairs: list[dict[str, Any]],
+    pair_validity: PairValidityReport | None,
+    tick_signals: list[dict[str, Any]],
+    open_positions: list[dict[str, Any]],
+    policy: PairQueuePolicy | None,
+    enabled: bool,
+) -> PairQueueSnapshot | None:
+    if not enabled or pair_validity is None or not promoted_pairs:
+        return None
+    return build_pair_queue_snapshot(
+        promoted_pairs=promoted_pairs,
+        validity_snapshots=pair_validity.snapshots,
+        opportunities=build_pair_queue_opportunities_from_signals(
+            tick_signals=tick_signals,
+            promoted_pairs=promoted_pairs,
+        ),
+        open_positions=build_open_position_exposures(open_positions),
+        policy=policy or PairQueuePolicy(),
+    )

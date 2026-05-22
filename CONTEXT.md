@@ -22,6 +22,12 @@ Canonical system documentation lives in `docs/`.
 
 **Promoted artifact**: the artifact version accepted for execution loading.
 
+**Dynamic promoted-pair queue**: the ranked, recomputed view of promoted pairs
+available for future entries. The promoted artifact defines the approved
+universe; the dynamic queue uses fresh diagnostics, live opportunity evidence,
+runtime state, and capital-slot policy to decide which promoted pairs are
+currently entry-eligible and how they rank.
+
 **Pair validity**: quantified evidence that a promoted pair still resembles the
 research assumptions that made it eligible. This should be expressed with
 measurements such as artifact/data age, bars since research, hedge-ratio drift,
@@ -39,6 +45,10 @@ refresh cycle must not imply rebalancing or hidden forced closes.
 **Live exchange mutation**: any operation that can create, modify, or cancel real orders or positions on an exchange.
 
 **Runtime state**: in-memory and persisted trading state used by live execution, including positions, orders, reconciliation results, commands, and lifecycle events.
+
+**Capital slot**: execution capacity for one open position under the configured
+risk and allocation policy. A freed slot may be filled by the highest-ranked
+entry-eligible pair in the dynamic promoted-pair queue.
 
 **Operational seam**: a place where environment-specific behavior enters the
 system, such as filesystem layout, exchange adapter, clock, credentials,

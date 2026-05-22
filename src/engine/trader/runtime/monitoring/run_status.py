@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from src.engine.trader.reporting.assembler import generate_report
-from src.engine.trader.runtime.health import (
+from src.engine.trader.runtime.monitoring.health import (
     TraderHealthSnapshot,
     build_trader_health_snapshot,
 )
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 OBSERVER_RUN_STATE_KEY = "observer_run"
 

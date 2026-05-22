@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from src.engine.trader.runtime.pair_artifact_rows import validate_surviving_pair_rows
+from src.engine.trader.runtime.artifacts.rows import validate_surviving_pair_rows
 
 PAIR_ARTIFACT_SCHEMA_VERSION = 1
 

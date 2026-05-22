@@ -7,8 +7,22 @@ from src.engine.trader.execution.orders import (
     OrderExecutionAdapter,
     execute_spread_leg_orders,
 )
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
+
+
+def determine_action(current_side: str | None, new_signal: str) -> str:
+    """Determine state-transition action from current side and new signal."""
+    if current_side is None:
+        if new_signal == "FLAT":
+            return "SKIP"
+        return "ENTRY"
+
+    if new_signal == "FLAT":
+        return "EXIT"
+    if new_signal == current_side:
+        return "HOLD"
+    return "FLIP"
 
 
 def _format_pnl_percent(pnl: float | None) -> str:
@@ -28,14 +42,23 @@ async def route_signal_transition(
     notifier: TelegramNotifier,
     order_execution_cfg: OrderExecutionConfig,
     order_execution_adapter: OrderExecutionAdapter | None,
+    allow_new_entry: bool = True,
+    entry_block_reasons: list[str] | None = None,
 ) -> None:
     """Apply the local state and explicit order transition for a signal result."""
     if current_side is None and result.signal != "FLAT":
-        await _open_spread(pair, pair_label, result, lookback_bars, state, notifier, order_execution_cfg, order_execution_adapter)
+        if allow_new_entry:
+            await _open_spread(pair, pair_label, result, lookback_bars, state, notifier, order_execution_cfg, order_execution_adapter)
+        else:
+            await _notify_entry_blocked(pair_label, notifier, entry_block_reasons)
     elif current_side is not None and result.signal == "FLAT":
         await _close_spread(pair_label, result, timeframe, state, notifier, order_execution_cfg, order_execution_adapter)
     elif current_side is not None and result.signal != current_side:
-        await _flip_spread(pair, pair_label, result, lookback_bars, timeframe, state, notifier, order_execution_cfg, order_execution_adapter)
+        if allow_new_entry:
+            await _flip_spread(pair, pair_label, result, lookback_bars, timeframe, state, notifier, order_execution_cfg, order_execution_adapter)
+        else:
+            await _close_spread(pair_label, result, timeframe, state, notifier, order_execution_cfg, order_execution_adapter)
+            await _notify_entry_blocked(pair_label, notifier, entry_block_reasons)
 
 
 async def _open_spread(
@@ -148,4 +171,16 @@ async def _execute_leg_orders(
         leg_role=leg_role,
         config=order_execution_cfg,
         adapter=order_execution_adapter,
+    )
+
+
+async def _notify_entry_blocked(
+    pair_label: str,
+    notifier: TelegramNotifier,
+    block_reasons: list[str] | None,
+) -> None:
+    reasons = ", ".join(block_reasons or ["dynamic_pair_queue_blocked_entry"])
+    await notifier.send(
+        f"⛔ <b>ENTRY BLOCKED BY PAIR QUEUE:</b> {pair_label}\n"
+        f"Reasons: {reasons}"
     )

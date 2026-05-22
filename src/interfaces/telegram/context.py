@@ -5,7 +5,7 @@ from typing import Optional
 
 from src.engine.trader.config import TelegramConfig
 from src.engine.trader.config import load_telegram_config as load_typed_telegram_config
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 TELEGRAM_DB_PATH: Optional[str] = None
 TELEGRAM_ENVIRONMENT: Optional[str] = None

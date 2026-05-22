@@ -8,8 +8,9 @@ from src.engine.trader.config import (
     load_run_profile_config,
     load_strategy_config,
     load_universe_config,
+    PipelineConfig,
 )
-from src.engine.trader.promote_pairs import (
+from src.engine.trader.cli.promote_pairs import (
     add_promote_pairs_parser,
     promote_pairs_from_args,
 )
@@ -37,6 +38,8 @@ async def main():
     execute_parser.add_argument("--strategy", type=str, required=True, help="Path to strategy YAML config")
     execute_parser.add_argument("--risk", type=str, required=True, help="Path to risk YAML config")
     execute_parser.add_argument("--telegram", type=str, default=None, help="Path to telegram YAML config")
+    execute_parser.add_argument("--max-ticks", type=_positive_int, default=None, help="Override execution max_ticks for bounded local drills")
+    execute_parser.add_argument("--heartbeat-seconds", type=_positive_int, default=None, help="Override execution heartbeat_seconds for bounded local drills")
 
     # --- PROMOTION COMMAND ---
     add_promote_pairs_parser(subparsers)
@@ -76,6 +79,11 @@ async def main():
         pipeline_cfg = load_pipeline_config(args.pipeline)
         strategy_cfg = load_strategy_config(args.strategy)
         risk_cfg = load_risk_config(args.risk)
+        pipeline_cfg = apply_execution_overrides(
+            pipeline_cfg,
+            max_ticks=args.max_ticks,
+            heartbeat_seconds=args.heartbeat_seconds,
+        )
         
         await execute_flow(
             pipeline_cfg=pipeline_cfg,
@@ -91,6 +99,33 @@ async def main():
         
     else:
         parser.print_help()
+
+def apply_execution_overrides(
+    pipeline_cfg: PipelineConfig,
+    *,
+    max_ticks: int | None = None,
+    heartbeat_seconds: int | None = None,
+) -> PipelineConfig:
+    """Return a pipeline config with CLI-only execution overrides applied."""
+    if max_ticks is None and heartbeat_seconds is None:
+        return pipeline_cfg
+
+    execution_data = pipeline_cfg.execution.model_dump()
+    if max_ticks is not None:
+        execution_data["max_ticks"] = max_ticks
+    if heartbeat_seconds is not None:
+        execution_data["heartbeat_seconds"] = heartbeat_seconds
+
+    pipeline_data = pipeline_cfg.model_dump()
+    pipeline_data["execution"] = execution_data
+    return PipelineConfig.model_validate(pipeline_data)
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 if __name__ == "__main__":
     asyncio.run(main())

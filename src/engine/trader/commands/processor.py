@@ -4,7 +4,7 @@ from typing import Any
 
 from src.core.logger import logger
 from src.engine.trader.execution.liquidation import execute_emergency_liquidation
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
 

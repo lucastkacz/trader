@@ -13,9 +13,9 @@ from src.engine.trader.config import (
     UniverseConfig,
 )
 from src.screener.discovery_engine import DiscoveryEngine
-from src.engine.trader.runtime.pairs import candidate_pair_artifact_path
+from src.engine.trader.runtime.artifacts import candidate_pair_artifact_path
+from src.engine.trader.runtime.trader_runner import run_trader_loop
 from src.research.pair_stress_filter import PairStressFilter
-from src.engine.trader.live_trader import LiveTrader
 
 # --- RESEARCH TASKS ---
 
@@ -99,8 +99,11 @@ async def task_execute_trader(
     strategy_cfg: StrategyConfig,
     risk_cfg: RiskConfig,
 ):
-    trader = LiveTrader()
-    await trader.run(pipeline_cfg=pipeline_cfg, strategy_cfg=strategy_cfg, risk_cfg=risk_cfg)
+    await run_trader_loop(
+        pipeline_cfg=pipeline_cfg,
+        strategy_cfg=strategy_cfg,
+        risk_cfg=risk_cfg,
+    )
     return True
 
 # --- FLOWS ---
@@ -131,7 +134,7 @@ async def execute_flow(
     pipeline_cfg: PipelineConfig,
     strategy_cfg: StrategyConfig,
     risk_cfg: RiskConfig,
-    telegram_path: str = None,
+    telegram_path: str | None = None,
 ):
     logger = get_run_logger()
     timeframe = pipeline_cfg.timeframe

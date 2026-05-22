@@ -7,7 +7,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.logger import logger
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 class ReconciliationDeltaType(StrEnum):

@@ -5,11 +5,11 @@ from typing import Any
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from src.engine.trader.runtime.health import (
+from src.engine.trader.runtime.monitoring.health import (
     build_trader_health_snapshot,
     render_trader_health_snapshot,
 )
-from src.engine.trader.runtime.run_status import build_run_status_snapshot
+from src.engine.trader.runtime.monitoring.run_status import build_run_status_snapshot
 from src.interfaces.telegram import context as telegram_context
 from src.interfaces.telegram.handlers.auth import require_auth
 from src.interfaces.telegram.renderers import render_run_status

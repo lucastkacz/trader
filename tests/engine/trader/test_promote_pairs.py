@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.engine.trader import promote_pairs
+from src.engine.trader.cli import promote_pairs
 from src.engine.trader.config import load_pipeline_config
-from src.engine.trader.runtime import pairs
+from src.engine.trader.runtime import artifacts as pairs
 
 
 def _valid_pair(sharpe_ratio=1.25):
@@ -67,6 +67,31 @@ pipeline:
       mode: "manual"
       reload_policy: "on_boot"
       stale_open_position_policy: "natural_exit"
+    pair_validity:
+      recent_window_bars: 240
+      min_recent_bars: 60
+      open_position_review_half_life_multiple: 3.0
+    pair_queue:
+      enabled: true
+      mode: "future_entries"
+      require_entry_signal: false
+      scoring:
+        research_weight: 0.35
+        validity_weight: 0.45
+        opportunity_weight: 0.20
+        research_sharpe_score_at: 3.0
+      validity_thresholds:
+        block_on_missing_validity: true
+        block_on_operator_review_reasons: true
+        max_bars_since_promotion: null
+        min_recent_correlation: null
+        max_recent_p_value: null
+        max_abs_hedge_ratio_drift_pct: null
+        max_half_life_drift_pct: null
+      allocation:
+        max_open_positions: null
+        max_positions_per_pair: 1
+        max_positions_per_asset: null
 """,
         encoding="utf-8",
     )

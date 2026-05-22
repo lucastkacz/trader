@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.engine.trader.runtime.pair_artifact_lifecycle import pair_artifact_dir
+from src.engine.trader.runtime.artifacts.lifecycle import pair_artifact_dir
 
 PAIR_STRESS_REPORT_FILENAME = "pair_stress_report.json"
 

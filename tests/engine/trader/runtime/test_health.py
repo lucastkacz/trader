@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.engine.trader.config import load_pipeline_config
-from src.engine.trader.runtime.health import (
+from src.engine.trader.runtime.monitoring.health import (
     build_trader_health_snapshot,
     render_trader_health_snapshot,
 )
 from src.engine.trader.runtime.trader_runner import _notify_boot_health
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 def test_health_snapshot_reports_stale_tick(tmp_path):

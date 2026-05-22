@@ -10,7 +10,7 @@ from src.engine.trader.state.order_lifecycle import (
     InvalidLegOrderTransition,
     LegOrderStatus,
 )
-from src.engine.trader.state_manager import TradeStateManager
+from src.engine.trader.state.manager import TradeStateManager
 
 
 @pytest.fixture
