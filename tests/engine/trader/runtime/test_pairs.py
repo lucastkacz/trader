@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from src.engine.trader.runtime import pairs
+from src.engine.trader.runtime import artifacts as pairs
 
 
 def _valid_pair(sharpe_ratio=1.25):

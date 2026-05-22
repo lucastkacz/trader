@@ -10,7 +10,7 @@ from src.engine.trader.runtime.pair_validity.refresh import (
     refresh_promoted_pair_market_data,
     refresh_symbol_market_data,
 )
-from src.engine.trader.runtime.pairs import build_pair_artifact
+from src.engine.trader.runtime.artifacts import build_pair_artifact
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""Runtime loop implementation behind LiveTrader.run."""
+"""Trader runtime loop orchestration."""
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -6,10 +6,10 @@ from typing import Any
 
 from src.core.config import settings
 from src.core.logger import logger
+from src.engine.trader.commands.processor import process_user_commands
 from src.engine.trader.config import PipelineConfig, RiskConfig, StrategyConfig
 from src.engine.trader.execution.orders import CCXTOrderExecutionAdapter
 from src.engine.trader.reconciliation import ExchangeSnapshotProvider, run_boot_reconciliation
-from src.engine.trader.runtime.credentials import resolve_credentials
 from src.engine.trader.runtime.monitoring.health import (
     build_trader_health_snapshot,
     render_trader_health_snapshot,
@@ -20,12 +20,23 @@ from src.engine.trader.runtime.monitoring.run_status import (
     record_observer_run_interrupted,
     record_observer_run_started,
 )
+from src.engine.trader.runtime.pair_queue import PairQueuePolicy
+from src.engine.trader.runtime.pair_validity import PairValidityConfig, build_pair_validity_report
+from src.engine.trader.runtime.artifacts import load_tier1_pairs, promoted_pair_artifact_path
+from src.engine.trader.runtime.scheduler import seconds_until_next_candle
+from src.engine.trader.runtime.tick import execute_tick
 from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
 
+def resolve_credentials(settings: Any, credential_tier: str) -> tuple[str, str]:
+    """Resolve API key/secret from configured credential tier."""
+    if credential_tier == "live":
+        return settings.exchange_live_api_key or "", settings.exchange_live_api_secret or ""
+    return settings.exchange_readonly_api_key or "", settings.exchange_readonly_api_secret or ""
+
+
 async def run_trader_loop(
-    trader: Any,
     pipeline_cfg: PipelineConfig,
     strategy_cfg: StrategyConfig,
     risk_cfg: RiskConfig,
@@ -43,7 +54,7 @@ async def run_trader_loop(
     )
     await notifier.send(f"🟢 <b>System Boot:</b> Engine Synchronized on {pipeline_cfg.timeframe}")
 
-    pairs = trader.load_tier1_pairs(
+    pairs = load_tier1_pairs(
         pipeline_cfg.timeframe,
         execution_cfg.min_sharpe,
         execution_cfg.exchange,
@@ -60,7 +71,6 @@ async def run_trader_loop(
         await _run_boot_reconciliation(state, reconciliation_snapshot_provider, api_key, api_secret, notifier)
         await _notify_boot_health(state, pipeline_cfg, notifier)
         await _run_ticks(
-            trader=trader,
             state=state,
             pairs=pairs,
             pipeline_cfg=pipeline_cfg,
@@ -141,7 +151,6 @@ async def _run_boot_reconciliation(
 
 
 async def _run_ticks(
-    trader: Any,
     state: TradeStateManager,
     pairs: list[dict[str, Any]],
     pipeline_cfg: PipelineConfig,
@@ -157,18 +166,43 @@ async def _run_ticks(
 
     tick_count = 0
     while True:
-        await _sleep_until_next_tick(trader, state, pairs, pipeline_cfg, notifier, api_key, api_secret)
-        await trader.execute_tick(
+        await _sleep_until_next_tick(state, pairs, pipeline_cfg, notifier, api_key, api_secret)
+        pair_queue_enabled = (
+            pipeline_cfg.execution.pair_queue.enabled
+            and pipeline_cfg.execution.pair_queue.mode == "future_entries"
+        )
+        pair_validity = (
+            build_pair_validity_report(
+                surviving_pairs_path=promoted_pair_artifact_path(
+                    pipeline_cfg.timeframe,
+                    pipeline_cfg.execution.artifact_base_dir,
+                ),
+                market_data_base_dir=pipeline_cfg.execution.market_data_base_dir,
+                state=state,
+                config=PairValidityConfig(
+                    **pipeline_cfg.execution.pair_validity.to_runtime_config_kwargs()
+                ),
+            )
+            if pair_queue_enabled else None
+        )
+        await execute_tick(
             pairs,
             state,
             notifier,
             pipeline_cfg.timeframe,
-            strategy_cfg.model_dump(),
+            strategy_cfg,
             exchange_id=pipeline_cfg.execution.exchange,
             api_key=api_key,
             api_secret=api_secret,
             order_execution_cfg=pipeline_cfg.execution.order_execution,
             order_execution_adapter=order_adapter,
+            pair_queue_policy=PairQueuePolicy(
+                **pipeline_cfg.execution.pair_queue.to_runtime_policy_kwargs()
+            ),
+            pair_validity_snapshots=(
+                pair_validity.snapshots if pair_validity is not None else None
+            ),
+            pair_queue_enabled=pair_queue_enabled,
         )
         tick_count += 1
         if pipeline_cfg.execution.max_ticks is not None and tick_count >= pipeline_cfg.execution.max_ticks:
@@ -214,7 +248,6 @@ async def _notify_boot_health(
 
 
 async def _sleep_until_next_tick(
-    trader: Any,
     state: TradeStateManager,
     pairs: list[dict[str, Any]],
     pipeline_cfg: PipelineConfig,
@@ -224,14 +257,14 @@ async def _sleep_until_next_tick(
 ) -> None:
     execution_cfg = pipeline_cfg.execution
     sleep_seconds = (
-        trader.seconds_until_next_candle(pipeline_cfg.timeframe)
+        seconds_until_next_candle(pipeline_cfg.timeframe)
         if execution_cfg.sync_to_boundary
         else execution_cfg.heartbeat_seconds
     )
     target_time = datetime.now(timezone.utc) + timedelta(seconds=sleep_seconds)
     logger.info(f"Next tick scheduled for {target_time:%Y-%m-%d %H:%M:%S} UTC.")
     while True:
-        await trader.process_user_commands(
+        await process_user_commands(
             state,
             pairs,
             notifier,

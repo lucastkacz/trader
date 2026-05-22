@@ -10,7 +10,7 @@ import pandas as pd
 
 from src.data.storage.local_parquet import ParquetStorage
 from src.engine.trader.runtime.pair_validity.market_data import normalize_ohlcv
-from src.engine.trader.runtime.pairs import validate_pair_artifact_file
+from src.engine.trader.runtime.artifacts import validate_pair_artifact_file
 from src.utils.timeframe_math import get_timeframe_minutes
 
 FetchKlines = Callable[..., Awaitable[pd.DataFrame]]

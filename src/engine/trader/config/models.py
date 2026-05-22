@@ -25,6 +25,22 @@ class PairRefreshConfig(StrictConfigModel):
     stale_open_position_policy: Literal["natural_exit"]
 
 
+class PairValidityDiagnosticsConfig(StrictConfigModel):
+    recent_window_bars: int | None = Field(gt=0)
+    min_recent_bars: int = Field(gt=0)
+    open_position_review_half_life_multiple: float | None = Field(gt=0)
+
+    def to_runtime_config_kwargs(self) -> dict[str, object]:
+        """Return kwargs for runtime PairValidityConfig without importing runtime code."""
+        return {
+            "recent_window_bars": self.recent_window_bars,
+            "min_recent_bars": self.min_recent_bars,
+            "open_position_review_half_life_multiple": (
+                self.open_position_review_half_life_multiple
+            ),
+        }
+
+
 class PairQueueScoringConfig(StrictConfigModel):
     research_weight: float = Field(ge=0)
     validity_weight: float = Field(ge=0)
@@ -56,7 +72,7 @@ class PairQueueAllocationConfig(StrictConfigModel):
 
 class PairQueueConfig(StrictConfigModel):
     enabled: bool
-    mode: Literal["report_only"]
+    mode: Literal["report_only", "future_entries"]
     require_entry_signal: bool
     scoring: PairQueueScoringConfig
     validity_thresholds: PairQueueValidityThresholdsConfig
@@ -105,6 +121,7 @@ class PipelineExecutionConfig(StrictConfigModel):
     sync_to_boundary: bool
     order_execution: OrderExecutionConfig
     pair_refresh: PairRefreshConfig
+    pair_validity: PairValidityDiagnosticsConfig
     pair_queue: PairQueueConfig
 
 

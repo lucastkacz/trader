@@ -79,8 +79,8 @@ mismatched, or legacy list-only artifacts.
 Fresh pair rows include research baseline fields for later validity diagnostics:
 research window start/end/bars, baseline log-price correlation, canonical spread
 mean/std, and z-score distribution stats for the selected lookback. These fields
-are evidence for operator review and dry-run queue scoring; they do not imply
-automatic promotion, rebalancing, or forced closes.
+are evidence for operator review and queue scoring; they do not imply automatic
+promotion, rebalancing, or forced closes.
 
 ## Pair Recalculation Policy
 
@@ -169,16 +169,16 @@ Each decision should explain its score components, current rank, whether a new
 entry is allowed, and the exact block or review reasons. The queue is an
 auditable decision snapshot, not a hidden mutable scheduler.
 
-The current safe implementation is dry-run ranking surfaced through reports
-when pair-validity diagnostics are requested. Execution does not yet consume
-queue decisions for order selection. That integration should happen only after a
-fresh local research/promote/run drill shows that queue decisions are sane and
-tests prove that blocked pairs affect future entries only.
+The current safe implementation surfaces ranking through reports when
+pair-validity diagnostics are requested and can consume the same queue decisions
+inside execution when `execution.pair_queue.mode` is `future_entries`. Execution
+uses queue decisions only to filter and rank future entries. Existing positions
+still receive normal signal evaluation for natural exit.
 
 Queue policy is explicit pipeline config under `execution.pair_queue`. Current
-supported mode is `report_only`. `null` values in allocation caps or optional
-validity thresholds mean "not enforced" and should remain typed as intentional
-configuration, not hidden defaults.
+supported modes are `report_only` and `future_entries`. `null` values in
+allocation caps or optional validity thresholds mean "not enforced" and should
+remain typed as intentional configuration, not hidden defaults.
 
 Queue decisions affect future entries only. A pair falling in rank, failing
 validity, or disappearing from a later promoted artifact must not force-close an
@@ -195,8 +195,8 @@ Runtime modules are grouped by trading concept:
   visibility.
 - `runtime/pair_validity/`: read-only pair-validity reports, market-data
   refresh helpers, drift statistics, runtime-state summaries, and typed models.
-- `runtime/pair_queue/`: dry-run ranking and entry-eligibility decisions for
-  promoted pairs, using explicit runtime policy and current state as inputs.
+- `runtime/pair_queue/`: ranking and entry-eligibility decisions for promoted
+  pairs, using explicit runtime policy and current state as inputs.
 - `runtime/`: execution loop modules that still directly drive trading behavior,
   such as tick evaluation, signal transitions, and trader runner orchestration.
 - `cli/`: operator command entrypoints for reporting, promoted-pair data
@@ -204,7 +204,8 @@ Runtime modules are grouped by trading concept:
 
 Root-level trader compatibility facades are not canonical package paths.
 Callers should import concepts directly from `state.manager`, `signals`,
-`runtime.trader`, `reporting`, and `cli` so each module has one obvious home.
+`runtime.trader_runner`, `reporting`, and `cli` so each module has one obvious
+home.
 
 ## Configuration
 

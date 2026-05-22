@@ -71,6 +71,80 @@ def build_pair_queue_snapshot(
     )
 
 
+def build_open_position_exposures(
+    open_positions: Sequence[Mapping[str, Any]],
+) -> list[OpenPositionExposure]:
+    """Convert runtime state rows into pair-queue exposure inputs."""
+    return [
+        OpenPositionExposure(
+            pair_label=str(position["pair_label"]),
+            asset_x=str(position["asset_x"]),
+            asset_y=str(position["asset_y"]),
+            position_id=(
+                int(position["id"]) if position.get("id") is not None else None
+            ),
+        )
+        for position in open_positions
+    ]
+
+
+def build_pair_queue_opportunity(
+    *,
+    pair_label: str,
+    action: str,
+    z_score: float,
+    entry_z: float | None,
+    note_prefix: str,
+) -> PairQueueOpportunity:
+    """Build current opportunity evidence from a signal action and z-score."""
+    entry_signal = action in {"ENTRY", "FLIP"}
+    if entry_signal:
+        score = 1.0
+    elif entry_z is not None and entry_z > 0:
+        score = min(1.0, abs(z_score) / entry_z)
+    else:
+        score = 0.0
+    return PairQueueOpportunity(
+        pair_label=pair_label,
+        score=score,
+        entry_signal=entry_signal,
+        notes=[
+            f"{note_prefix}_action:{action}",
+            f"{note_prefix}_z:{z_score:.4f}",
+        ],
+    )
+
+
+def build_pair_queue_opportunities_from_signals(
+    *,
+    tick_signals: Sequence[Mapping[str, Any]],
+    promoted_pairs: Sequence[Mapping[str, Any]],
+) -> dict[str, PairQueueOpportunity]:
+    """Build latest opportunity evidence from persisted tick signal rows."""
+    entry_z_by_pair = {
+        f"{pair['Asset_X']}|{pair['Asset_Y']}": float(pair["Best_Params"]["entry_z"])
+        for pair in promoted_pairs
+        if "Best_Params" in pair and "entry_z" in pair["Best_Params"]
+    }
+    latest_by_pair: dict[str, Mapping[str, Any]] = {}
+    for signal in tick_signals:
+        pair_label = str(signal["pair_label"])
+        previous = latest_by_pair.get(pair_label)
+        if previous is None or str(signal["timestamp"]) >= str(previous["timestamp"]):
+            latest_by_pair[pair_label] = signal
+
+    return {
+        pair_label: build_pair_queue_opportunity(
+            pair_label=pair_label,
+            action=str(signal["action"]),
+            z_score=float(signal["z_score"]),
+            entry_z=entry_z_by_pair.get(pair_label),
+            note_prefix="latest",
+        )
+        for pair_label, signal in latest_by_pair.items()
+    }
+
+
 def _build_decision(
     *,
     pair: Mapping[str, Any],

@@ -5,8 +5,11 @@ import numpy as np
 import pandas as pd
 
 from src.data.storage.local_parquet import ParquetStorage
-from src.engine.trader.runtime.pairs import build_pair_artifact
-from src.engine.trader.runtime.pair_validity import build_pair_validity_report
+from src.engine.trader.runtime.artifacts import build_pair_artifact
+from src.engine.trader.runtime.pair_validity import (
+    build_pair_validity_report,
+    build_pair_validity_report_if_configured,
+)
 from src.engine.trader.runtime.pair_validity.models import PairValidityConfig
 from src.engine.trader.state.manager import TradeStateManager
 
@@ -227,6 +230,44 @@ def test_pair_validity_flags_market_data_older_than_artifact_and_position(tmp_pa
     assert "market_data_older_than_open_position" in (
         snapshot.open_position_review_reasons
     )
+
+
+def test_pair_validity_optional_builder_skips_unconfigured_report(tmp_path):
+    state = TradeStateManager(db_path=":memory:")
+    try:
+        report = build_pair_validity_report_if_configured(
+            surviving_pairs_path=tmp_path / "missing.json",
+            market_data_base_dir=None,
+            state=state,
+            config=None,
+        )
+    finally:
+        state.close()
+
+    assert report is None
+
+
+def test_pair_validity_optional_builder_returns_unavailable_report_on_failure(tmp_path):
+    state = TradeStateManager(db_path=":memory:")
+    try:
+        report = build_pair_validity_report_if_configured(
+            surviving_pairs_path=tmp_path / "missing.json",
+            market_data_base_dir=tmp_path / "parquet",
+            state=state,
+            config=PairValidityConfig(
+                recent_window_bars=60,
+                min_recent_bars=30,
+                open_position_review_half_life_multiple=None,
+            ),
+        )
+    finally:
+        state.close()
+
+    assert report is not None
+    assert report.timeframe == "unknown"
+    assert report.exchange == "unknown"
+    assert report.snapshots == []
+    assert report.notes[0].startswith("pair_validity_unavailable:")
 
 
 def _write_artifact(

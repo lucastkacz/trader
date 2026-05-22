@@ -8,7 +8,7 @@ import pandas as pd
 
 from src.core.logger import logger
 from src.data.storage.local_parquet import ParquetStorage
-from src.engine.trader.runtime.pairs import extract_pair_artifact_pairs
+from src.engine.trader.runtime.artifacts import extract_pair_artifact_pairs
 
 
 def load_candidate_pairs(

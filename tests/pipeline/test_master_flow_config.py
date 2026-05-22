@@ -109,10 +109,10 @@ def test_execute_flow_allows_telegram_to_be_absent():
 async def test_task_execute_trader_passes_typed_risk_config(monkeypatch):
     captured = {}
 
-    async def fake_run(self, **kwargs):
+    async def fake_run_trader_loop(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(master_flow.LiveTrader, "run", fake_run)
+    monkeypatch.setattr(master_flow, "run_trader_loop", fake_run_trader_loop)
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
     strategy_cfg = load_strategy_config("configs/strategy/dev.yml")

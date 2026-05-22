@@ -5,7 +5,7 @@ import pytest
 
 from src.engine.trader.cli import promote_pairs
 from src.engine.trader.config import load_pipeline_config
-from src.engine.trader.runtime import pairs
+from src.engine.trader.runtime import artifacts as pairs
 
 
 def _valid_pair(sharpe_ratio=1.25):
@@ -67,9 +67,13 @@ pipeline:
       mode: "manual"
       reload_policy: "on_boot"
       stale_open_position_policy: "natural_exit"
+    pair_validity:
+      recent_window_bars: 240
+      min_recent_bars: 60
+      open_position_review_half_life_multiple: 3.0
     pair_queue:
       enabled: true
-      mode: "report_only"
+      mode: "future_entries"
       require_entry_signal: false
       scoring:
         research_weight: 0.35

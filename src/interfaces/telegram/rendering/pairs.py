@@ -3,7 +3,7 @@
 import html
 from pathlib import Path
 
-from src.engine.trader.runtime.pairs import validate_pair_artifact_file
+from src.engine.trader.runtime.artifacts import validate_pair_artifact_file
 from src.interfaces.telegram.rendering.formatting import (
     format_artifact_pct,
     format_z,

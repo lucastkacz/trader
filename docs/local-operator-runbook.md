@@ -30,7 +30,8 @@ process is active.
 ## 2. Start A Bounded Dev State-Only Observer
 
 Use the execution entrypoint with CLI-only bounds. Keep the dev pipeline on
-read-only credentials and state-only execution:
+read-only credentials, state-only execution, and queue-driven future-entry
+selection:
 
 ```bash
 .venv/bin/python main.py execute \
@@ -44,6 +45,11 @@ read-only credentials and state-only execution:
 `--max-ticks` and `--heartbeat-seconds` override only the in-memory runtime
 config for this process. They do not modify YAML. Use larger values for longer
 manual lifecycle drills.
+
+With `execution.pair_queue.mode: future_entries`, execution builds dynamic queue
+decisions before each tick transition. Queue decisions may block new entries,
+but they must not force-close, rebalance, promote artifacts, hot-reload
+execution, or bypass natural-exit evaluation for existing positions.
 
 ## 3. Stop The Observer
 
@@ -106,11 +112,13 @@ Human-readable report:
   --open-position-review-half-life-multiple 3
 ```
 
-When pair-validity diagnostics are enabled, the report also includes a dry-run
-dynamic pair queue. This queue ranks promoted pairs for future entries using the
+When pair-validity diagnostics are enabled, the report also includes the dynamic
+pair queue. This queue ranks promoted pairs for future entries using the
 promoted artifact, validity diagnostics, latest persisted tick signals, and
-current open-position exposure. It does not place orders, hot-reload execution,
-promote artifacts, or close positions.
+current open-position exposure. Report generation is read-only. In execution,
+the same configured queue policy may block new entries only; it must not place
+orders by itself, hot-reload execution, promote artifacts, force-close, or
+rebalance positions.
 
 Automation-safe JSON report:
 

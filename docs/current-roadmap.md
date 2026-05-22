@@ -26,16 +26,23 @@ Already available locally:
 - Trader CLI entrypoints live under `src/engine/trader/cli/`, and callers use
   canonical imports for state, signals, runtime trader, reporting, and CLI
   modules.
-- `runtime/pair_queue/` can build a dry-run ranked decision snapshot from
-  promoted pairs, pair-validity snapshots, opportunity evidence, open-position
-  exposure, and typed runtime policy. It does not place orders or mutate state.
+- `runtime/pair_queue/` can build a ranked decision snapshot from promoted
+  pairs, pair-validity snapshots, opportunity evidence, open-position exposure,
+  and typed runtime policy. It does not place orders or mutate state.
 - The report path can surface dry-run dynamic queue decisions when
   pair-validity diagnostics are requested, including score components,
   entry-allowed flags, block reasons, review reasons, and current rank.
+- Execution can build dynamic queue decisions from current tick opportunity
+  evidence and pair-validity snapshots, then filter/rank future entries when
+  pipeline config sets `execution.pair_queue.mode: future_entries`.
+- Blocked queue decisions prevent new entries and do not prevent existing
+  positions from receiving natural-exit signal evaluation.
 - Pipeline config now declares explicit `execution.pair_queue` policy for
-  report-only queue behavior, scoring weights, validity thresholds, and
+  queue behavior, scoring weights, validity thresholds, and
   allocation caps. `null` means intentionally unlimited for caps and optional
   thresholds.
+- Pipeline config now declares explicit `execution.pair_validity` diagnostics
+  policy used by execution-time queue consumption.
 - Fresh research candidate artifacts now carry baseline fields needed for
   validity diagnostics: research window start/end/bars, baseline correlation,
   canonical spread mean/std, and z-score distribution stats. Stress filtering
@@ -52,12 +59,13 @@ Already available locally:
 
 Required next behavior:
 
-- Build queue decisions during execution and use them to filter/rank future
-  entries.
-- Prove blocked queue decisions prevent new entries without affecting natural
-  exit evaluation for existing positions.
-- Keep refresh cadence and thresholds explicit in typed config or CLI/runtime
-  policy rather than hidden constants.
+- Run a fresh local research/promote/refresh/report/execution drill with queue
+  consumption enabled.
+- Confirm no exchange/client order ids are recorded during the state-only
+  execution drill.
+- Preserve pair-validity refresh cadence and thresholds as explicit typed
+  config or CLI/runtime policy rather than hidden constants.
+- Keep tuning thresholds separate from capital sizing.
 
 Do not implement:
 

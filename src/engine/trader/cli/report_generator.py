@@ -26,7 +26,7 @@ from src.engine.trader.reporting.render_terminal import (
 )
 from src.engine.trader.runtime.pair_validity.models import PairValidityConfig
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
-from src.engine.trader.runtime.pairs import promoted_pair_artifact_path
+from src.engine.trader.runtime.artifacts import promoted_pair_artifact_path
 from src.engine.trader.state.manager import TradeStateManager
 
 __all__ = [

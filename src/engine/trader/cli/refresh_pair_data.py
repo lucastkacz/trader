@@ -16,7 +16,7 @@ from src.engine.trader.runtime.pair_validity import (
     PairDataRefreshPolicy,
     refresh_promoted_pair_market_data,
 )
-from src.engine.trader.runtime.pairs import promoted_pair_artifact_path
+from src.engine.trader.runtime.artifacts import promoted_pair_artifact_path
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.engine.trader.config import PipelineConfig, load_pipeline_config
-from src.engine.trader.runtime.pairs import (
+from src.engine.trader.runtime.artifacts import (
     DEFAULT_PAIR_ARTIFACT_MAX_AGE_SECONDS,
     PairRefreshPromotionPolicy,
     promote_candidate_pair_artifact,

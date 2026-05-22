@@ -6,6 +6,7 @@ from src.engine.trader.runtime.pair_queue import (
     OpenPositionExposure,
     PairQueueOpportunity,
     PairQueuePolicy,
+    build_pair_queue_opportunities_from_signals,
     build_pair_queue_snapshot,
 )
 from src.engine.trader.runtime.pair_validity.models import PairValiditySnapshot
@@ -204,3 +205,34 @@ def test_pair_queue_policy_rejects_invalid_weights():
             validity_weight=0.0,
             opportunity_weight=0.0,
         )
+
+
+def test_pair_queue_opportunities_use_latest_signal_per_pair():
+    opportunities = build_pair_queue_opportunities_from_signals(
+        promoted_pairs=[
+            {
+                "Asset_X": "AAA/USDT",
+                "Asset_Y": "BBB/USDT",
+                "Best_Params": {"entry_z": 2.0},
+            }
+        ],
+        tick_signals=[
+            {
+                "pair_label": "AAA/USDT|BBB/USDT",
+                "timestamp": "2026-01-01T00:00:00+00:00",
+                "action": "SKIP",
+                "z_score": 0.5,
+            },
+            {
+                "pair_label": "AAA/USDT|BBB/USDT",
+                "timestamp": "2026-01-01T00:01:00+00:00",
+                "action": "HOLD",
+                "z_score": 1.0,
+            },
+        ],
+    )
+
+    opportunity = opportunities["AAA/USDT|BBB/USDT"]
+    assert opportunity.score == 0.5
+    assert opportunity.entry_signal is False
+    assert opportunity.notes == ["latest_action:HOLD", "latest_z:1.0000"]

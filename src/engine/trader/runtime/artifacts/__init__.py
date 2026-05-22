@@ -23,6 +23,7 @@ from src.engine.trader.runtime.artifacts.lifecycle import (
     validate_candidate_pair_artifact,
     write_candidate_pair_artifact,
 )
+from src.engine.trader.runtime.artifacts.loading import load_tier1_pairs
 from src.engine.trader.runtime.artifacts.promotion_audit import (
     PairRefreshPromotionPolicy,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "build_pair_artifact",
     "candidate_pair_artifact_path",
     "extract_pair_artifact_pairs",
+    "load_tier1_pairs",
     "pair_artifact_dir",
     "promote_candidate_pair_artifact",
     "promotion_audit_path",
@@ -59,4 +61,3 @@ __all__ = [
     "validate_surviving_pair_rows",
     "write_candidate_pair_artifact",
 ]
-

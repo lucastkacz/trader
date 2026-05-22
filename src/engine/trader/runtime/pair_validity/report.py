@@ -36,7 +36,7 @@ from src.engine.trader.runtime.pair_validity.time import (
     bars_between,
     parse_datetime,
 )
-from src.engine.trader.runtime.pairs import validate_pair_artifact_file
+from src.engine.trader.runtime.artifacts import validate_pair_artifact_file
 
 if TYPE_CHECKING:
     from src.engine.trader.state.manager import TradeStateManager
@@ -80,6 +80,37 @@ def build_pair_validity_report(
         pair_count=artifact.metadata.pair_count,
         snapshots=snapshots,
     )
+
+
+def build_pair_validity_report_if_configured(
+    *,
+    surviving_pairs_path: str | Path,
+    market_data_base_dir: str | Path | None,
+    state: "TradeStateManager",
+    config: PairValidityConfig | None,
+    now: datetime | None = None,
+) -> PairValidityReport | None:
+    """Build diagnostics when configured, or an auditable unavailable report."""
+    if market_data_base_dir is None or config is None:
+        return None
+
+    try:
+        return build_pair_validity_report(
+            surviving_pairs_path=surviving_pairs_path,
+            market_data_base_dir=market_data_base_dir,
+            state=state,
+            config=config,
+            now=now,
+        )
+    except Exception as exc:
+        return PairValidityReport(
+            artifact_path=str(surviving_pairs_path),
+            timeframe="unknown",
+            exchange="unknown",
+            pair_count=0,
+            snapshots=[],
+            notes=[f"pair_validity_unavailable: {exc}"],
+        )
 
 
 def _build_pair_snapshot(

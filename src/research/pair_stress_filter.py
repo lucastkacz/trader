@@ -7,7 +7,7 @@ from typing import Any
 from src.core.logger import logger
 from src.data.storage.local_parquet import ParquetStorage
 from src.engine.trader.config import BacktestConfig, StrategyConfig
-from src.engine.trader.runtime.pairs import write_candidate_pair_artifact
+from src.engine.trader.runtime.artifacts import write_candidate_pair_artifact
 from src.research.pair_stress_data import build_unified_ohlcv, load_candidate_pairs
 from src.research.pair_baseline import (
     apply_research_baseline_fields,

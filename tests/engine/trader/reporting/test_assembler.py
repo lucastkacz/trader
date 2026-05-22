@@ -280,7 +280,7 @@ def test_report_includes_dry_run_pair_queue_when_validity_is_available(state, tm
     )
 
     with patch(
-        "src.engine.trader.reporting.assembler._compute_pair_validity_report",
+        "src.engine.trader.reporting.assembler.build_pair_validity_report_if_configured",
         return_value=validity,
     ):
         report = generate_report(
@@ -328,7 +328,7 @@ def test_report_pair_queue_marks_open_positions_as_entry_blocked(state, tmp_path
     )
 
     with patch(
-        "src.engine.trader.reporting.assembler._compute_pair_validity_report",
+        "src.engine.trader.reporting.assembler.build_pair_validity_report_if_configured",
         return_value=validity,
     ):
         report = generate_report(

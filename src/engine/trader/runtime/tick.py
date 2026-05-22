@@ -1,19 +1,39 @@
 """Single-tick orchestration for the trader runtime."""
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from src.core.logger import logger
-from src.engine.trader.config import OrderExecutionConfig
+from src.engine.trader.config import OrderExecutionConfig, StrategyConfig
 from src.engine.trader.execution.market_data import fetch_recent_candles
 from src.engine.trader.execution.orders import OrderExecutionAdapter
 from src.engine.trader.execution.pnl import calculate_per_pair_pnl, calculate_unrealized_pnl
-from src.engine.trader.runtime.actions import determine_action
-from src.engine.trader.runtime.signal_transition import route_signal_transition
+from src.engine.trader.runtime.pair_queue import PairQueuePolicy
+from src.engine.trader.runtime.pair_queue.execution import (
+    allow_new_entry_from_queue,
+    build_queue_decisions_for_tick,
+    order_evaluations_for_transition,
+)
+from src.engine.trader.runtime.pair_validity.models import PairValiditySnapshot
+from src.engine.trader.runtime.signal_transition import (
+    determine_action,
+    route_signal_transition,
+)
 from src.engine.trader.signals.evaluator import evaluate_signal
 from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
+
+
+@dataclass(frozen=True)
+class PairTickEvaluation:
+    pair: dict[str, Any]
+    pair_label: str
+    current_side: str | None
+    lookback_bars: int
+    result: Any
+    action: str
 
 
 async def execute_tick(
@@ -21,12 +41,15 @@ async def execute_tick(
     state: TradeStateManager,
     notifier: TelegramNotifier,
     timeframe: str,
-    strategy_cfg: dict[str, Any],
+    strategy_cfg: StrategyConfig,
     exchange_id: str,
     api_key: str,
     api_secret: str,
     order_execution_cfg: OrderExecutionConfig,
     order_execution_adapter: OrderExecutionAdapter | None,
+    pair_queue_policy: PairQueuePolicy | None = None,
+    pair_validity_snapshots: Sequence[PairValiditySnapshot] | None = None,
+    pair_queue_enabled: bool = False,
 ) -> None:
     """Execute one full trader tick across all configured pairs."""
     if state.is_system_paused():
@@ -35,40 +58,67 @@ async def execute_tick(
 
     logger.info(f"═══ ENGINE TICK @ {datetime.now(timezone.utc).isoformat()} ═══")
     pair_prices = {}
+    evaluations = []
     for pair in pairs:
-        await _process_pair_tick(
+        evaluation = await _evaluate_pair_tick(
             pair=pair,
             pair_prices=pair_prices,
             state=state,
-            notifier=notifier,
             timeframe=timeframe,
             strategy_cfg=strategy_cfg,
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+        )
+        if evaluation is not None:
+            evaluations.append(evaluation)
+
+    queue_decisions = build_queue_decisions_for_tick(
+        evaluations=evaluations,
+        open_positions=state.get_open_positions(),
+        policy=pair_queue_policy,
+        validity_snapshots=pair_validity_snapshots,
+        enabled=pair_queue_enabled,
+    )
+
+    for evaluation in order_evaluations_for_transition(evaluations, queue_decisions):
+        decision = queue_decisions.get(evaluation.pair_label)
+        allow_new_entry = allow_new_entry_from_queue(
+            evaluation,
+            decision,
+            pair_queue_enabled,
+        )
+        await route_signal_transition(
+            pair=evaluation.pair,
+            pair_label=evaluation.pair_label,
+            current_side=evaluation.current_side,
+            result=evaluation.result,
+            lookback_bars=evaluation.lookback_bars,
+            timeframe=timeframe,
+            state=state,
+            notifier=notifier,
             order_execution_cfg=order_execution_cfg,
             order_execution_adapter=order_execution_adapter,
+            allow_new_entry=allow_new_entry,
+            entry_block_reasons=decision.block_reasons if decision is not None else None,
         )
     _snapshot_tick_equity(state, pair_prices)
 
 
-async def _process_pair_tick(
+async def _evaluate_pair_tick(
     pair: dict[str, Any],
     pair_prices: dict[str, tuple[float, float]],
     state: TradeStateManager,
-    notifier: TelegramNotifier,
     timeframe: str,
-    strategy_cfg: dict[str, Any],
+    strategy_cfg: StrategyConfig,
     exchange_id: str,
     api_key: str,
     api_secret: str,
-    order_execution_cfg: OrderExecutionConfig,
-    order_execution_adapter: OrderExecutionAdapter | None,
-) -> None:
+) -> PairTickEvaluation | None:
     pair_label = f"{pair['Asset_X']}|{pair['Asset_Y']}"
     df_a, df_b = await _fetch_pair_candles(pair, timeframe, exchange_id, api_key, api_secret)
     if df_a is None or df_b is None:
-        return
+        return None
 
     current_pos = state.get_position_for_pair(pair_label)
     current_side = current_pos["side"] if current_pos else None
@@ -77,9 +127,9 @@ async def _process_pair_tick(
         df_a=df_a,
         df_b=df_b,
         entry_z=best_params["entry_z"],
-        exit_z=strategy_cfg["execution"]["exit_z_score"],
+        exit_z=strategy_cfg.execution.exit_z_score,
         lookback_bars=best_params["lookback_bars"],
-        vol_lookback_bars=strategy_cfg["execution"]["volatility_lookback_bars"],
+        vol_lookback_bars=strategy_cfg.execution.volatility_lookback_bars,
         hedge_ratio=pair["Hedge_Ratio"],
         current_side=current_side,
     )
@@ -95,17 +145,13 @@ async def _process_pair_tick(
         price_a=result.price_a,
         price_b=result.price_b,
     )
-    await route_signal_transition(
+    return PairTickEvaluation(
         pair=pair,
         pair_label=pair_label,
         current_side=current_side,
-        result=result,
         lookback_bars=best_params["lookback_bars"],
-        timeframe=timeframe,
-        state=state,
-        notifier=notifier,
-        order_execution_cfg=order_execution_cfg,
-        order_execution_adapter=order_execution_adapter,
+        result=result,
+        action=action,
     )
 
 

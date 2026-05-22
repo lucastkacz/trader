@@ -7,7 +7,12 @@ from src.engine.trader.runtime.pair_queue.models import (
     PairQueuePolicy,
     PairQueueSnapshot,
 )
-from src.engine.trader.runtime.pair_queue.ranking import build_pair_queue_snapshot
+from src.engine.trader.runtime.pair_queue.ranking import (
+    build_open_position_exposures,
+    build_pair_queue_opportunity,
+    build_pair_queue_opportunities_from_signals,
+    build_pair_queue_snapshot,
+)
 
 __all__ = [
     "OpenPositionExposure",
@@ -15,5 +20,8 @@ __all__ = [
     "PairQueueOpportunity",
     "PairQueuePolicy",
     "PairQueueSnapshot",
+    "build_open_position_exposures",
+    "build_pair_queue_opportunity",
+    "build_pair_queue_opportunities_from_signals",
     "build_pair_queue_snapshot",
 ]

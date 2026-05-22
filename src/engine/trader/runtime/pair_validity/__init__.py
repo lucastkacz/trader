@@ -5,7 +5,10 @@ from src.engine.trader.runtime.pair_validity.models import (
     PairValidityReport,
     PairValiditySnapshot,
 )
-from src.engine.trader.runtime.pair_validity.report import build_pair_validity_report
+from src.engine.trader.runtime.pair_validity.report import (
+    build_pair_validity_report,
+    build_pair_validity_report_if_configured,
+)
 from src.engine.trader.runtime.pair_validity.refresh import (
     PairDataRefreshPolicy,
     PairDataRefreshReport,
@@ -22,6 +25,7 @@ __all__ = [
     "PairValiditySnapshot",
     "SymbolRefreshResult",
     "build_pair_validity_report",
+    "build_pair_validity_report_if_configured",
     "refresh_promoted_pair_market_data",
     "refresh_symbol_market_data",
 ]
