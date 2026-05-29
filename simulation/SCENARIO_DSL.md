@@ -103,6 +103,13 @@ market:
     spread_theta: 0.12
     spread_sigma: 0.02
 
+stream:
+  enabled: false
+  delivery_mode: virtual_time
+  channels:
+    - candles
+    - heartbeat
+
 pair_artifacts:
   promoted:
     artifact_type: surviving_pairs
@@ -169,6 +176,35 @@ expectations:
     why: Pair-validity degradation must not become hidden rebalancing.
 ```
 
+## Process Types
+
+Process definitions must be explicit and typed. A scenario selects a named
+process family and supplies only the fields accepted by that family.
+
+Initial process types:
+
+- `geometric_brownian_motion`
+- `ornstein_uhlenbeck_spread`
+- `cointegrated_ou`
+- `scripted_spread_path`
+
+Future process types:
+
+- `colored_noise_ou`
+- `arma_residual_spread`
+- `generalized_langevin_spread`
+- `cointegrated_generalized_langevin`
+
+Rules:
+
+- Process types are schema-dispatched, not dynamically imported from YAML.
+- Each process type has a typed config object.
+- Unknown process fields are rejected.
+- Calibration targets may request diagnostic bands, but generation must report
+  the measured diagnostics, seed, and accepted parameters.
+- Expensive process types may declare a preferred acceleration backend, but the
+  scenario result must not depend on hidden global performance settings.
+
 ## Scenario Metadata
 
 Each scenario should declare:
@@ -182,6 +218,7 @@ Each scenario should declare:
 - `bars`
 - `tags`
 - `outputs`
+- `stream`
 
 Tags should support:
 
@@ -193,6 +230,7 @@ Tags should support:
 - `reconciliation`
 - `risk`
 - `commands`
+- `stream`
 - `slow`
 
 ## Output Configuration
@@ -209,6 +247,58 @@ Output settings should be explicit:
 
 Tests should usually set `output_dir` to a temporary path. Local operator drills
 may write under `simulation/outputs`.
+
+## Stream Configuration
+
+Stream configuration describes websocket-like delivery under virtual time. It
+must not describe live websocket URLs or credentials.
+
+Fields:
+
+- `enabled`
+- `delivery_mode`
+- `channels`
+- `candle_updates_per_bar`
+- `base_latency_ms`
+- `jitter_ms`
+- `heartbeat_interval_seconds`
+- `timeout_seconds`
+- `faults`
+
+Supported delivery modes:
+
+- `virtual_time`
+- `as_fast_as_possible`
+
+Supported initial channels:
+
+- `candles`
+- `ticker`
+- `trades`
+- `order_book`
+- `heartbeat`
+
+Initial stream fault types:
+
+- `delayed_events`
+- `dropped_events`
+- `duplicated_events`
+- `out_of_order_events`
+- `one_leg_feed_lag`
+- `partial_symbol_outage`
+- `disconnect_reconnect`
+- `missing_heartbeat`
+- `duplicate_candle_close`
+- `order_book_delta_gap`
+
+Rules:
+
+- Unit scenarios must use virtual time.
+- Unknown channels are rejected.
+- Unknown fault types are rejected.
+- Stream faults must reference declared symbols.
+- Live websocket URLs are rejected.
+- Live credentials are rejected.
 
 ## Phase Types
 

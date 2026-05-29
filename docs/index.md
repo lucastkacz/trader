@@ -19,7 +19,7 @@ Before real-capital operation:
 
 For architecture reviews:
 
-- `CONTEXT.md`
+- `.agents/CONTEXT.md`
 - `.agents/skills/improve-quant-architecture/SKILL.md`
 - `.agents/skills/improve-quant-architecture/references/LANGUAGE.md`
 - Pay special attention to operational seams: paths, storage, exchanges,
@@ -28,7 +28,7 @@ For architecture reviews:
 
 For code quality audits:
 
-- `CONTEXT.md`
+- `.agents/CONTEXT.md`
 - `docs/engineering-rules.md`
 - `.agents/skills/quant-code-quality-auditor/SKILL.md`
 
@@ -46,7 +46,7 @@ For pair recalculation or eligible pair artifacts:
 
 For pair validity, data refresh cadence, or drift diagnostics:
 
-- `CONTEXT.md`
+- `.agents/CONTEXT.md`
 - `docs/system-design.md`, section "Pair Validity And Refresh Cycle"
 - `docs/current-roadmap.md`
 - `docs/local-operator-runbook.md`, section "Refresh Pair Data And Generate
@@ -54,7 +54,7 @@ For pair validity, data refresh cadence, or drift diagnostics:
 
 For dynamic promoted-pair queue, entry eligibility, or capital-slot ranking:
 
-- `CONTEXT.md`
+- `.agents/CONTEXT.md`
 - `docs/system-design.md`, section "Dynamic Promoted-Pair Queue"
 - `docs/current-roadmap.md`
 - `docs/engineering-rules.md`, especially natural-exit and live-mutation rules

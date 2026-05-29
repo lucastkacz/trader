@@ -31,6 +31,7 @@ Later replay targets:
 - Command processing during sleep.
 - Boot reconciliation.
 - Order execution adapter simulation.
+- Virtual-time stream replay with a synthetic stream provider.
 
 ## Market Data Provider
 
@@ -113,6 +114,21 @@ Use for:
 - Unknown commands.
 - Command failure audit.
 
+### Stream Replay
+
+Deliver generated market data as websocket-like events under virtual time.
+
+Use for:
+
+- One-leg feed lag.
+- Duplicated candle events.
+- Out-of-order events.
+- Disconnect and reconnect behavior.
+- Heartbeat timeout behavior.
+- Stream health based entry blocking.
+
+Detailed stream rules live in `STREAM_SIMULATION.md`.
+
 ## Invariant Library
 
 The assertion library should include always-on safety invariants.
@@ -151,6 +167,15 @@ The assertion library should include always-on safety invariants.
 - Reporting does not mutate runtime state except approved read metadata if any.
 - Unavailable diagnostics are represented as audit notes.
 - Report generation survives missing optional diagnostics.
+
+### Stream Safety
+
+- Stream unit tests do not open sockets.
+- Stream unit tests do not sleep on wall-clock time.
+- Live websocket URLs are rejected.
+- Live credentials are rejected.
+- Stale or degraded streams fail closed for new entries.
+- Stream reconnects do not force-close existing positions.
 
 ### Reconciliation Safety
 
@@ -192,6 +217,7 @@ Each replay result should expose:
 - State DB path.
 - Artifact paths.
 - Market-data parquet paths.
+- Stream event log paths.
 - Events JSONL path.
 - Results JSON path.
 - Markdown report path.

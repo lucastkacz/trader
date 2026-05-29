@@ -14,7 +14,7 @@ Read only what is needed for the roadmap update:
 - `docs/current-roadmap.md` for the active roadmap.
 - `docs/engineering-rules.md` for production readiness gates and safety limits.
 - `docs/system-design.md` for current system behavior and intended flow.
-- `CONTEXT.md` for domain terms.
+- `.agents/CONTEXT.md` for domain terms.
 - Recent `git diff`, `git status`, or `git log` when updating after completed work.
 
 ## Update Rules
@@ -27,7 +27,7 @@ Read only what is needed for the roadmap update:
 - Do not describe obsolete implementation history.
 - Do not add a new roadmap document unless `docs/current-roadmap.md` becomes genuinely hard to navigate.
 - Do not mark the system production-ready or safe for increased capital unless every gate in `docs/engineering-rules.md` is satisfied.
-- Use domain terms from `CONTEXT.md`: research flow, execution flow, eligible pair artifact, pair recalculation, candidate artifact, promoted artifact, natural exit.
+- Use domain terms from `.agents/CONTEXT.md`: research flow, execution flow, eligible pair artifact, pair recalculation, candidate artifact, promoted artifact, natural exit.
 
 ## Workflow
 

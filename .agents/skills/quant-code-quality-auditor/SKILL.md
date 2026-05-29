@@ -11,7 +11,7 @@ Use this skill for a focused quality audit before refactors, merges, or producti
 
 Read only what matches the audit scope:
 
-- `CONTEXT.md` for domain terms.
+- `.agents/CONTEXT.md` for domain terms.
 - `docs/engineering-rules.md` for non-negotiable coding, config, test, and live-safety rules.
 - `docs/system-design.md` when reviewing runtime, research, execution, state, reporting, artifacts, or operator controls.
 - `docs/current-roadmap.md` when reviewing pair recalculation or eligible pair artifacts.

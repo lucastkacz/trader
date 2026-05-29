@@ -11,7 +11,7 @@ Use this skill to surface architecture improvements in this repository. The goal
 
 Read only what is relevant to the area being reviewed:
 
-- `CONTEXT.md` for project domain language.
+- `.agents/CONTEXT.md` for project domain language.
 - `docs/engineering-rules.md` for non-negotiable engineering rules and test flow.
 - `docs/system-design.md` for the current trading system shape.
 - `docs/current-roadmap.md` when touching pair recalculation, eligible pair artifacts, research/execution separation, or natural-exit policy.
@@ -60,7 +60,7 @@ Present a numbered list of deepening opportunities. For each candidate include:
 - **Benefits**: leverage for callers, locality for maintainers, and how tests improve.
 - **Risk**: live-trading, artifact, config, or migration risks.
 
-Use `CONTEXT.md` domain terms and `references/LANGUAGE.md` architecture terms. Do not propose concrete new interfaces yet. Ask which candidate to explore.
+Use `.agents/CONTEXT.md` domain terms and `references/LANGUAGE.md` architecture terms. Do not propose concrete new interfaces yet. Ask which candidate to explore.
 
 ### 3. Design The Chosen Candidate
 
@@ -75,7 +75,7 @@ Once the user chooses a candidate, grill the design:
 - What tests should survive future implementation refactors?
 - Which old tests become waste after testing through the deeper interface?
 
-If a new domain term is needed, add it to `CONTEXT.md`. If the user rejects a candidate for a durable reason, offer to record that decision in a future ADR.
+If a new domain term is needed, add it to `.agents/CONTEXT.md`. If the user rejects a candidate for a durable reason, offer to record that decision in a future ADR.
 
 ### 4. Implementation Bias
 

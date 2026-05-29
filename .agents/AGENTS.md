@@ -6,7 +6,7 @@ This is a Python quant trading platform. Reliability, auditability, offline test
 
 Before changing code, read the relevant project context:
 
-- `CONTEXT.md` for shared domain language.
+- `.agents/CONTEXT.md` for shared domain language.
 - `docs/index.md` for the canonical documentation map.
 - `docs/engineering-rules.md` for coding, testing, config, and runtime safety rules.
 - `docs/system-design.md` for the current trading system design.

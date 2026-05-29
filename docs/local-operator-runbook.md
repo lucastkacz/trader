@@ -7,6 +7,25 @@ you are deliberately changing a tested execution mode.
 Do not use this runbook as real-capital production approval. The production
 readiness gate in `docs/engineering-rules.md` still applies.
 
+## 0. Fresh-Start Rule
+
+If `data/` has been deleted, treat the next run as a cold local rebuild. Do not
+resume assumptions from an old handoff, old database, or old promoted artifact.
+The supported rebuild order is:
+
+```text
+research
+-> promote candidate artifact
+-> refresh promoted-pair market data
+-> generate report
+-> bounded state-only execution
+-> verify local state
+```
+
+Do not create files in `data/` by hand except for archiving/restoring known local
+operator artifacts. Let the CLI flows recreate the runtime database, parquet
+store, promoted artifact, and reports.
+
 ## 1. Confirm The Local Observer Is Not Running
 
 Check launchd:
@@ -50,6 +69,10 @@ With `execution.pair_queue.mode: future_entries`, execution builds dynamic queue
 decisions before each tick transition. Queue decisions may block new entries,
 but they must not force-close, rebalance, promote artifacts, hot-reload
 execution, or bypass natural-exit evaluation for existing positions.
+
+If this is a cold local rebuild, do not start the observer before running the
+research, promotion, refresh, and report steps below. Execution needs a promoted
+artifact to load on boot.
 
 ## 3. Stop The Observer
 
@@ -130,6 +153,20 @@ Automation-safe JSON report:
   --open-position-review-half-life-multiple 3 \
   --json
 ```
+
+For a cold local rebuild, run research and promotion before this section:
+
+```bash
+.venv/bin/python main.py run \
+  --config configs/runs/dev_1m_research.yml
+
+.venv/bin/python main.py promote-pairs \
+  --pipeline configs/pipelines/dev.yml \
+  --operator local-fresh-start
+```
+
+After promotion, run the refresh and report commands above before starting a
+bounded execution observer.
 
 ## 6. Confirm No Exchange Mutation Happened
 

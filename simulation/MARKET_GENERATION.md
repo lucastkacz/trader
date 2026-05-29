@@ -15,6 +15,10 @@ Use focused scientific Python libraries for primitives:
 - `numba` only for hot kernels after the NumPy implementation is correct and
   profiled.
 
+Do not start with C or Rust. They are options only after a stable process
+interface exists, representative scenarios identify a real bottleneck, and a
+small isolated kernel cannot be made fast enough with NumPy or Numba.
+
 Avoid adopting heavy backtesting engines as generation dependencies. Libraries
 such as vectorized backtesters or event-driven trading frameworks can inspire
 data-feed, event, and plotting ideas, but synthetic market generation should
@@ -91,6 +95,48 @@ Use cases:
 - Slow natural exit.
 - Spread stuck away from mean.
 - Recovery after shock.
+
+OU is the Phase 1 spread model because it is transparent, auditable, fast to
+generate, and directly expresses mean reversion. It is not the only model the
+framework should ever support.
+
+## Generalized Langevin Ready Design
+
+Generalized Langevin spread generation should be treated as a future advanced
+`spread_process`, not as a replacement for the initial OU baseline.
+
+Conceptual form:
+
+```text
+dspread[t] =
+  restoring_force(spread[t]) * dt
+  - memory_kernel(previous_spread_or_velocity) * dt
+  + colored_noise[t]
+```
+
+Why it matters:
+
+- It can model memory effects that plain OU cannot.
+- It can produce richer path dependence and persistence.
+- It can represent spreads whose shocks decay through a non-exponential memory
+  structure.
+
+Costs:
+
+- More parameters to calibrate.
+- Harder diagnostics and review.
+- More expensive generation when kernels depend on long history.
+- Higher risk of overfitting synthetic paths to desired outcomes.
+
+Implementation guidance:
+
+- Keep GLE behind the same typed `SpreadProcess` interface as OU.
+- Use explicit YAML fields for kernel family, memory horizon, noise color, and
+  calibration targets.
+- Start with vectorized NumPy where possible.
+- Use Numba only for proven hot kernels such as recursive memory convolution.
+- Consider C or Rust only after the GLE kernel is stable, isolated, and still
+  too slow under representative workloads.
 
 ## Cointegrated Pair Generator
 

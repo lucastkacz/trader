@@ -3,6 +3,14 @@
 This roadmap keeps implementation incremental. The lab should become powerful,
 but it should not arrive as one risky rewrite.
 
+Use `IMPLEMENTATION_PLAN.md` as the decision layer for core versus later scope,
+minimal interfaces, quality gates, and content sequencing.
+
+Current priority: finish the local trader contract first. Do not start simulator
+implementation until the cold local trader lifecycle, capital-slot policy,
+pre-trade risk gates, reconciliation behavior, and operator kill-switch
+semantics are stable enough to be durable simulation targets.
+
 ## Phase 0: Documentation And Boundaries
 
 Status: planned by these documents.
@@ -35,6 +43,8 @@ Deliverables:
 - GBM base process.
 - OU spread process.
 - Cointegrated pair generator.
+- Process interfaces that allow future non-OU spread models without changing
+  callers.
 - Close-to-OHLCV builder.
 - Parquet writer for generated OHLCV.
 - Deterministic seed tests.
@@ -137,7 +147,55 @@ Tests:
 - Runtime avoids unsafe entries when candles are unavailable.
 - Reporting survives unavailable diagnostics.
 
-## Phase 6: Scenario Catalog
+## Phase 6: Stream Event Projection
+
+Goal:
+
+```text
+project generated market paths into virtual-time stream events
+```
+
+Deliverables:
+
+- Typed stream event model.
+- Virtual clock.
+- Candle event projection.
+- Heartbeat event projection.
+- Synthetic stream provider.
+- Events JSONL output.
+
+Safety:
+
+- No sockets.
+- No wall-clock sleeps in unit scenarios.
+- No live credentials.
+- Deterministic event order for a fixed seed.
+
+## Phase 7: Stream Faults
+
+Goal:
+
+```text
+simulate websocket-like feed degradation without network access
+```
+
+Deliverables:
+
+- Delayed event transform.
+- Dropped event transform.
+- Duplicate event transform.
+- Out-of-order event transform.
+- One-leg feed lag.
+- Disconnect/reconnect schedule.
+- Heartbeat timeout schedule.
+
+Tests:
+
+- Runtime detects stale or missing stream data.
+- Unsafe entries are blocked when one leg lags.
+- Reconnect does not force-close existing positions.
+
+## Phase 8: Scenario Catalog
 
 Goal:
 
@@ -163,7 +221,7 @@ Tests:
 - Fast subset in normal test suite.
 - Slow subset marked separately.
 
-## Phase 7: Reconciliation And Command Simulation
+## Phase 9: Reconciliation And Command Simulation
 
 Goal:
 
@@ -185,7 +243,7 @@ Tests:
 - `/stop` creates explicit forced local close.
 - Read-only reconciliation records deltas only.
 
-## Phase 8: Order And Risk Simulation
+## Phase 10: Order And Risk Simulation
 
 Goal:
 
@@ -210,7 +268,7 @@ Tests:
 - Risk rejection blocks entry with reason.
 - Kill switch blocks new entries.
 
-## Phase 9: Outputs And Visualization
+## Phase 11: Outputs And Visualization
 
 Goal:
 
@@ -237,7 +295,8 @@ Tests:
 
 ## Recommended First PR
 
-Implement Phase 1 only:
+After the local trader stabilization gate above is satisfied, implement Phase 1
+only:
 
 - `simulation/generators/processes.py`
 - `simulation/generators/ohlcv.py`

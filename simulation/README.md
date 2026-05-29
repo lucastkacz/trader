@@ -141,6 +141,7 @@ simulation/outputs/
         prices.html
         spread_zscore.html
         equity_curve.html
+```
 
 ## Documentation Map
 
@@ -150,9 +151,13 @@ simulation/outputs/
   outcomes.
 - `MARKET_GENERATION.md`: stochastic processes, synthetic OHLCV, shocks, and
   data-quality faults.
+- `STREAM_SIMULATION.md`: virtual-time market-data streams, websocket-like
+  events, feed faults, and stream assertions.
 - `REPLAY_AND_ASSERTIONS.md`: replay harness, invariant library, outputs, and
   CI integration.
 - `ROADMAP.md`: implementation slices in a safe order.
+- `IMPLEMENTATION_PLAN.md`: core versus later priorities, minimal interfaces,
+  quality gates, and content sequencing.
 
 ## First Implementation Target
 
@@ -168,6 +173,8 @@ synthetic cointegrated pair
 
 This first target should prove that a synthetic scenario can drive the existing
 runtime through public module interfaces without monkeypatching private helpers.
+Stream simulation should come after this batch replay path works, using the same
+generated market paths projected into virtual-time events.
 
 ## Non-Goals For The Initial Version
 
