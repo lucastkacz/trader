@@ -7,7 +7,7 @@ import pytest
 from src.engine.trader.config import OrderExecutionConfig, load_strategy_config
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
 from src.engine.trader.runtime.pair_validity.models import PairValiditySnapshot
-from src.engine.trader.runtime.pre_trade_risk import PreTradeRiskPolicy
+from src.engine.trader.runtime.risk import PreTradeRiskPolicy
 from src.engine.trader.runtime.tick import execute_tick
 from src.engine.trader.state.manager import TradeStateManager
 
@@ -78,6 +78,8 @@ def _pre_trade_policy(
     min_order_quantity: float = 0.000001,
     min_order_notional: float = 0.000001,
     order_quantity_step: float = 0.000001,
+    liquidity_lookback_bars: int = 2,
+    min_recent_quote_volume: float = 1.0,
 ) -> PreTradeRiskPolicy:
     return PreTradeRiskPolicy(
         max_cluster_exposure=max_cluster_exposure,
@@ -86,6 +88,8 @@ def _pre_trade_policy(
         min_order_quantity=min_order_quantity,
         min_order_notional=min_order_notional,
         order_quantity_step=order_quantity_step,
+        liquidity_lookback_bars=liquidity_lookback_bars,
+        min_recent_quote_volume=min_recent_quote_volume,
     )
 
 
@@ -146,8 +150,12 @@ def _validity(
 
 async def _fake_candles(*args, **kwargs):
     return (
-        pd.DataFrame({"timestamp": [1, 2], "close": [100.0, 101.0]}),
-        pd.DataFrame({"timestamp": [1, 2], "close": [50.0, 49.5]}),
+        pd.DataFrame(
+            {"timestamp": [1, 2], "close": [100.0, 101.0], "volume": [1000.0, 1000.0]}
+        ),
+        pd.DataFrame(
+            {"timestamp": [1, 2], "close": [50.0, 49.5], "volume": [1000.0, 1000.0]}
+        ),
     )
 
 
@@ -525,6 +533,124 @@ async def test_pre_trade_precision_blocked_flip_closes_without_replacement_open(
     sent_messages = [call.args[0] for call in notifier.send.await_args_list]
     assert any("EXIT SIGNAL: AAA/USDT|BBB/USDT" in message for message in sent_messages)
     assert any("order_precision_invalid" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_pre_trade_risk_blocks_low_liquidity_entry_without_opening_position(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    async def low_liquidity_candles(*args, **kwargs):
+        return (
+            pd.DataFrame(
+                {"timestamp": [1, 2], "close": [100.0, 101.0], "volume": [1.0, 1.0]}
+            ),
+            pd.DataFrame(
+                {"timestamp": [1, 2], "close": [50.0, 49.5], "volume": [1.0, 1.0]}
+            ),
+        )
+
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", low_liquidity_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal("LONG_SPREAD"),
+    )
+
+    await execute_tick(
+        pairs=[_pair("AAA/USDT", "BBB/USDT")],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(min_recent_quote_volume=10_000.0),
+    )
+
+    assert state.get_all_orders() == []
+    assert state.get_leg_fills() == []
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("liquidity_below_min" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_pre_trade_liquidity_blocked_flip_closes_without_replacement_open(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    pair = _pair("AAA/USDT", "BBB/USDT")
+    pair_label = "AAA/USDT|BBB/USDT"
+    state.open_position(
+        pair_label,
+        "AAA/USDT",
+        "BBB/USDT",
+        "LONG_SPREAD",
+        100.0,
+        50.0,
+        0.6,
+        0.4,
+        -2.5,
+        20,
+    )
+
+    async def low_liquidity_candles(*args, **kwargs):
+        return (
+            pd.DataFrame(
+                {"timestamp": [1, 2], "close": [100.0, 101.0], "volume": [1.0, 1.0]}
+            ),
+            pd.DataFrame(
+                {"timestamp": [1, 2], "close": [50.0, 49.5], "volume": [1.0, 1.0]}
+            ),
+        )
+
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", low_liquidity_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal("SHORT_SPREAD"),
+    )
+
+    await execute_tick(
+        pairs=[pair],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            max_positions_per_pair=2,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(min_recent_quote_volume=10_000.0),
+    )
+
+    assert state.get_open_positions() == []
+    assert len(state.get_all_closed()) == 1
+    legs = state.get_leg_fills()
+    assert sum(leg["leg_role"] == "OPEN" for leg in legs) == 2
+    assert sum(leg["leg_role"] == "CLOSE" for leg in legs) == 2
+    assert all(leg["exchange_order_id"] is None for leg in legs)
+    assert all(leg["client_order_id"] is None for leg in legs)
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("EXIT SIGNAL: AAA/USDT|BBB/USDT" in message for message in sent_messages)
+    assert any("liquidity_below_min" in message for message in sent_messages)
 
 
 @pytest.mark.asyncio

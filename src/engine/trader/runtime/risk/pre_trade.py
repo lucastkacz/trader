@@ -4,62 +4,11 @@ from dataclasses import dataclass
 import math
 from typing import Any, Mapping, Sequence
 
-from src.engine.trader.config import RiskConfig
-
-
-@dataclass(frozen=True)
-class PreTradeRiskPolicy:
-    """Runtime policy for state-only and live entry risk checks."""
-
-    max_cluster_exposure: float
-    max_portfolio_exposure: float
-    max_leverage: float
-    min_order_quantity: float
-    min_order_notional: float
-    order_quantity_step: float
-
-    def __post_init__(self) -> None:
-        if self.max_cluster_exposure <= 0:
-            raise ValueError("max_cluster_exposure must be positive")
-        if self.max_portfolio_exposure <= 0:
-            raise ValueError("max_portfolio_exposure must be positive")
-        if self.max_portfolio_exposure < self.max_cluster_exposure:
-            raise ValueError(
-                "max_portfolio_exposure must be greater than or equal to max_cluster_exposure"
-            )
-        if self.max_leverage <= 0:
-            raise ValueError("max_leverage must be positive")
-        if self.min_order_quantity <= 0:
-            raise ValueError("min_order_quantity must be positive")
-        if self.min_order_notional <= 0:
-            raise ValueError("min_order_notional must be positive")
-        if self.order_quantity_step <= 0:
-            raise ValueError("order_quantity_step must be positive")
-
-
-@dataclass(frozen=True)
-class PreTradeRiskDecision:
-    """Risk result for a proposed spread entry."""
-
-    entry_allowed: bool
-    block_reasons: list[str]
-    sized_weight_a: float
-    sized_weight_b: float
-    proposed_notional_pct: float
-    projected_portfolio_exposure: float
-    projected_leverage: float
-
-
-def pre_trade_policy_from_config(risk_cfg: RiskConfig) -> PreTradeRiskPolicy:
-    """Convert typed operator risk config into runtime entry policy."""
-    return PreTradeRiskPolicy(
-        max_cluster_exposure=risk_cfg.max_cluster_exposure,
-        max_portfolio_exposure=risk_cfg.max_portfolio_exposure,
-        max_leverage=risk_cfg.max_leverage,
-        min_order_quantity=risk_cfg.min_order_quantity,
-        min_order_notional=risk_cfg.min_order_notional,
-        order_quantity_step=risk_cfg.order_quantity_step,
-    )
+from src.engine.trader.runtime.risk.models import (
+    PreTradeLiquiditySnapshot,
+    PreTradeRiskDecision,
+    PreTradeRiskPolicy,
+)
 
 
 def evaluate_pre_trade_entry(
@@ -68,6 +17,7 @@ def evaluate_pre_trade_entry(
     open_positions: Sequence[Mapping[str, Any]],
     policy: PreTradeRiskPolicy,
     replacing_pair_label: str | None = None,
+    liquidity: PreTradeLiquiditySnapshot | None = None,
 ) -> PreTradeRiskDecision:
     """Size and validate a proposed entry against current runtime exposure."""
     raw_weight_a = float(result.weight_a)
@@ -116,6 +66,7 @@ def evaluate_pre_trade_entry(
             policy=policy,
         )
     )
+    block_reasons.extend(_liquidity_block_reasons(liquidity=liquidity, policy=policy))
 
     return PreTradeRiskDecision(
         entry_allowed=not block_reasons,
@@ -177,6 +128,21 @@ def _order_constraint_block_reasons(
         reasons.append("order_precision_invalid")
 
     return reasons
+
+
+def _liquidity_block_reasons(
+    *,
+    liquidity: PreTradeLiquiditySnapshot | None,
+    policy: PreTradeRiskPolicy,
+) -> list[str]:
+    if liquidity is None:
+        return ["liquidity_snapshot_missing"]
+    quote_volumes = [liquidity.quote_volume_a, liquidity.quote_volume_b]
+    if any(volume is None or not _finite_positive(volume) for volume in quote_volumes):
+        return ["liquidity_snapshot_missing"]
+    if any(volume < policy.min_recent_quote_volume for volume in quote_volumes):
+        return ["liquidity_below_min"]
+    return []
 
 
 def _is_valid_quantity_step(quantity: float, step: float) -> bool:

@@ -60,6 +60,30 @@ Precision/min-size slice completed on 2026-05-29:
   reported `39 passed`; `.venv/bin/python -m pytest -q` reported
   `283 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
 
+Liquidity slice completed on 2026-05-29:
+
+- Runtime risk gates now live under `runtime/risk/`, split into typed models,
+  liquidity evidence, and the pre-trade entry evaluator. This gives exposure,
+  precision, liquidity, and future kill-switch entry policy one package home
+  instead of growing the runtime root.
+- Runtime pre-trade risk policy now includes explicit typed liquidity checks:
+  `liquidity_lookback_bars` and `min_recent_quote_volume`.
+- Tick execution builds a recent quote-volume snapshot from fetched OHLCV
+  candles using `close * volume` for both proposed entry legs.
+- New entries and flip replacement entries are blocked before opening when
+  either leg has missing liquidity evidence or recent average quote volume below
+  policy.
+- Liquidity blocks emit operator-visible reasons:
+  `liquidity_snapshot_missing` and `liquidity_below_min`.
+- Blocked liquidity entries do not create spread positions, replacement opens,
+  exchange/client order ids, or new-entry leg targets. Blocked flip
+  replacements still preserve the signal-driven close.
+- Focused verification after this slice:
+  `.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py tests/engine/trader/runtime/test_signal_transition.py -q`
+  reported `46 passed`; runtime/config/risk verification reported
+  `178 passed`; `.venv/bin/python -m pytest -q` reported
+  `287 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -133,8 +157,8 @@ Already available locally:
   each tick transition.
 - Runtime pre-trade risk policy is explicit in `configs/risk/alpha_v1.yml` and
   typed as `RiskConfig`: max per-position cluster exposure, max portfolio
-  exposure, max leverage, minimum order quantity, minimum order notional, and
-  order quantity step.
+  exposure, max leverage, minimum order quantity, minimum order notional, order
+  quantity step, liquidity lookback bars, and minimum recent quote volume.
 - Pipeline config now declares explicit `execution.pair_queue` policy for
   queue behavior, scoring weights, validity thresholds, and
   allocation caps. `null` means intentionally unlimited for caps and optional
@@ -165,8 +189,8 @@ Current local assumption:
 
 Required next behavior:
 
-- Add or tighten the remaining state-only pre-trade checks for liquidity policy
-  and kill-switch state.
+- Add or tighten the remaining state-only pre-trade checks for kill-switch
+  state.
 - Keep each gate explicit in typed config or runtime policy, not hidden
   constants.
 - Emit operator-visible block reasons for every pre-trade rejection.

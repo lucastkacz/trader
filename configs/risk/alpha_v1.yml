@@ -6,3 +6,5 @@ risk:
   min_order_quantity: 0.000001
   min_order_notional: 0.000001
   order_quantity_step: 0.000001
+  liquidity_lookback_bars: 20
+  min_recent_quote_volume: 1.0

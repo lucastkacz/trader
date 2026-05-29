@@ -205,6 +205,8 @@ class RiskConfig(StrictConfigModel):
     min_order_quantity: float = Field(gt=0)
     min_order_notional: float = Field(gt=0)
     order_quantity_step: float = Field(gt=0)
+    liquidity_lookback_bars: int = Field(gt=0)
+    min_recent_quote_volume: float = Field(gt=0)
 
     @model_validator(mode="after")
     def portfolio_exposure_covers_one_cluster(self) -> "RiskConfig":

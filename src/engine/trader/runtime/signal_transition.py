@@ -7,7 +7,8 @@ from src.engine.trader.execution.orders import (
     OrderExecutionAdapter,
     execute_spread_leg_orders,
 )
-from src.engine.trader.runtime.pre_trade_risk import (
+from src.engine.trader.runtime.risk import (
+    PreTradeLiquiditySnapshot,
     PreTradeRiskDecision,
     PreTradeRiskPolicy,
     evaluate_pre_trade_entry,
@@ -50,6 +51,7 @@ async def route_signal_transition(
     allow_new_entry: bool = True,
     entry_block_reasons: list[str] | None = None,
     pre_trade_risk_policy: PreTradeRiskPolicy | None = None,
+    pre_trade_liquidity_snapshot: PreTradeLiquiditySnapshot | None = None,
 ) -> None:
     """Apply the local state and explicit order transition for a signal result."""
     if current_side is None and result.signal != "FLAT":
@@ -58,6 +60,7 @@ async def route_signal_transition(
                 result=result,
                 state=state,
                 policy=pre_trade_risk_policy,
+                liquidity=pre_trade_liquidity_snapshot,
             )
             if decision.entry_allowed:
                 await _open_spread(
@@ -84,6 +87,7 @@ async def route_signal_transition(
                 state=state,
                 policy=pre_trade_risk_policy,
                 replacing_pair_label=pair_label,
+                liquidity=pre_trade_liquidity_snapshot,
             )
             if decision.entry_allowed:
                 await _flip_spread(
@@ -239,6 +243,7 @@ def _evaluate_pre_trade_risk(
     state: TradeStateManager,
     policy: PreTradeRiskPolicy | None,
     replacing_pair_label: str | None = None,
+    liquidity: PreTradeLiquiditySnapshot | None = None,
 ) -> PreTradeRiskDecision:
     if policy is None:
         notional = abs(float(result.weight_a)) + abs(float(result.weight_b))
@@ -256,6 +261,7 @@ def _evaluate_pre_trade_risk(
         open_positions=state.get_open_positions(),
         policy=policy,
         replacing_pair_label=replacing_pair_label,
+        liquidity=liquidity,
     )
 
 

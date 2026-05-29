@@ -48,6 +48,8 @@ def test_valid_operator_configs_parse():
     assert load_risk_config("configs/risk/alpha_v1.yml").min_order_quantity == 0.000001
     assert load_risk_config("configs/risk/alpha_v1.yml").min_order_notional == 0.000001
     assert load_risk_config("configs/risk/alpha_v1.yml").order_quantity_step == 0.000001
+    assert load_risk_config("configs/risk/alpha_v1.yml").liquidity_lookback_bars == 20
+    assert load_risk_config("configs/risk/alpha_v1.yml").min_recent_quote_volume == 1.0
     assert load_telegram_config("configs/telegram/dev.yml").environment == "DEV"
     assert load_telegram_config("configs/telegram/dev.yml").holding_period_bar_minutes == 1
     assert (
@@ -253,6 +255,20 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("order_quantity_step",),
             load_risk_config,
             "order_quantity_step",
+        ),
+        (
+            "configs/risk/alpha_v1.yml",
+            "risk",
+            ("liquidity_lookback_bars",),
+            load_risk_config,
+            "liquidity_lookback_bars",
+        ),
+        (
+            "configs/risk/alpha_v1.yml",
+            "risk",
+            ("min_recent_quote_volume",),
+            load_risk_config,
+            "min_recent_quote_volume",
         ),
     ],
 )

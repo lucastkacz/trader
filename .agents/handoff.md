@@ -49,17 +49,18 @@ Preserve these terms:
 
 ## Branch And Working Tree
 
-Current branch for this precision risk-gate work:
+Current branch for this liquidity risk-gate work:
 
 ```text
-local-trader-precision-risk-gates
+local-trader-liquidity-risk-gates
 ```
 
 Baseline before this branch:
 
 ```text
-main was clean and already up to date with origin/main, then
-local-trader-runtime-state-hardening was merged into main before branching.
+local-trader-precision-risk-gates was committed at 56370aa9
+(`Add precision pre-trade risk gates`), then this branch was created from that
+commit.
 ```
 
 Known uncommitted/untracked work carried onto this branch:
@@ -71,8 +72,14 @@ Known uncommitted/untracked work carried onto this branch:
 Latest offline verification:
 
 ```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py tests/engine/trader/runtime/test_signal_transition.py -q
+46 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+178 passed
+
 .venv/bin/python -m pytest -q
-283 passed, 3 deselected
+287 passed, 3 deselected
 ```
 
 Latest lint verification:
@@ -287,6 +294,77 @@ Verification so far:
 
 .venv/bin/python -m pytest -q
 283 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+## Latest Implementation Slice: Liquidity Pre-Trade Gate
+
+Completed on 2026-05-29 from branch
+`local-trader-liquidity-risk-gates`.
+
+Preflight:
+
+- Committed the completed precision/min-size slice on
+  `local-trader-precision-risk-gates`:
+  `56370aa9 Add precision pre-trade risk gates`.
+- Created `local-trader-liquidity-risk-gates` from that commit.
+- No trader, observer, Prefect, dev Telegram daemon, or `caffeinate` process was
+  started for this slice.
+
+Structure changes:
+
+- Created `src/engine/trader/runtime/risk/` as the package home for runtime
+  entry-risk policy.
+- Moved the old loose `runtime/pre_trade_risk.py` module under the new package
+  and split it into typed models, liquidity evidence, and pre-trade entry
+  evaluation modules.
+- Updated runtime callers and tests to import through
+  `src.engine.trader.runtime.risk`.
+- This is the only folder move in the slice; `tick.py`, `signal_transition.py`,
+  `scheduler.py`, and `trader_runner.py` remain in the runtime root until a
+  later behavior-backed refactor justifies moving them.
+
+Code changes:
+
+- Added explicit risk YAML fields:
+  `liquidity_lookback_bars` and `min_recent_quote_volume`.
+- Added those fields to the typed `RiskConfig` contract and to
+  `PreTradeRiskPolicy`.
+- Tick execution now builds a `PreTradeLiquiditySnapshot` from the fetched OHLCV
+  data before routing a transition.
+- Liquidity evidence uses average quote volume over the configured lookback:
+  `close * volume` for each leg.
+- `evaluate_pre_trade_entry` now blocks new entries and flip replacement
+  entries when liquidity evidence is missing or below the configured minimum.
+- New block reasons are operator-visible through the existing pre-trade risk
+  notification path:
+  `liquidity_snapshot_missing` and `liquidity_below_min`.
+- The slice is validation-only. It does not submit, cancel, modify, rebalance,
+  force-close, hot-reload, promote artifacts, or increase capital exposure.
+
+Behavior tests added:
+
+- Low recent quote volume blocks a new entry before creating a spread position
+  or leg targets.
+- Low recent quote volume blocks a flip replacement while preserving the
+  signal-driven close and skipping the replacement open.
+- Config tests prove the new risk YAML fields are explicit and required.
+- Existing precision/min-size, exposure/leverage, capital-slot, and
+  natural-exit tests remain green.
+
+Verification so far:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py tests/engine/trader/runtime/test_signal_transition.py -q
+46 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+178 passed
+
+.venv/bin/python -m pytest -q
+287 passed, 3 deselected
 
 .venv/bin/ruff check src tests
 All checks passed!
