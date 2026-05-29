@@ -5,9 +5,10 @@ Updated: 2026-05-29
 ## Purpose
 
 This handoff is for continuing local trader work after a completed cold local
-rebuild of `data/` and a focused runtime-state/capital-slot hardening slice.
-The next goal is to tighten pre-trade risk gates while deferring simulator
-implementation until those runtime decisions are stable.
+rebuild of `data/` and focused runtime-state/capital-slot/pre-trade risk
+hardening slices. The next goal is to keep tightening local trader stabilization
+gates while deferring simulator implementation until those runtime decisions are
+stable.
 
 Do not call the system production-ready for real capital. The production
 readiness gate in `docs/engineering-rules.md` still applies.
@@ -48,16 +49,17 @@ Preserve these terms:
 
 ## Branch And Working Tree
 
-Current branch for this runtime hardening work:
+Current branch for this precision risk-gate work:
 
 ```text
-local-trader-runtime-state-hardening
+local-trader-precision-risk-gates
 ```
 
-Baseline before the branch:
+Baseline before this branch:
 
 ```text
-main was clean and already up to date with origin/main before branching.
+main was clean and already up to date with origin/main, then
+local-trader-runtime-state-hardening was merged into main before branching.
 ```
 
 Known uncommitted/untracked work carried onto this branch:
@@ -70,7 +72,7 @@ Latest offline verification:
 
 ```text
 .venv/bin/python -m pytest -q
-276 passed, 3 deselected
+283 passed, 3 deselected
 ```
 
 Latest lint verification:
@@ -214,6 +216,77 @@ Verification:
 
 .venv/bin/python -m pytest -q
 276 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+## Latest Implementation Slice: Precision And Minimum-Size Gate
+
+Completed on 2026-05-29 from branch
+`local-trader-precision-risk-gates`.
+
+Preflight:
+
+- Started on `local-trader-runtime-state-hardening` at commit `fef2938b`
+  (`Harden runtime state and pre-trade risk gates`).
+- `main` was checked out and `git pull --ff-only` reported
+  `Already up to date`.
+- `local-trader-runtime-state-hardening` was not yet contained in `main`, so it
+  was merged locally with commit message
+  `Merge local trader runtime state hardening`.
+- New branch `local-trader-precision-risk-gates` was created from updated
+  `main`.
+- Launchd observer service `com.quant.dev-state-only-observer` was not loaded.
+- Launchd dev Telegram daemon `com.quant.dev-telegram-daemon` was not loaded.
+- Process scans showed no trader, observer, Prefect, dev Telegram daemon, or
+  `caffeinate` process. Only Telegram Desktop crash-handler processes matched
+  the broader Telegram search term.
+
+Code changes:
+
+- Added explicit risk YAML fields:
+  `min_order_quantity`, `min_order_notional`, and `order_quantity_step`.
+- Added those fields to the typed `RiskConfig` contract and to
+  `PreTradeRiskPolicy`.
+- `pre_trade_policy_from_config` now carries the typed precision/min-size
+  policy into runtime pre-trade checks.
+- `evaluate_pre_trade_entry` now validates both sized leg targets before any
+  state open:
+  - target quantity must meet `min_order_quantity`;
+  - target notional (`target quantity * signal price`) must meet
+    `min_order_notional`;
+  - target quantity must align to `order_quantity_step`.
+- New block reasons are operator-visible through the existing pre-trade risk
+  notification path:
+  `order_quantity_below_min`, `order_notional_below_min`, and
+  `order_precision_invalid`.
+- The slice is validation-only. It does not submit, cancel, modify, rebalance,
+  force-close, hot-reload, promote artifacts, or increase capital exposure.
+
+Behavior tests added:
+
+- Quantity minimum blocks a new entry before creating a spread position or leg
+  targets.
+- Notional minimum blocks a new entry before creating leg targets.
+- Quantity-step precision blocks a new entry before creating positions, leg
+  targets, or exchange/client order ids.
+- A blocked flip replacement still records the signal-driven close, creates no
+  replacement open position, creates no extra `OPEN` leg targets beyond the
+  original state-only position, and records no exchange/client order ids.
+- Config tests prove the new risk YAML fields are explicit and required.
+
+Verification so far:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py -q
+39 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+174 passed
+
+.venv/bin/python -m pytest -q
+283 passed, 3 deselected
 
 .venv/bin/ruff check src tests
 All checks passed!

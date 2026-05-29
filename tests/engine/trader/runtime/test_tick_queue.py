@@ -51,14 +51,41 @@ def _pair(asset_x: str, asset_y: str, sharpe: float = 2.0):
     }
 
 
-def _signal(signal: str, z_score: float = 2.5):
+def _signal(
+    signal: str,
+    z_score: float = 2.5,
+    *,
+    weight_a: float = 0.6,
+    weight_b: float = 0.4,
+    price_a: float = 100.0,
+    price_b: float = 50.0,
+):
     return SimpleNamespace(
         signal=signal,
-        price_a=100.0,
-        price_b=50.0,
-        weight_a=0.6,
-        weight_b=0.4,
+        price_a=price_a,
+        price_b=price_b,
+        weight_a=weight_a,
+        weight_b=weight_b,
         z_score=z_score,
+    )
+
+
+def _pre_trade_policy(
+    *,
+    max_cluster_exposure: float = 0.10,
+    max_portfolio_exposure: float = 0.30,
+    max_leverage: float = 10.0,
+    min_order_quantity: float = 0.000001,
+    min_order_notional: float = 0.000001,
+    order_quantity_step: float = 0.000001,
+) -> PreTradeRiskPolicy:
+    return PreTradeRiskPolicy(
+        max_cluster_exposure=max_cluster_exposure,
+        max_portfolio_exposure=max_portfolio_exposure,
+        max_leverage=max_leverage,
+        min_order_quantity=min_order_quantity,
+        min_order_notional=min_order_notional,
+        order_quantity_step=order_quantity_step,
     )
 
 
@@ -197,11 +224,7 @@ async def test_pre_trade_risk_sizes_entry_to_cluster_exposure(
             require_entry_signal=True,
         ),
         pair_queue_enabled=True,
-        pre_trade_risk_policy=PreTradeRiskPolicy(
-            max_cluster_exposure=0.10,
-            max_portfolio_exposure=0.30,
-            max_leverage=10.0,
-        ),
+        pre_trade_risk_policy=_pre_trade_policy(),
     )
 
     position = state.get_open_positions()[0]
@@ -254,11 +277,7 @@ async def test_pre_trade_risk_blocks_portfolio_exposure_without_opening_position
             require_entry_signal=True,
         ),
         pair_queue_enabled=True,
-        pre_trade_risk_policy=PreTradeRiskPolicy(
-            max_cluster_exposure=0.10,
-            max_portfolio_exposure=0.25,
-            max_leverage=10.0,
-        ),
+        pre_trade_risk_policy=_pre_trade_policy(max_portfolio_exposure=0.25),
     )
 
     assert [position["pair_label"] for position in state.get_open_positions()] == [
@@ -298,17 +317,214 @@ async def test_pre_trade_risk_blocks_leverage_without_recording_leg_targets(
             require_entry_signal=True,
         ),
         pair_queue_enabled=True,
-        pre_trade_risk_policy=PreTradeRiskPolicy(
-            max_cluster_exposure=0.10,
-            max_portfolio_exposure=0.30,
-            max_leverage=0.05,
-        ),
+        pre_trade_risk_policy=_pre_trade_policy(max_leverage=0.05),
     )
 
     assert state.get_open_positions() == []
     assert state.get_leg_fills() == []
     sent_messages = [call.args[0] for call in notifier.send.await_args_list]
     assert any("max_leverage_exceeded" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_pre_trade_risk_blocks_order_quantity_below_min_without_opening_position(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", _fake_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal(
+            "LONG_SPREAD",
+            weight_a=0.99999,
+            weight_b=0.00001,
+        ),
+    )
+
+    await execute_tick(
+        pairs=[_pair("AAA/USDT", "BBB/USDT")],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(
+            min_order_quantity=0.01,
+            min_order_notional=0.000001,
+            order_quantity_step=0.000001,
+        ),
+    )
+
+    assert state.get_all_orders() == []
+    assert state.get_leg_fills() == []
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("order_quantity_below_min" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_pre_trade_risk_blocks_order_notional_below_min_without_leg_targets(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", _fake_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal("LONG_SPREAD", price_b=1.0),
+    )
+
+    await execute_tick(
+        pairs=[_pair("AAA/USDT", "BBB/USDT")],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(
+            min_order_quantity=0.000001,
+            min_order_notional=0.05,
+            order_quantity_step=0.000001,
+        ),
+    )
+
+    assert state.get_all_orders() == []
+    assert state.get_leg_fills() == []
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("order_notional_below_min" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_pre_trade_risk_blocks_invalid_order_precision_without_order_ids(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", _fake_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal(
+            "LONG_SPREAD",
+            weight_a=0.75,
+            weight_b=0.25,
+        ),
+    )
+
+    await execute_tick(
+        pairs=[_pair("AAA/USDT", "BBB/USDT")],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(
+            min_order_quantity=0.000001,
+            min_order_notional=0.000001,
+            order_quantity_step=0.02,
+        ),
+    )
+
+    assert state.get_all_orders() == []
+    assert state.get_leg_fills() == []
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("order_precision_invalid" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_pre_trade_precision_blocked_flip_closes_without_replacement_open(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    pair = _pair("AAA/USDT", "BBB/USDT")
+    pair_label = "AAA/USDT|BBB/USDT"
+    state.open_position(
+        pair_label,
+        "AAA/USDT",
+        "BBB/USDT",
+        "LONG_SPREAD",
+        100.0,
+        50.0,
+        0.6,
+        0.4,
+        -2.5,
+        20,
+    )
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", _fake_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal(
+            "SHORT_SPREAD",
+            weight_a=0.75,
+            weight_b=0.25,
+        ),
+    )
+
+    await execute_tick(
+        pairs=[pair],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            max_positions_per_pair=2,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(
+            min_order_quantity=0.000001,
+            min_order_notional=0.000001,
+            order_quantity_step=0.02,
+        ),
+    )
+
+    assert state.get_open_positions() == []
+    assert len(state.get_all_closed()) == 1
+    legs = state.get_leg_fills()
+    assert sum(leg["leg_role"] == "OPEN" for leg in legs) == 2
+    assert sum(leg["leg_role"] == "CLOSE" for leg in legs) == 2
+    assert all(leg["exchange_order_id"] is None for leg in legs)
+    assert all(leg["client_order_id"] is None for leg in legs)
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("EXIT SIGNAL: AAA/USDT|BBB/USDT" in message for message in sent_messages)
+    assert any("order_precision_invalid" in message for message in sent_messages)
 
 
 @pytest.mark.asyncio

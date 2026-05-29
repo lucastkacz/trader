@@ -3,3 +3,6 @@ risk:
   max_cluster_exposure: 0.10
   max_portfolio_exposure: 0.30
   max_leverage: 10.0
+  min_order_quantity: 0.000001
+  min_order_notional: 0.000001
+  order_quantity_step: 0.000001
