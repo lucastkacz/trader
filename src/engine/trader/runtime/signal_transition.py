@@ -7,6 +7,11 @@ from src.engine.trader.execution.orders import (
     OrderExecutionAdapter,
     execute_spread_leg_orders,
 )
+from src.engine.trader.runtime.pre_trade_risk import (
+    PreTradeRiskDecision,
+    PreTradeRiskPolicy,
+    evaluate_pre_trade_entry,
+)
 from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
@@ -44,18 +49,58 @@ async def route_signal_transition(
     order_execution_adapter: OrderExecutionAdapter | None,
     allow_new_entry: bool = True,
     entry_block_reasons: list[str] | None = None,
+    pre_trade_risk_policy: PreTradeRiskPolicy | None = None,
 ) -> None:
     """Apply the local state and explicit order transition for a signal result."""
     if current_side is None and result.signal != "FLAT":
         if allow_new_entry:
-            await _open_spread(pair, pair_label, result, lookback_bars, state, notifier, order_execution_cfg, order_execution_adapter)
+            decision = _evaluate_pre_trade_risk(
+                result=result,
+                state=state,
+                policy=pre_trade_risk_policy,
+            )
+            if decision.entry_allowed:
+                await _open_spread(
+                    pair,
+                    pair_label,
+                    result,
+                    lookback_bars,
+                    state,
+                    notifier,
+                    order_execution_cfg,
+                    order_execution_adapter,
+                    pre_trade_decision=decision,
+                )
+            else:
+                await _notify_pre_trade_risk_blocked(pair_label, notifier, decision)
         else:
             await _notify_entry_blocked(pair_label, notifier, entry_block_reasons)
     elif current_side is not None and result.signal == "FLAT":
         await _close_spread(pair_label, result, timeframe, state, notifier, order_execution_cfg, order_execution_adapter)
     elif current_side is not None and result.signal != current_side:
         if allow_new_entry:
-            await _flip_spread(pair, pair_label, result, lookback_bars, timeframe, state, notifier, order_execution_cfg, order_execution_adapter)
+            decision = _evaluate_pre_trade_risk(
+                result=result,
+                state=state,
+                policy=pre_trade_risk_policy,
+                replacing_pair_label=pair_label,
+            )
+            if decision.entry_allowed:
+                await _flip_spread(
+                    pair,
+                    pair_label,
+                    result,
+                    lookback_bars,
+                    timeframe,
+                    state,
+                    notifier,
+                    order_execution_cfg,
+                    order_execution_adapter,
+                    pre_trade_decision=decision,
+                )
+            else:
+                await _close_spread(pair_label, result, timeframe, state, notifier, order_execution_cfg, order_execution_adapter)
+                await _notify_pre_trade_risk_blocked(pair_label, notifier, decision)
         else:
             await _close_spread(pair_label, result, timeframe, state, notifier, order_execution_cfg, order_execution_adapter)
             await _notify_entry_blocked(pair_label, notifier, entry_block_reasons)
@@ -70,6 +115,7 @@ async def _open_spread(
     notifier: TelegramNotifier,
     order_execution_cfg: OrderExecutionConfig,
     order_execution_adapter: OrderExecutionAdapter | None,
+    pre_trade_decision: PreTradeRiskDecision,
 ) -> None:
     spread_id = state.open_position(
         pair_label=pair_label,
@@ -78,8 +124,8 @@ async def _open_spread(
         side=result.signal,
         entry_price_a=result.price_a,
         entry_price_b=result.price_b,
-        weight_a=result.weight_a,
-        weight_b=result.weight_b,
+        weight_a=pre_trade_decision.sized_weight_a,
+        weight_b=pre_trade_decision.sized_weight_b,
         entry_z=result.z_score,
         lookback_bars=lookback_bars,
     )
@@ -127,6 +173,7 @@ async def _flip_spread(
     notifier: TelegramNotifier,
     order_execution_cfg: OrderExecutionConfig,
     order_execution_adapter: OrderExecutionAdapter | None,
+    pre_trade_decision: PreTradeRiskDecision,
 ) -> None:
     closing_spread_id = state.get_position_for_pair(pair_label)["id"]
     pnl = state.close_position(
@@ -144,8 +191,8 @@ async def _flip_spread(
         side=result.signal,
         entry_price_a=result.price_a,
         entry_price_b=result.price_b,
-        weight_a=result.weight_a,
-        weight_b=result.weight_b,
+        weight_a=pre_trade_decision.sized_weight_a,
+        weight_b=pre_trade_decision.sized_weight_b,
         entry_z=result.z_score,
         lookback_bars=lookback_bars,
     )
@@ -183,4 +230,44 @@ async def _notify_entry_blocked(
     await notifier.send(
         f"⛔ <b>ENTRY BLOCKED BY PAIR QUEUE:</b> {pair_label}\n"
         f"Reasons: {reasons}"
+    )
+
+
+def _evaluate_pre_trade_risk(
+    *,
+    result: Any,
+    state: TradeStateManager,
+    policy: PreTradeRiskPolicy | None,
+    replacing_pair_label: str | None = None,
+) -> PreTradeRiskDecision:
+    if policy is None:
+        notional = abs(float(result.weight_a)) + abs(float(result.weight_b))
+        return PreTradeRiskDecision(
+            entry_allowed=True,
+            block_reasons=[],
+            sized_weight_a=float(result.weight_a),
+            sized_weight_b=float(result.weight_b),
+            proposed_notional_pct=notional,
+            projected_portfolio_exposure=notional,
+            projected_leverage=notional,
+        )
+    return evaluate_pre_trade_entry(
+        result=result,
+        open_positions=state.get_open_positions(),
+        policy=policy,
+        replacing_pair_label=replacing_pair_label,
+    )
+
+
+async def _notify_pre_trade_risk_blocked(
+    pair_label: str,
+    notifier: TelegramNotifier,
+    decision: PreTradeRiskDecision,
+) -> None:
+    reasons = ", ".join(decision.block_reasons or ["pre_trade_risk_blocked_entry"])
+    await notifier.send(
+        f"⛔ <b>ENTRY BLOCKED BY PRE-TRADE RISK:</b> {pair_label}\n"
+        f"Reasons: {reasons}\n"
+        f"Proposed Notional: {decision.proposed_notional_pct:.4f}\n"
+        f"Projected Exposure: {decision.projected_portfolio_exposure:.4f}"
     )

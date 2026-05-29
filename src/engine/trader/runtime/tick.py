@@ -17,6 +17,7 @@ from src.engine.trader.runtime.pair_queue.execution import (
     order_evaluations_for_transition,
 )
 from src.engine.trader.runtime.pair_validity.models import PairValiditySnapshot
+from src.engine.trader.runtime.pre_trade_risk import PreTradeRiskPolicy
 from src.engine.trader.runtime.signal_transition import (
     determine_action,
     route_signal_transition,
@@ -50,6 +51,7 @@ async def execute_tick(
     pair_queue_policy: PairQueuePolicy | None = None,
     pair_validity_snapshots: Sequence[PairValiditySnapshot] | None = None,
     pair_queue_enabled: bool = False,
+    pre_trade_risk_policy: PreTradeRiskPolicy | None = None,
 ) -> None:
     """Execute one full trader tick across all configured pairs."""
     if state.is_system_paused():
@@ -81,7 +83,16 @@ async def execute_tick(
         enabled=pair_queue_enabled,
     )
 
-    for evaluation in order_evaluations_for_transition(evaluations, queue_decisions):
+    ordered_evaluations = order_evaluations_for_transition(evaluations, queue_decisions)
+    for evaluation in ordered_evaluations:
+        if pair_queue_enabled:
+            queue_decisions = build_queue_decisions_for_tick(
+                evaluations=evaluations,
+                open_positions=state.get_open_positions(),
+                policy=pair_queue_policy,
+                validity_snapshots=pair_validity_snapshots,
+                enabled=pair_queue_enabled,
+            )
         decision = queue_decisions.get(evaluation.pair_label)
         allow_new_entry = allow_new_entry_from_queue(
             evaluation,
@@ -101,6 +112,7 @@ async def execute_tick(
             order_execution_adapter=order_execution_adapter,
             allow_new_entry=allow_new_entry,
             entry_block_reasons=decision.block_reasons if decision is not None else None,
+            pre_trade_risk_policy=pre_trade_risk_policy,
         )
     _snapshot_tick_equity(state, pair_prices)
 

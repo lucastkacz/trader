@@ -22,6 +22,7 @@ from src.engine.trader.runtime.monitoring.run_status import (
 )
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
 from src.engine.trader.runtime.pair_validity import PairValidityConfig, build_pair_validity_report
+from src.engine.trader.runtime.pre_trade_risk import pre_trade_policy_from_config
 from src.engine.trader.runtime.artifacts import load_tier1_pairs, promoted_pair_artifact_path
 from src.engine.trader.runtime.scheduler import seconds_until_next_candle
 from src.engine.trader.runtime.tick import execute_tick
@@ -75,11 +76,16 @@ async def run_trader_loop(
             pairs=pairs,
             pipeline_cfg=pipeline_cfg,
             strategy_cfg=strategy_cfg,
+            risk_cfg=risk_cfg,
             notifier=notifier,
             api_key=api_key,
             api_secret=api_secret,
             order_adapter=order_adapter,
         )
+    except asyncio.CancelledError:
+        record_observer_run_interrupted(state)
+        logger.info("Trader Engine shutdown requested by async cancellation.")
+        raise
     except KeyboardInterrupt:
         record_observer_run_interrupted(state)
         logger.info("Trader Engine shut down by user (KeyboardInterrupt).")
@@ -155,6 +161,7 @@ async def _run_ticks(
     pairs: list[dict[str, Any]],
     pipeline_cfg: PipelineConfig,
     strategy_cfg: StrategyConfig,
+    risk_cfg: RiskConfig,
     notifier: TelegramNotifier,
     api_key: str,
     api_secret: str,
@@ -203,6 +210,7 @@ async def _run_ticks(
                 pair_validity.snapshots if pair_validity is not None else None
             ),
             pair_queue_enabled=pair_queue_enabled,
+            pre_trade_risk_policy=pre_trade_policy_from_config(risk_cfg),
         )
         tick_count += 1
         if pipeline_cfg.execution.max_ticks is not None and tick_count >= pipeline_cfg.execution.max_ticks:
