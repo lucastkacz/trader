@@ -24,7 +24,7 @@ is specific, repo-aware design feedback with practical refactor suggestions.
 
 Read only what matches the review scope:
 
-- `CONTEXT.md` for domain terms.
+- `.agents/CONTEXT.md` for domain terms.
 - `docs/engineering-rules.md` for coding, config, testing, and live-safety
   constraints.
 - `docs/system-design.md` when reviewing runtime, research, execution, state,

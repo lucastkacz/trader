@@ -2,14 +2,55 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Queue-Driven Future Entry Selection
+## Now: Capital Slot Policy Hardening
 
 Goal:
 
 ```text
-make execution consume the audited dynamic promoted-pair queue for future
-entries only, while preserving natural exit for existing positions
+prove future-entry decisions respect explicit capital-slot limits through the
+execution path before adding broader pre-trade risk gates or simulator work
 ```
+
+Fresh-start drill completed:
+
+- The cold local lifecycle was run on 2026-05-28:
+  research -> promote -> refresh pair data -> report -> bounded state-only
+  execution -> SQLite verification.
+- `data/` was rebuilt through supported CLI flows, not manual data edits.
+- Research mined 150/150 dev symbols, discovered 14 candidate pairs, and the
+  stress filter produced 3 promoted pairs.
+- Promoted artifact:
+  `data/universes/1m/surviving_pairs.json`, `pair_count = 3`,
+  `generated_at = 2026-05-28T15:19:13.041806+00:00`.
+- Promoted pairs:
+  `ALT/USDT|1000BONK/USDT`, `ASTER/USDT|ADA/USDT`,
+  `ASTER/USDT|AVAX/USDT`.
+- Refresh used readonly Bybit market-data access for 5 promoted symbols and
+  saved 1455 local bars per symbol through
+  `2026-05-28T15:19:00+00:00`.
+- Reports showed all 3 pairs with operator review reasons
+  `market_data_older_than_artifact_generation` and
+  `market_data_older_than_promotion`.
+- Bounded state-only execution completed 5/5 ticks and auto-stopped with
+  `observer_run.status = COMPLETED_MAX_TICKS`.
+- SQLite verification showed zero open positions, zero leg fills, zero order
+  events, zero user commands, zero reconciliation deltas, and zero non-null
+  exchange/client order ids.
+- Post-execution queue decisions ranked all 3 pairs using live opportunity
+  evidence but blocked every new entry with
+  `pair_validity_operator_review_required`.
+- A longer state-only observation drill then refreshed promoted-pair data,
+  cleared pair-validity operator review reasons, and let the trader run for
+  several hours with readonly market-data access.
+- The longer drill recorded 4 state-only entries and 2 natural signal exits:
+  realized PnL `0.9432%`, latest unrealized PnL `-0.0716%`, latest total
+  equity `0.8715%`, and 2 open state-only positions after manual SIGTERM.
+- SQLite verification after the longer drill still showed 0 non-null
+  exchange/client order ids, 0 reconciliation deltas, and all leg targets as
+  `TARGET_RECORDED` with `filled_qty = 0`.
+- The longer drill exposed rate-limit/network stalls in readonly Bybit fetches
+  and stale shutdown status: `runtime_state.observer_run` remained `RUNNING`
+  after SIGTERM even though the trader closed its database connection cleanly.
 
 Already available locally:
 
@@ -51,21 +92,38 @@ Already available locally:
 - The execution CLI supports bounded local state-only drills through
   process-local `--max-ticks` and `--heartbeat-seconds` overrides. These
   overrides do not modify YAML and preserve the typed pipeline config boundary.
-- A fresh dev research/promote/refresh/report drill produced 7 promoted pairs
-  with complete baseline fields. After the next closed candle refresh, all 7
-  queue decisions were entry-eligible with no validity blocks.
-- A bounded state-only execution smoke run completed with `COMPLETED_MAX_TICKS`,
-  no open positions, and no exchange/client order ids recorded.
+- Offline verification before the drill was green:
+  `267 passed, 3 deselected`.
+- Lint before the drill was green: `ruff check src tests`.
+
+Current local assumption:
+
+- Dev remains on readonly credentials and state-only execution.
+- Pair queue mode remains `future_entries`.
+- The current local DB contains 2 open state-only positions from the extended
+  drill. They are accounting state only, not exchange positions.
+- Queue-driven entry blocking is visible in reports and must remain limited to
+  future entries.
+- Existing positions must continue natural-exit evaluation.
 
 Required next behavior:
 
-- Run a fresh local research/promote/refresh/report/execution drill with queue
-  consumption enabled.
-- Confirm no exchange/client order ids are recorded during the state-only
-  execution drill.
-- Preserve pair-validity refresh cadence and thresholds as explicit typed
-  config or CLI/runtime policy rather than hidden constants.
-- Keep tuning thresholds separate from capital sizing.
+- Tighten capital-slot policy through typed config or runtime policy, not hidden
+  constants.
+- Add execution-path tests for global max open positions.
+- Add execution-path tests for max positions per pair.
+- Add execution-path tests for max positions per asset.
+- Emit explicit block reasons for each slot-policy rejection.
+- Make stop/shutdown state operator-visible: interrupted bounded runs must not
+  leave `observer_run` claiming `RUNNING` with empty open-position ids when
+  open state-only positions exist.
+- Preserve natural exit: slot limits may block future entries, but must not
+  force-close or rebalance existing positions.
+- Treat readonly market-data cadence/backoff as part of local trader
+  stabilization before longer unattended runs.
+- Keep pair-validity threshold tuning separate from capital sizing.
+- Defer simulator implementation until capital slots and pre-trade risk gates
+  are stable enough to be durable runtime behavior.
 
 Do not implement:
 
@@ -82,30 +140,30 @@ Do not implement:
 
 ## Standing Gate: No Capital Increase
 
-Do not increase real-capital exposure while the active work is artifact
-lifecycle. Production readiness is a separate gate defined in
+Do not increase real-capital exposure while the active work is local trader
+stabilization. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
+
+## Next: Local Risk Gates Before Simulation
+
+```text
+make state-only entry decisions pass explicit pre-trade checks before building
+synthetic replay around the trader
+```
+
+Add or tighten tested gates for notional sizing, leverage, exposure, precision,
+liquidity policy, and kill-switch state. These should remain explicit config or
+typed policy, not hidden runtime constants.
 
 ## Next: Queue Policy Threshold Calibration
 
 ```text
-tune pair-validity and allocation thresholds after queue-driven state-only
-behavior is tested
+tune pair-validity thresholds after queue-driven state-only behavior and
+capital-slot behavior are both tested
 ```
 
-Initial execution consumption should still work with permissive dev thresholds.
-After that, tune thresholds for correlation, p-value, hedge-ratio drift,
-half-life drift, bars since promotion, and capital slots.
-
-## Next: Capital Slot And Position Sizing Policy
-
-```text
-define the capital-slot policy that decides how many queue entries may become
-open positions and how large those state-only/live positions should be
-```
-
-Keep this separate from first queue consumption. Dev can remain permissive while
-tests prove future-entry filtering and natural-exit behavior.
+Tune thresholds for correlation, p-value, hedge-ratio drift, half-life drift,
+and bars since promotion after slot-policy behavior is no longer moving.
 
 ## Later: Scheduled Candidate Regeneration
 

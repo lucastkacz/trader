@@ -32,13 +32,18 @@ losing the bigger design.
 - Reconciliation exchange snapshots.
 - Runtime clock.
 - Market-data provider.
+- Market-data stream provider.
+- Virtual stream clock.
 
 ## Synthetic Price Processes
 
 - Geometric Brownian motion for base assets.
 - Arithmetic Brownian motion for special cases.
 - Ornstein-Uhlenbeck spread process.
+- Colored-noise OU spread process.
+- Generalized Langevin spread process.
 - Cointegrated pair process.
+- Cointegrated pair process with a generalized Langevin spread.
 - Jump diffusion.
 - Fat-tail return generator.
 - Volatility-regime switching.
@@ -47,6 +52,8 @@ losing the bigger design.
 - Spread mean drift.
 - Spread volatility drift.
 - Deterministic scripted paths.
+- Process calibration against explicit diagnostic bands.
+- Optional accelerated kernels for profiled process bottlenecks.
 
 ## Market Path Manipulators
 
@@ -180,6 +187,35 @@ losing the bigger design.
 - Heartbeat override.
 - Boundary-sync override.
 - Deterministic runtime clock.
+
+## Stream Simulation
+
+- Virtual-time websocket-like market-data streams.
+- Candle open/update/close events.
+- Ticker update events.
+- Trade print events.
+- Order book snapshot events.
+- Order book delta events.
+- Heartbeat events.
+- Subscription acknowledgement events.
+- Disconnect and reconnect events.
+- Stream error events.
+- Event sequence numbers.
+- Exchange timestamps and receive timestamps.
+- Configurable latency.
+- Configurable jitter.
+- Event drops.
+- Event duplicates.
+- Out-of-order events.
+- Burst delivery after lag.
+- One-leg feed lag.
+- Partial symbol outage.
+- Missing heartbeat.
+- Delayed reconnect.
+- Candle close emitted twice.
+- Order book delta gap.
+- Deterministic stream replay from generated market paths.
+- Stream health assertions.
 
 ## Order Execution Simulation
 

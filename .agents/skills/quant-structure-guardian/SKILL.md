@@ -14,7 +14,7 @@ maintain.
 
 Read only what matches the affected area:
 
-- `CONTEXT.md` for domain terms.
+- `.agents/CONTEXT.md` for domain terms.
 - `docs/engineering-rules.md` for safety and config rules.
 - `docs/system-design.md` for canonical system shape.
 - `.agents/skills/improve-quant-architecture/references/LANGUAGE.md` for

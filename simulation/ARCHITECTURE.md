@@ -13,6 +13,7 @@ simulation/
   ARCHITECTURE.md
   SCENARIO_DSL.md
   MARKET_GENERATION.md
+  STREAM_SIMULATION.md
   REPLAY_AND_ASSERTIONS.md
   ROADMAP.md
   configs/
@@ -45,6 +46,13 @@ simulation/
     tick_replay.py
     runtime_clock.py
     state_seed.py
+  streams/
+    __init__.py
+    events.py
+    projection.py
+    provider.py
+    virtual_clock.py
+    faults.py
   assertions/
     __init__.py
     invariants.py
@@ -102,11 +110,40 @@ This mirrors the production config boundary in `src/engine/trader/config`.
 
 ## Core Concepts
 
+### Process Model
+
+Market generation should be built around typed process models. The first
+implementation should support a small set of transparent models, but the
+interfaces should not assume that every spread is OU forever.
+
+Required shape:
+
+```text
+BasePriceProcess -> log-price path
+SpreadProcess    -> spread path
+PairProcess      -> paired log-price paths and diagnostics
+```
+
+Initial spread process:
+
+- Ornstein-Uhlenbeck spread.
+
+Future spread processes:
+
+- Colored-noise OU.
+- ARMA-like residual spread.
+- Generalized Langevin spread with a memory kernel.
+- Scripted deterministic spread path for exact edge cases.
+
+The scenario schema should select a process by typed `type` names and validated
+fields. It must not rely on formula strings, dynamic imports, or executable YAML.
+
 ### Scenario
 
 A scenario is a deterministic recipe for:
 
 - Market path generation.
+- Stream event projection.
 - Data-quality faults.
 - Pair artifacts.
 - Initial runtime state.
@@ -134,6 +171,15 @@ A replay executes the scenario through public runtime interfaces. The first
 target should be `execute_tick` with an injected market-data provider. Later
 targets may include command processing, reporting, reconciliation, and full
 runtime loop drills.
+
+### Stream Replay
+
+Stream replay delivers generated market data as websocket-like events through a
+synthetic stream provider and virtual clock. It should reuse the same generated
+market paths as batch replay, then project them into ordered events, apply
+configured stream faults, and assert runtime safety.
+
+Stream replay must never open a real websocket or depend on wall-clock sleeps.
 
 ### Assertion
 
@@ -185,6 +231,23 @@ market_data_provider = synthetic OHLCV provider
 The seam must preserve production behavior and tests must prove that state-only
 simulation does not reach network or exchange mutation paths.
 
+## Future Stream Seam
+
+If production runtime later supports websocket-style market data, simulation
+should use the same production stream interface through a synthetic provider.
+
+Target shape:
+
+```text
+MarketDataStream
+-> production websocket adapter
+-> synthetic stream provider
+```
+
+`src/` may define the interface only when production code needs it. `src/` must
+not import `simulation/`, and stream unit tests must use virtual time instead of
+real sockets or sleeps.
+
 ## Configuration Rules
 
 Simulation config should use typed objects below the scenario definition layer.
@@ -219,6 +282,20 @@ Preferred base libraries:
 - `hypothesis` for property-based and fuzz tests after deterministic examples
   are stable.
 - `numba` for hot path kernels only when profiling proves the need.
+
+Performance escalation should be explicit:
+
+```text
+clear NumPy implementation
+-> profile with representative scenarios
+-> optional Numba kernel for proven hot loops
+-> consider C/Rust only for a stable, isolated kernel that Numba cannot handle
+```
+
+Generalized Langevin support may eventually need acceleration because memory
+kernels and colored-noise generation can be expensive. That is not a reason to
+make the first OU implementation depend on Numba, C, or Rust. Keep the Python
+contract stable first, then optimize behind it.
 
 Avoid using heavy external backtesting engines as the core replay system. They
 can inspire ideas such as vectorized data handling, event-driven data feeds, and

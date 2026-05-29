@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Iterable
 SKIP_DIRS = {".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "__pycache__", "logs"}
 TEXT_SUFFIXES = {".md", ".py", ".toml", ".txt", ".yaml", ".yml"}
-DEFAULT_PATHS = ["src", "tests", "docs", "AGENTS.md", "CONTEXT.md"]
+DEFAULT_PATHS = ["src", "tests", "docs", ".agents/AGENTS.md", ".agents/CONTEXT.md"]
 LEGACY_PATTERNS = {
     "PLAN/": re.compile(r"PLAN/"),
     "PLAN_LEGACY": re.compile(r"PLAN_LEGACY"),

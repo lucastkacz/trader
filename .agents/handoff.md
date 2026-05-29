@@ -1,34 +1,23 @@
-# Handoff: Dynamic Queue And Local Dev Lifecycle
+# Handoff: Local Trader Fresh-Start Stabilization
 
-Updated: 2026-05-21
+Updated: 2026-05-28
 
 ## Purpose
 
-This handoff is for continuing the local dev automation session in a fresh chat.
-The active goal is to turn the promoted-pair lifecycle into a safe, auditable
-execution workflow:
-
-```text
-research flow
--> candidate artifact
--> operator promotion
--> promoted artifact
--> read-only data refresh
--> pair validity diagnostics
--> dynamic promoted-pair queue
--> state-only execution drill
--> future-entry queue consumption
-```
+This handoff is for continuing local trader work after a completed cold local
+rebuild of `data/`. The next goal is to tighten the local trader contract with
+capital-slot policy and pre-trade risk gates, while deferring simulator
+implementation until those runtime decisions are stable.
 
 Do not call the system production-ready for real capital. The production
 readiness gate in `docs/engineering-rules.md` still applies.
 
-## Required Context For The Next Chat
+## Required Context
 
 Read these before changing code:
 
-- `AGENTS.md`
-- `CONTEXT.md`
+- `.agents/AGENTS.md`
+- `.agents/CONTEXT.md`
 - `docs/index.md`
 - `docs/engineering-rules.md`
 - `docs/system-design.md`
@@ -41,7 +30,7 @@ Use project skills when relevant:
 - `quant-code-quality-auditor` for safety/config/test integrity reviews.
 - `quant-roadmap-maintainer` when changing roadmap state.
 
-Important language to preserve:
+Preserve these terms:
 
 - research flow
 - execution flow
@@ -57,28 +46,28 @@ Important language to preserve:
 - live exchange mutation
 - config boundary
 
-## Branch And Latest Baseline
+## Branch And Working Tree
 
-Branch:
-
-```text
-pair-validity-readonly-diagnostics
-```
-
-Previous commit before this handoff update:
+Current branch for this planning/docs work:
 
 ```text
-231aae04 Add read-only pair validity refresh diagnostics
+local-trader-fresh-start-docs
 ```
 
-Remote:
+Baseline before the branch:
 
 ```text
-origin git@github.com:lucastkacz/trader.git
+main...origin/main at 1a96f6fc Merge simulation scenario lab docs
 ```
 
-Current local work includes queue-driven future-entry execution consumption.
-Commit/push state should be checked with `git status --short` in the next chat.
+Known uncommitted/untracked work carried onto this branch:
+
+- Simulation documentation updates under `simulation/`.
+- New simulation docs:
+  - `simulation/IMPLEMENTATION_PLAN.md`
+  - `simulation/STREAM_SIMULATION.md`
+- New content docs under `.content/docs/`.
+- Fresh-start trader docs updates in `.agents/` and `docs/`.
 
 ## Current Verified State
 
@@ -86,7 +75,7 @@ Latest offline verification:
 
 ```text
 .venv/bin/python -m pytest -q
-264 passed, 3 deselected
+267 passed, 3 deselected
 ```
 
 Latest lint verification:
@@ -96,58 +85,357 @@ Latest lint verification:
 All checks passed!
 ```
 
-Last non-empty bounded state-only smoke command with queue execution consumption
-enabled:
+## Local Data State
 
-```bash
+`data/` was intentionally deleted and then rebuilt through the supported local
+operator lifecycle on 2026-05-28.
+
+Implications:
+
+- Current local runtime DB: `data/dev/trades_1m.db`.
+- Current promoted artifact:
+  `data/universes/1m/surviving_pairs.json`.
+- Current local parquet store: `data/parquet/bybit/1m/`.
+- Current local state after the extended observation drill has 2 open
+  state-only positions and 0 exchange/client order ids. Treat them as local
+  accounting state only; do not force-close them for documentation cleanup.
+- Old open-position notes from before deletion remain stale.
+- Future fresh-start drills should still recreate state through supported CLI
+  flows, not manual file edits.
+
+## Fresh-Start Drill Results
+
+Completed on 2026-05-28 from branch `local-trader-fresh-start-docs`.
+
+Preflight:
+
+- `configs/pipelines/dev.yml` used `credential_tier: readonly`.
+- `configs/pipelines/dev.yml` used `order_execution.mode: state_only`.
+- `configs/pipelines/dev.yml` used `execution.pair_queue.mode: future_entries`.
+- `launchctl` observer service was not loaded.
+- `launchctl` dev Telegram daemon was initially running as
+  `com.quant.dev-telegram-daemon` with PID `45833`; it was stopped before the
+  lifecycle drill.
+- Post-stop process scan showed no trader, observer, dev Telegram daemon, or
+  `caffeinate` process. Only Telegram Desktop crash-handler processes matched
+  the broad `telegram` search term.
+
+Research:
+
+```text
+.venv/bin/python main.py run --config configs/runs/dev_1m_research.yml
+```
+
+- First sandboxed attempt failed because Prefect could not find a local API
+  port. The same command succeeded outside the sandbox.
+- Prefect temporary server: `http://127.0.0.1:8403`.
+- Research window: 2026-05-27 to 2026-05-28.
+- Bybit universe after volume filter: 572 assets.
+- Dev research limited the universe to 150 symbols.
+- Mining result: 150 successes, 0 failures.
+- Discovery loaded 20 assets, 19 passed data maturity, and 1 valid cohort was
+  exported to `data/universes/1m/clusters_20260528_1519.json`.
+- Alpha cointegration discovery yielded 14 candidate pairs.
+- Pair stress filter tested 14 candidate pairs and promoted 3 candidates into
+  the candidate artifact.
+- Recoverable Bybit rate-limit warnings occurred during research and were
+  handled by fetcher backoff.
+
+Promotion:
+
+```text
+.venv/bin/python main.py promote-pairs \
+  --pipeline configs/pipelines/dev.yml \
+  --operator local-fresh-start
+```
+
+- Promoted artifact: `data/universes/1m/surviving_pairs.json`.
+- Promotion audit: `data/universes/1m/promotion_audit.jsonl`.
+- Promoted artifact metadata:
+  - `generated_at`: `2026-05-28T15:19:13.041806+00:00`
+  - `timeframe`: `1m`
+  - `exchange`: `bybit`
+  - `pair_count`: `3`
+- Promoted pairs:
+  - `ALT/USDT|1000BONK/USDT`, stress Sharpe `18.5837`, PnL `1.3445%`,
+    `13` stress trades.
+  - `ASTER/USDT|ADA/USDT`, stress Sharpe `3.7825`, PnL `0.1432%`,
+    `6` stress trades.
+  - `ASTER/USDT|AVAX/USDT`, stress Sharpe `14.4262`, PnL `0.4644%`,
+    `8` stress trades.
+
+Refresh:
+
+```text
+.venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
+  --pipeline configs/pipelines/dev.yml \
+  --overlap-bars 5 \
+  --missing-lookback-bars 1500 \
+  --fetch-limit 1000
+```
+
+- First sandboxed attempt failed on DNS access to Bybit. The same command
+  succeeded outside the sandbox.
+- Scope: Bybit `1m`.
+- Symbols refreshed: `5`.
+- Started: `2026-05-28T15:20:35.611637+00:00`.
+- Finished: `2026-05-28T15:20:41.151885+00:00`.
+- `1000BONK/USDT`, `ADA/USDT`, `ALT/USDT`, `ASTER/USDT`, and `AVAX/USDT`
+  each fetched `21` bars, saved `1455` bars, and had latest local data at
+  `2026-05-28T15:19:00+00:00`.
+
+Reports:
+
+```text
+.venv/bin/python -m src.engine.trader.cli.report_generator \
+  --pipeline configs/pipelines/dev.yml \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3
+
+.venv/bin/python -m src.engine.trader.cli.report_generator \
+  --pipeline configs/pipelines/dev.yml \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3 \
+  --json
+```
+
+- Both reports succeeded.
+- PyArrow emitted sandbox-only `sysctlbyname` CPU-cache warnings during report
+  generation; reports still completed.
+- Pair-validity diagnostics covered 3 promoted pairs.
+- All 3 pairs carried review reasons:
+  `market_data_older_than_artifact_generation` and
+  `market_data_older_than_promotion`.
+- Pre-execution queue decisions ranked all 3 pairs and blocked all 3 from
+  entry with `pair_validity_operator_review_required`.
+
+Bounded state-only execution:
+
+```text
 .venv/bin/python main.py execute \
   --pipeline configs/pipelines/dev.yml \
   --strategy configs/strategy/dev.yml \
   --risk configs/risk/alpha_v1.yml \
-  --max-ticks 1 \
-  --heartbeat-seconds 1
+  --max-ticks 5 \
+  --heartbeat-seconds 10
 ```
 
-Result:
+- Ran outside the sandbox so Prefect and readonly Bybit market-data fetches
+  could operate.
+- Prefect temporary server: `http://127.0.0.1:8199`.
+- Loaded 3 Tier 1 pairs from 3 total survivors.
+- Boot reconciliation status:
+  `SKIPPED_NO_SNAPSHOT_PROVIDER`, deltas `0`, no actions taken.
+- Completed 5 ticks and auto-stopped.
+- Runtime state:
+  `observer_run.status = COMPLETED_MAX_TICKS`,
+  `max_ticks = 5`, `completed_ticks = 5`,
+  `started_at = 2026-05-28T15:21:17.960607+00:00`,
+  `completed_at = 2026-05-28T15:23:57.421035+00:00`,
+  `open_position_ids = []`.
+- All 5 equity snapshots recorded `open_positions = 0`,
+  `realized_pnl_pct = 0.0`, `unrealized_pnl_pct = 0.0`, and
+  `total_equity_pct = 0.0`.
+- `tick_signals` recorded 15 signal rows:
+  - `ALT/USDT|1000BONK/USDT`: `FLAT/SKIP` x 5.
+  - `ASTER/USDT|ADA/USDT`: `FLAT/SKIP` x 4 and `SHORT_SPREAD/ENTRY` x 1.
+  - `ASTER/USDT|AVAX/USDT`: `SHORT_SPREAD/ENTRY` x 5.
+- No spread positions were opened.
+- No leg fills were recorded.
+- No order events were recorded.
+- No user commands were recorded.
+- No reconciliation deltas were recorded.
+- Exchange/client order-id verification:
+  `select count(*) from leg_fills where exchange_order_id is not null or client_order_id is not null;`
+  returned `0`.
+
+Post-execution report:
+
+- Status: `HEALTHY`.
+- Active pairs: `0`.
+- Total trades: `0`.
+- Total signals recorded: `15`.
+- Latest reconciliation run status: `SKIPPED_NO_SNAPSHOT_PROVIDER`.
+- Post-execution dynamic queue summary:
+  - Rank 1: `ASTER/USDT|AVAX/USDT`, total score `0.91`,
+    opportunity score `1.0`, `entry_allowed = false`.
+  - Rank 2: `ASTER/USDT|ADA/USDT`, total score `0.905614`,
+    opportunity score `0.9780675210249339`, `entry_allowed = false`.
+  - Rank 3: `ALT/USDT|1000BONK/USDT`, total score `0.875062`,
+    opportunity score `0.8253118127683133`, `entry_allowed = false`.
+- Every post-execution queue decision was blocked by
+  `pair_validity_operator_review_required`.
+- Every post-execution queue decision retained review reasons
+  `market_data_older_than_artifact_generation` and
+  `market_data_older_than_promotion`.
+
+## Extended State-Only Observation Drill
+
+After the cold lifecycle, promoted-pair data was refreshed again and a longer
+bounded state-only execution run was started on 2026-05-28.
+
+Preflight:
+
+- Observer service was not loaded.
+- Dev Telegram daemon was not loaded.
+- Process scan showed no local trader/observer process before start.
+- Dev config still used readonly credentials, `order_execution.mode:
+  state_only`, and `execution.pair_queue.mode: future_entries`.
+
+Refresh:
 
 ```text
-Completed 1 ticks. Auto-stopping.
-Prefect flow state: Completed()
-runtime_state observer_run: COMPLETED_MAX_TICKS
-open positions: 0
-exchange/client order ids: 0
+.venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
+  --pipeline configs/pipelines/dev.yml \
+  --overlap-bars 5 \
+  --missing-lookback-bars 1500 \
+  --fetch-limit 1000
 ```
 
-Latest drill timestamp:
+- Started: `2026-05-28T16:08:06.294782+00:00`.
+- Finished: `2026-05-28T16:08:13.466780+00:00`.
+- Symbols refreshed: `5`.
+- Each promoted symbol fetched `54` bars, saved `1503` bars, and had latest
+  local data at `2026-05-28T16:07:00+00:00`.
+
+Pre-run report:
+
+- Pair-validity operator review reasons cleared for all 3 promoted pairs.
+- Queue decisions allowed entry for all 3 promoted pairs:
+  - Rank 1: `ASTER/USDT|AVAX/USDT`, latest action `ENTRY`, latest z
+    `3.6797`.
+  - Rank 2: `ASTER/USDT|ADA/USDT`, latest action `SKIP`, latest z `2.4452`.
+  - Rank 3: `ALT/USDT|1000BONK/USDT`, latest action `SKIP`, latest z
+    `-1.2380`.
+
+Longer bounded state-only execution:
 
 ```text
-started_at: 2026-05-21T20:40:22.831467+00:00
-completed_at: 2026-05-21T20:41:17.324403+00:00
-completed_ticks: 1
-open_position_ids: []
+.venv/bin/python main.py execute \
+  --pipeline configs/pipelines/dev.yml \
+  --strategy configs/strategy/dev.yml \
+  --risk configs/risk/alpha_v1.yml \
+  --max-ticks 180 \
+  --heartbeat-seconds 60
 ```
 
-Latest fresh cold lifecycle drill:
+- Ran outside the sandbox so Prefect and readonly Bybit market-data fetches
+  could operate.
+- Prefect temporary server: `http://127.0.0.1:8353`.
+- Boot reconciliation status:
+  `SKIPPED_NO_SNAPSHOT_PROVIDER`, deltas `0`, no actions taken.
+- The run was manually stopped with `SIGTERM` after several hours of
+  state-only observation. Prefect recorded the flow as crashed/cancelled, and
+  the trader logged `Database connection closed cleanly`.
+- The process and Prefect temporary server were stopped; follow-up process
+  checks showed no `main.py`, trader runtime, or Prefect process.
 
-```text
-data directory was deleted before the run
-research command: main.py run --config configs/runs/dev_1m_research.yml
-fetched parquet files: 150
-candidate/promoted pair_count: 6
-missing baseline rows: 0
-promotion operator: codex-fresh-cold-run
-refresh: 7 unique promoted symbols
-queue report: 6 Entry YES, 0 block reasons
-execute: completed 1 bounded state-only tick
-runtime_state observer_run: COMPLETED_MAX_TICKS
-exchange/client order ids: 0
-```
+Observed state-only trades:
 
-Local network caveat:
+- Position 1:
+  - Pair: `ALT/USDT|1000BONK/USDT`.
+  - Side: `LONG_SPREAD`.
+  - Opened: `2026-05-28T16:28:22.878202+00:00`.
+  - Closed: `2026-05-28T16:51:20.800304+00:00`.
+  - Close reason: `SIGNAL_EXIT`.
+  - Holding bars: `23`.
+  - Realized PnL: `0.7611%`.
+- Position 2:
+  - Pair: `ASTER/USDT|ADA/USDT`.
+  - Side: `SHORT_SPREAD`.
+  - Opened: `2026-05-28T16:32:39.912219+00:00`.
+  - Closed: `2026-05-28T20:48:16.381629+00:00`.
+  - Close reason: `SIGNAL_EXIT`.
+  - Holding bars: `256`.
+  - Realized PnL: `0.1821%`.
+- Position 3:
+  - Pair: `ASTER/USDT|ADA/USDT`.
+  - Side: `SHORT_SPREAD`.
+  - Opened: `2026-05-29T00:28:32.856274+00:00`.
+  - Status after SIGTERM: `OPEN`.
+- Position 4:
+  - Pair: `ALT/USDT|1000BONK/USDT`.
+  - Side: `SHORT_SPREAD`.
+  - Opened: `2026-05-29T00:29:57.743064+00:00`.
+  - Status after SIGTERM: `OPEN`.
 
-- Bybit sometimes times out during dev fetches.
-- Telegram notifier sometimes times out locally.
-- These failures were noisy but did not create exchange mutation.
+SQLite verification after stop:
+
+- Runtime DB: `data/dev/trades_1m.db`.
+- `spread_positions`: `2` closed, `2` open.
+- `leg_fills`: `12` rows, all `TARGET_RECORDED`, all `filled_qty = 0`.
+- Exchange/client order-id verification:
+  `select count(*) from leg_fills where exchange_order_id is not null or client_order_id is not null;`
+  returned `0`.
+- `order_events`: `6`, all signal events:
+  `SIGNAL_ENTRY` x 4 and `SIGNAL_EXIT` x 2.
+- `reconciliation_runs`: `2`, both `SKIPPED_NO_SNAPSHOT_PROVIDER`.
+- `reconciliation_deltas`: `0`.
+- `equity_snapshots`: `150`.
+- Latest equity snapshot:
+  - Timestamp: `2026-05-29T00:32:48.695255+00:00`.
+  - Open positions: `2`.
+  - Realized PnL: `0.9432%`.
+  - Unrealized PnL: `-0.0716%`.
+  - Total equity: `0.8715%`.
+- `tick_signals`: `439`.
+  - `SKIP`: `299`.
+  - `HOLD`: `128`.
+  - `ENTRY`: `10`.
+  - `EXIT`: `2`.
+
+Post-run report:
+
+- Command:
+  `.venv/bin/python -m src.engine.trader.cli.report_generator --pipeline configs/pipelines/dev.yml --json`.
+- Status: `HEALTHY`.
+- Active pairs: `2`.
+- Total closed trades: `2`.
+- Total equity: `0.8715%`.
+- Realized PnL: `0.9432%`.
+- Unrealized PnL: `-0.0716%`.
+- Total signals recorded: `439`.
+- State ledger:
+  - Order events: `6`.
+  - Leg targets: `OPEN` x 8, `CLOSE` x 4, all `TARGET_RECORDED`.
+  - Latest reconciliation status: `SKIPPED_NO_SNAPSHOT_PROVIDER`.
+  - Reconciliation deltas: `0`.
+- Pair queue:
+  - `ASTER/USDT|AVAX/USDT` remained entry-allowed.
+  - `ALT/USDT|1000BONK/USDT` and `ASTER/USDT|ADA/USDT` were blocked by
+    `pair_position_limit_reached`.
+  - Both open-position pairs carried review reason
+    `market_data_older_than_open_position`.
+- PyArrow emitted sandbox-only `sysctlbyname` CPU-cache warnings during report
+  generation; report still completed.
+
+Stabilization findings from the extended run:
+
+- State-only execution did not write any exchange or client order ids.
+- Natural exits were preserved and recorded as signal exits.
+- Long readonly Bybit operation exposed rate-limit/network stalls:
+  - Bybit `retCode 10006` rate-limit responses appeared around
+    `2026-05-28T19:00:07+00:00` and
+    `2026-05-28T19:00:22+00:00`.
+  - Later market-data requests stalled for long gaps before recovering.
+- `runtime_state.observer_run` remained stale after SIGTERM:
+  `status = RUNNING`, `completed_ticks = 0`, `completed_at = null`,
+  `open_position_ids = []`, even though the database contained 2 open
+  state-only positions.
+- The next implementation slice should keep focusing on explicit capital-slot
+  policy and operator-visible stop/run-state behavior before simulator work.
+
+Post-5-tick-drill process check:
+
+- The 5-tick bounded execution process exited cleanly after
+  `COMPLETED_MAX_TICKS`.
+- `launchctl` observer service remained not loaded.
+- `launchctl` dev Telegram daemon remained not loaded.
+- Process scan showed no trader, observer, dev Telegram daemon, or
+  `caffeinate` process. Telegram Desktop crash-handler processes still matched
+  the broad `telegram` search term.
 
 ## What Is Implemented
 
@@ -158,8 +446,8 @@ Architecture and package shape:
 - Runtime monitoring lives under `src/engine/trader/runtime/monitoring/`.
 - Pair validity lives under `src/engine/trader/runtime/pair_validity/`.
 - Dynamic queue ranking lives under `src/engine/trader/runtime/pair_queue/`.
-- Root trader compatibility facades were removed in favor of canonical package
-  paths.
+- Canonical imports are under state, signals, runtime, reporting, and CLI
+  packages rather than root-level trader compatibility facades.
 
 Artifact lifecycle:
 
@@ -167,488 +455,149 @@ Artifact lifecycle:
 - `main.py promote-pairs` validates and promotes candidate artifacts.
 - Promotion appends `promotion_audit.jsonl`.
 - Execution loads only the promoted artifact on boot.
-- No pair recalculation path force-closes or rebalances open positions.
-
-Research baseline fields:
-
-- Fresh candidate/promoted artifacts now include baseline diagnostics needed by
-  pair validity:
-  - `Research_Window.start`
-  - `Research_Window.end`
-  - `Research_Window.bars`
-  - `Correlation`
-  - `Spread_Mean`
-  - `Spread_Std`
-  - `Z_Score_Distribution`
-- `src/research/pair_baseline.py` owns baseline field calculation.
-- Discovery and stress filtering refresh these fields from aligned research
-  price windows.
-- Timestamp serialization was fixed so numeric millisecond indexes become ISO
-  UTC strings, not raw numeric strings.
+- Pair recalculation must not force-close or rebalance open positions.
 
 Pair validity and refresh:
 
-- Refresh CLI:
+- Refresh CLI fetches/appends local OHLCV only for symbols in the promoted
+  artifact with readonly credentials.
+- Report CLI can compute pair-validity diagnostics and dynamic queue decisions.
+- Pair validity reports artifact/data age, recent bars, hedge-ratio drift,
+  correlation drift, p-value drift, half-life drift, execution observations, and
+  review reasons.
+- Refresh does not promote artifacts, reload execution, submit orders, or close
+  positions.
+
+Dynamic promoted-pair queue:
+
+- Execution consumes queue decisions for future entries when
+  `execution.pair_queue.mode: future_entries`.
+- Queue decisions block only new entries.
+- Existing positions continue natural-exit evaluation.
+- Blocked flip signals close the existing position but skip the replacement
+  entry.
+- The queue does not place orders, promote artifacts, force-close, or rebalance.
+
+Bounded local execution:
+
+- `main.py execute` supports process-local bounds:
+  - `--max-ticks`
+  - `--heartbeat-seconds`
+- Overrides do not modify YAML.
+- Dev should remain on `credential_tier: readonly` and
+  `order_execution.mode: state_only`.
+
+## Fresh-Start Drill Order
+
+Before running anything:
+
+1. Confirm no trader, observer, Telegram daemon, or `caffeinate` process is
+   active.
+2. Confirm `configs/pipelines/dev.yml` still uses:
+   - `credential_tier: readonly`
+   - `order_execution.mode: state_only`
+   - `execution.pair_queue.mode: future_entries`
+
+Run the cold lifecycle:
 
 ```bash
+.venv/bin/python main.py run \
+  --config configs/runs/dev_1m_research.yml
+
+.venv/bin/python main.py promote-pairs \
+  --pipeline configs/pipelines/dev.yml \
+  --operator local-fresh-start
+
 .venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
   --pipeline configs/pipelines/dev.yml \
   --overlap-bars 5 \
   --missing-lookback-bars 1500 \
   --fetch-limit 1000
-```
 
-- Report CLI:
-
-```bash
 .venv/bin/python -m src.engine.trader.cli.report_generator \
   --pipeline configs/pipelines/dev.yml \
   --pair-validity-window-bars 240 \
   --pair-validity-min-bars 60 \
   --open-position-review-half-life-multiple 3
-```
 
-- Pair validity reports age, recent bars, hedge-ratio drift, correlation drift,
-  p-value drift, half-life drift, spread mean/std drift, execution observations,
-  and explicit review reasons.
-- Pipeline config now declares explicit execution-time pair-validity diagnostics
-  policy under `execution.pair_validity`:
-  - `recent_window_bars: 240`
-  - `min_recent_bars: 60`
-  - `open_position_review_half_life_multiple: 3.0`
-- Refresh is read-only market data work. It does not promote artifacts, reload
-  execution, submit orders, or close positions.
-
-Dynamic promoted-pair queue:
-
-- Queue is consumed by execution for future entries when pipeline config sets
-  `execution.pair_queue.mode: future_entries`.
-- Reports still surface queue decisions for operator review.
-- `src/engine/trader/runtime/trader_runner.py` builds pair-validity snapshots
-  before each tick when queue consumption is enabled.
-- `src/engine/trader/runtime/tick.py` evaluates current signal opportunity,
-  builds a dynamic queue snapshot, routes higher-ranked future entries first,
-  and blocks only new entries when a queue decision is not entry-allowed.
-- `src/engine/trader/runtime/signal_transition.py` preserves natural exit by
-  allowing blocked flip signals to close the existing position while skipping
-  the replacement entry.
-- It ranks promoted pairs using:
-  - research score
-  - pair validity score
-  - current tick opportunity score during execution
-  - latest persisted tick signals in reports
-  - open-position exposure
-  - configured allocation caps
-- Dev config has explicit `execution.pair_queue`.
-- `null` allocation caps or thresholds mean intentionally not enforced.
-- The queue does not place orders, does not promote artifacts, and does not
-  force-close or rebalance existing positions.
-
-Bounded local execution:
-
-- `main.py execute` now supports CLI-only runtime bounds:
-  - `--max-ticks`
-  - `--heartbeat-seconds`
-- Overrides are process-local and do not modify YAML.
-- Non-null `max_ticks` and `heartbeat_seconds` must be positive.
-- `docs/local-operator-runbook.md` now uses this canonical bounded command
-  instead of the old missing `logs/run_dev_state_only_observer.py` wrapper.
-
-Behavior tests added in this slice:
-
-- `tests/engine/trader/runtime/test_tick_queue.py`
-  - blocked queue decisions prevent new entries
-  - blocked queue decisions do not prevent existing-position natural exits
-  - higher-ranked eligible pairs are routed first for future entries
-  - state-only mode records no exchange/client order ids in the tested flow
-- Config tests prove shipped pipeline configs declare explicit pair-validity
-  policy and `execution.pair_queue.mode: future_entries`.
-
-Exchange client fix:
-
-- Bybit CCXT creation now narrows market loading to linear USDT swaps and uses
-  time adjustment / larger recv window to avoid timestamp drift failures:
-  - `defaultType: swap`
-  - `defaultSubType: linear`
-  - `defaultSettle: USDT`
-  - `fetchMarkets.types: ["linear"]`
-  - `adjustForTimeDifference: True`
-  - `recvWindow: 10000`
-
-## Latest Fresh Dev Drill
-
-This drill validated the already-promoted dev artifact with execution queue
-consumption enabled. It did not rerun research or promotion.
-
-Research/promote/refresh/report:
-
-- Existing promoted artifact contained `7` surviving pairs.
-- Promoted artifact:
-
-```text
-data/universes/1m/surviving_pairs.json
-```
-
-- Promoted artifact validation:
-
-```text
-pairs: 7
-missing baseline rows: 0
-```
-
-- Promoted symbols were refreshed to recent Bybit 1m market data.
-- Refresh completed for `7` symbols.
-- Each symbol saved `4222` local rows with latest candle
-  `2026-05-21T19:11:00+00:00`.
-- Pair validity report showed `1997` recent bars for each promoted pair.
-- Queue report showed all `7` promoted pairs as `Entry YES` with `0` block
-  reasons.
-- Post-execution report used fresh persisted tick observations and still showed
-  all `7` promoted pairs as `Entry YES` with `0` block reasons.
-
-State-only execution drill:
-
-- Execution started safely with dev config:
-  - `credential_tier: readonly`
-  - `order_execution.mode: state_only`
-  - `execution.pair_queue.mode: future_entries`
-- Loaded `7` promoted pairs.
-- Boot reconciliation returned `SKIPPED_NO_SNAPSHOT_PROVIDER`.
-- One bounded tick evaluated signals and persisted `7` fresh tick observations.
-- Latest actions were all `SKIP`.
-- No open positions were created.
-- No leg fills were recorded.
-- No order events were recorded.
-- No user commands were recorded.
-- No exchange/client order ids were recorded.
-- `runtime_state observer_run` recorded `COMPLETED_MAX_TICKS` with
-  `completed_ticks: 1`.
-- Blocked queue decisions were not exercised in this live drill because all
-  queue decisions were entry-allowed; behavior tests cover blocked-entry and
-  natural-exit behavior.
-
-## Latest Fresh Cold Lifecycle Drill
-
-This drill started after the user deleted old local data and archives. It
-performed a fresh Bybit OHLCV fetch, research, promotion, promoted-pair refresh,
-report, and bounded state-only execution.
-
-Research:
-
-```bash
-.venv/bin/python main.py run --config configs/runs/dev_1m_research.yml
-```
-
-Result:
-
-- Bybit returned `569` assets above the configured dev volume floor.
-- Dev config limited the fetch universe to `150` symbols.
-- Fresh fetch recreated `150` parquet files.
-- Research window: `2026-05-20` to `2026-05-21`, `1m`.
-- Discovery detected `150` historical datasets.
-- Universe loading kept `23` assets in memory.
-- Maturity sieve passed `22` assets and rejected `1`.
-- Clustering wrote `data/universes/1m/clusters_20260521_2250.json`.
-- Discovery yielded `45` candidate pairs.
-- Pair stress filter accepted `6` survivors and rejected `39` candidates.
-- Surviving pairs:
-  - `AVNT/USDT|ASTER/USDT`
-  - `AVNT/USDT|ADA/USDT`
-  - `BCH/USDT|BNB/USDT`
-  - `BCH/USDT|ARB/USDT`
-  - `BCH/USDT|CHZ/USDT`
-  - `BCH/USDT|ADA/USDT`
-- Candidate artifact:
-
-```text
-data/universes/1m/candidate_surviving_pairs.json
-pair_count: 6
-generated_at: 2026-05-21T22:50:35.369541+00:00
-missing baseline rows: 0
-```
-
-Promotion:
-
-```bash
-.venv/bin/python main.py promote-pairs \
+.venv/bin/python -m src.engine.trader.cli.report_generator \
   --pipeline configs/pipelines/dev.yml \
-  --operator codex-fresh-cold-run
-```
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --open-position-review-half-life-multiple 3 \
+  --json
 
-Result:
-
-- Promotion succeeded.
-- Candidate was atomically moved to
-  `data/universes/1m/surviving_pairs.json`.
-- `promotion_audit.jsonl` recorded `pair_count: 6`, operator
-  `codex-fresh-cold-run`, candidate/promoted SHA
-  `1fcb6697aced659ae4e7043b7ef21cab932083d20aa308b019a6d71b207f962f`, and
-  promoted time `2026-05-21T22:50:56.854352+00:00`.
-- Promoted artifact validation:
-
-```text
-pairs: 6
-missing baseline rows: 0
-candidate_exists: False
-```
-
-Refresh/report:
-
-- Promoted-pair refresh covered `7` unique symbols:
-  - `ADA/USDT`
-  - `ARB/USDT`
-  - `ASTER/USDT`
-  - `AVNT/USDT`
-  - `BCH/USDT`
-  - `BNB/USDT`
-  - `CHZ/USDT`
-- Each refreshed symbol saved `1458` rows with latest candle
-  `2026-05-21T22:52:00+00:00`.
-- Initial report showed all `6` queue decisions as `Entry YES` with `0` block
-  reasons.
-- Post-execution report still showed all `6` queue decisions as `Entry YES`
-  with `0` block reasons.
-- Latest post-execution queue ranking:
-  1. `AVNT/USDT|ADA/USDT`
-  2. `BCH/USDT|CHZ/USDT`
-  3. `BCH/USDT|BNB/USDT`
-  4. `BCH/USDT|ARB/USDT`
-  5. `BCH/USDT|ADA/USDT`
-  6. `AVNT/USDT|ASTER/USDT`
-
-State-only execution drill:
-
-```bash
 .venv/bin/python main.py execute \
   --pipeline configs/pipelines/dev.yml \
   --strategy configs/strategy/dev.yml \
   --risk configs/risk/alpha_v1.yml \
-  --max-ticks 1 \
-  --heartbeat-seconds 1
+  --max-ticks 5 \
+  --heartbeat-seconds 10
 ```
 
-Result:
-
-- Execution started safely with dev config:
-  - `credential_tier: readonly`
-  - `order_execution.mode: state_only`
-  - `execution.pair_queue.mode: future_entries`
-- Loaded `6` Tier 1 pairs from `6` total survivors.
-- Boot reconciliation returned `SKIPPED_NO_SNAPSHOT_PROVIDER`.
-- One bounded tick evaluated signals and persisted `6` fresh tick observations.
-- Latest actions were all `SKIP`.
-- `runtime_state observer_run` recorded:
-
-```text
-status: COMPLETED_MAX_TICKS
-started_at: 2026-05-21T22:53:47.270126+00:00
-completed_at: 2026-05-21T22:54:37.035878+00:00
-completed_ticks: 1
-open_position_ids: []
-```
-
-State verification after execution:
-
-```text
-open positions: 0
-leg fills: 0
-order events: 0
-tick signals: 6
-user commands: 0
-reconciliation status: SKIPPED_NO_SNAPSHOT_PROVIDER
-exchange/client order ids: 0
-```
-
-Important interpretation:
-
-- The full cold research/promote/refresh/report/execution lifecycle now works
-  from a deleted local `data/` directory.
-- The current active promoted artifact is non-empty with `6` promoted pairs.
-- Queue consumption was exercised for a non-empty fresh promotion.
-- Blocked queue decisions were not exercised live because all queue decisions
-  were entry-allowed; behavior tests cover blocked-entry and natural-exit
-  behavior.
-
-## Latest Clean Lifecycle Drill
-
-This drill archived active dev runtime/artifact outputs, kept existing local
-market-data parquet, and reran research with `--skip-fetch`.
-
-Archive:
-
-```text
-data/dev/archive/clean_lifecycle_20260521_190905/
-```
-
-Archived active files:
-
-- `data/dev/trades_1m.db`
-- `data/dev/trades_1m.db-wal`
-- `data/dev/trades_1m.db-shm`
-- `data/universes/1m/surviving_pairs.json`
-- `data/universes/1m/promotion_audit.jsonl`
-- `data/universes/1m/pair_stress_report.json`
-- previous `data/universes/1m/clusters_*.json`
-
-Research:
+After execution, verify:
 
 ```bash
-.venv/bin/python main.py research \
-  --pipeline configs/pipelines/dev.yml \
-  --universe configs/universe/alpha_v1_dev_1m.yml \
-  --backtest configs/backtest/stress_test_dev_1m.yml \
-  --strategy configs/strategy/dev.yml \
-  --skip-fetch
+sqlite3 data/dev/trades_1m.db \
+  'select id, pair_label, side, status, opened_at, closed_at from spread_positions order by id;'
+
+sqlite3 data/dev/trades_1m.db \
+  'select leg_role, status, count(*) from leg_fills group by leg_role, status order by leg_role, status;'
+
+sqlite3 data/dev/trades_1m.db \
+  'select count(*) from leg_fills where exchange_order_id is not null or client_order_id is not null;'
+
+sqlite3 data/dev/trades_1m.db \
+  'select key, value_json, updated_at from runtime_state order by key;'
 ```
 
-Result:
+Any non-zero exchange/client order id count is a stop-and-investigate event.
 
-- Research skipped API fetch and used already-fetched local parquet data.
-- Discovery detected `150` historical datasets.
-- Filtered `17` mature assets from `18` loaded assets.
-- Clustering wrote `data/universes/1m/clusters_20260521_2211.json`.
-- Discovery yielded `4` candidate pairs.
-- Pair stress filter rejected all `4` candidate pairs:
-  - `BCH/USDT / AAVE/USDT`: best pnl `-1.48%`
-  - `ALGO/USDT / AVAX/USDT`: best pnl `-1.74%`
-  - `AAVE/USDT / ATOM/USDT`: best pnl `-2.18%`
-  - `AAVE/USDT / ADA/USDT`: best pnl `-2.91%`
-- Candidate artifact was valid but empty:
+## Next Implementation Order
+
+Do this before simulator implementation:
+
+1. Tighten capital-slot policy through execution-path tests:
+   - global max open positions
+   - max positions per pair
+   - max positions per asset
+   - explicit block reasons
+2. Add or tighten pre-trade risk gates:
+   - notional sizing
+   - leverage
+   - exposure
+   - precision
+   - liquidity policy
+   - kill-switch state
+3. Strengthen reconciliation and command drills:
+   - read-only mismatch snapshots
+   - `/pause` and `/resume`
+   - `/stop` and `/stop_all` only in archived/dedicated local state
+4. Only then start simulator Phase 1.
+
+## Simulator Boundary
+
+The simulator is deferred on purpose.
+
+Reason:
 
 ```text
-data/universes/1m/candidate_surviving_pairs.json
-pair_count: 0
-generated_at: 2026-05-21T22:11:34.739854+00:00
+finish the local trader contract first
+-> then build simulation against stable public runtime seams
 ```
 
-Promotion:
+Avoid implementing synthetic replay around trader behavior that is still likely
+to change, especially capital slots, pre-trade risk gates, reconciliation,
+operator kill-switch behavior, and market-data provider seams.
 
-```bash
-.venv/bin/python main.py promote-pairs \
-  --pipeline configs/pipelines/dev.yml \
-  --operator codex-clean-lifecycle
-```
+## Safety Boundaries
 
-Result:
+Do not implement in the same slice:
 
-- Promotion succeeded.
-- Candidate was atomically moved to
-  `data/universes/1m/surviving_pairs.json`.
-- `promotion_audit.jsonl` recorded `pair_count: 0`, operator
-  `codex-clean-lifecycle`, and promoted time
-  `2026-05-21T22:12:07.585056+00:00`.
-
-Refresh/report/execution:
-
-- Promoted-pair data refresh completed as an empty no-op:
-  - `Symbols: 0`
-  - started `2026-05-21T22:12:26.799237+00:00`
-  - finished `2026-05-21T22:12:26.799374+00:00`
-- Report was healthy with empty pair-validity and queue sections.
-- Bounded state-only execution loaded `0` Tier 1 pairs from `0` total survivors
-  and aborted before the tick loop with:
-
-```text
-No Tier 1 pairs found. Aborting.
-```
-
-State verification after the empty-universe execution attempt:
-
-```text
-open positions: 0
-leg fills: 0
-order events: 0
-tick signals: 0
-user commands: 0
-reconciliation runs: 0
-runtime_state rows: 0
-exchange/client order ids: 0
-```
-
-Important interpretation:
-
-- The clean research/promote lifecycle worked mechanically from archived state
-  using old local data.
-- The latest active promoted artifact is intentionally empty because the old
-  data produced no stress-surviving pairs.
-- This did not exercise non-empty queue consumption after a fresh promotion.
-
-## Latest Code Slice
-
-Implemented:
-
-- Queue-driven future-entry selection in execution.
-- Typed `StrategyConfig` is now passed into tick execution instead of converting
-  config-origin data back into a raw dictionary.
-- Pipeline configs now set `execution.pair_queue.mode: future_entries`.
-- Pipeline configs now include explicit `execution.pair_validity` diagnostics
-  policy.
-- Docs were updated to describe `report_only` versus `future_entries` queue
-  modes.
-
-Verification:
-
-```text
-.venv/bin/python -m pytest -q
-264 passed, 3 deselected
-
-.venv/bin/ruff check src tests
-All checks passed!
-```
-
-## Current Gaps
-
-Primary missing behavior:
-
-- A promoted-artifact refresh/report/execution drill has been rerun after
-  enabling execution queue consumption.
-- A full cold research/promote/refresh/report/execution drill has now been rerun
-  from a deleted local `data/` directory and produced `6` promoted pairs.
-- Live blocked-queue behavior remains unexercised in an operator drill because
-  the current dev queue decisions were all entry-allowed; behavior tests cover
-  blocked-entry and natural-exit behavior.
-- Threshold calibration remains intentionally permissive in dev.
-
-Capital allocation gap:
-
-- Dev has no global max open positions yet.
-- No full position sizing / capital allocator exists yet.
-- `max_positions_per_pair: 1` exists, but broader capital-slot policy is still
-  future work.
-
-Threshold gap:
-
-- These are configured but currently `null` in dev:
-  - `min_recent_correlation`
-  - `max_recent_p_value`
-  - `max_abs_hedge_ratio_drift_pct`
-  - `max_half_life_drift_pct`
-  - `max_bars_since_promotion`
-
-Lifecycle gaps:
-
-- No scheduled candidate regeneration.
-- No automatic promotion.
-- No hot reload.
-- No forced closes from pair-set changes, intentionally.
-
-## Recommended Next Slice
-
-Choose the next validation slice:
-
-- Calibrate queue policy thresholds now that the active promoted artifact has
-  `6` pairs and fresh diagnostics.
-- Or add an operator drill/test fixture that intentionally blocks one queue
-  decision while proving existing-position natural exit remains protected.
-- Keep capital slot sizing separate from threshold calibration.
-
-Suggested shape:
-
-1. Keep dev on readonly credentials and state-only execution.
-2. Preserve queue consumption as future-entry-only behavior.
-3. Confirm reports expose queue diagnostics before relying on entry blocking.
-4. Confirm state-only mode still records no exchange/client order ids.
-5. Update this handoff with exact drill or calibration results.
-
-Do not implement real capital sizing, automatic scheduled refresh, hot reload,
-or automatic promotion in the same slice.
+- real capital increase
+- automatic promotion
+- automatic scheduled candidate regeneration
+- hot reload
+- forced closes from pair-set changes
+- queue-driven rebalancing
+- hidden live exchange mutation
