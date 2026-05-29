@@ -43,7 +43,7 @@ def record_observer_run_started(
             "max_ticks": max_ticks,
             "completed_ticks": 0,
             "completed_at": None,
-            "open_position_ids": [],
+            "open_position_ids": _open_position_ids(state),
         },
     )
 

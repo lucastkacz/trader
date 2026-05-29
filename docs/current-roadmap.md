@@ -2,14 +2,45 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Capital Slot Policy Hardening
+## Now: Local Pre-Trade Risk Gates
 
 Goal:
 
 ```text
-prove future-entry decisions respect explicit capital-slot limits through the
-execution path before adding broader pre-trade risk gates or simulator work
+make state-only entry decisions pass explicit pre-trade checks before building
+synthetic replay around the trader
 ```
+
+Latest stabilization slice completed on 2026-05-29:
+
+- Interrupted async trader runs now persist `observer_run.status =
+  INTERRUPTED` instead of leaving future cancelled/SIGTERM-style bounded runs as
+  `RUNNING`.
+- Observer run markers now seed `open_position_ids` from actual SQLite open
+  positions when a run starts and when it records interruption/failure.
+- Execution re-checks the dynamic pair queue against current SQLite open
+  positions before each tick transition, so multiple same-tick entry signals
+  cannot oversubscribe capital slots.
+- Execution-path tests now cover global max open positions, max positions per
+  pair, max positions per asset, explicit block reasons, and natural-exit
+  preservation.
+- A first pre-trade risk gate now sizes new runtime entries to
+  `risk.max_cluster_exposure`, blocks entries that would exceed
+  `risk.max_portfolio_exposure`, and blocks entries whose projected gross
+  exposure would exceed `risk.max_leverage`.
+- Pre-trade risk blocks happen before opening a spread, emit explicit operator
+  reasons such as `portfolio_exposure_above_max` and
+  `max_leverage_exceeded`, and do not record leg targets or exchange/client
+  order ids for blocked entries.
+- Flip replacement entries are checked while excluding the position being
+  replaced from projected exposure; if the replacement is blocked, the
+  signal-driven close still happens and the replacement entry is skipped.
+- Verification after the slice: `.venv/bin/python -m pytest -q` reported
+  `276 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
+- The existing local DB still contains the stale pre-fix marker from the
+  extended drill: `observer_run.status = RUNNING`, `open_position_ids = []`,
+  while SQLite has 2 open state-only positions. This historical local state was
+  not manually rewritten.
 
 Fresh-start drill completed:
 
@@ -78,6 +109,13 @@ Already available locally:
   pipeline config sets `execution.pair_queue.mode: future_entries`.
 - Blocked queue decisions prevent new entries and do not prevent existing
   positions from receiving natural-exit signal evaluation.
+- Capital-slot policy is explicit in `execution.pair_queue.allocation`; the
+  execution path now enforces global max open positions, max positions per pair,
+  and max positions per asset against the latest SQLite open-position state for
+  each tick transition.
+- Runtime pre-trade risk policy is explicit in `configs/risk/alpha_v1.yml` and
+  typed as `RiskConfig`: max per-position cluster exposure, max portfolio
+  exposure, and max leverage.
 - Pipeline config now declares explicit `execution.pair_queue` policy for
   queue behavior, scoring weights, validity thresholds, and
   allocation caps. `null` means intentionally unlimited for caps and optional
@@ -108,17 +146,13 @@ Current local assumption:
 
 Required next behavior:
 
-- Tighten capital-slot policy through typed config or runtime policy, not hidden
+- Add or tighten the remaining state-only pre-trade checks for precision,
+  liquidity policy, and kill-switch state.
+- Keep each gate explicit in typed config or runtime policy, not hidden
   constants.
-- Add execution-path tests for global max open positions.
-- Add execution-path tests for max positions per pair.
-- Add execution-path tests for max positions per asset.
-- Emit explicit block reasons for each slot-policy rejection.
-- Make stop/shutdown state operator-visible: interrupted bounded runs must not
-  leave `observer_run` claiming `RUNNING` with empty open-position ids when
-  open state-only positions exist.
-- Preserve natural exit: slot limits may block future entries, but must not
-  force-close or rebalance existing positions.
+- Emit operator-visible block reasons for every pre-trade rejection.
+- Preserve natural exit: risk and slot limits may block future entries, but
+  must not force-close or rebalance existing positions.
 - Treat readonly market-data cadence/backoff as part of local trader
   stabilization before longer unattended runs.
 - Keep pair-validity threshold tuning separate from capital sizing.
@@ -143,17 +177,6 @@ Do not implement:
 Do not increase real-capital exposure while the active work is local trader
 stabilization. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
-
-## Next: Local Risk Gates Before Simulation
-
-```text
-make state-only entry decisions pass explicit pre-trade checks before building
-synthetic replay around the trader
-```
-
-Add or tighten tested gates for notional sizing, leverage, exposure, precision,
-liquidity policy, and kill-switch state. These should remain explicit config or
-typed policy, not hidden runtime constants.
 
 ## Next: Queue Policy Threshold Calibration
 

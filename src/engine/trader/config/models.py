@@ -199,8 +199,18 @@ class RunProfileConfig(StrictConfigModel):
 
 class RiskConfig(StrictConfigModel):
     name: str
-    max_cluster_exposure: float
-    max_leverage: float
+    max_cluster_exposure: float = Field(gt=0)
+    max_portfolio_exposure: float = Field(gt=0)
+    max_leverage: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def portfolio_exposure_covers_one_cluster(self) -> "RiskConfig":
+        if self.max_portfolio_exposure < self.max_cluster_exposure:
+            raise ValueError(
+                "max_portfolio_exposure must be greater than or equal to "
+                "max_cluster_exposure"
+            )
+        return self
 
 
 class TelegramConfig(StrictConfigModel):

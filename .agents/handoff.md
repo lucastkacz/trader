@@ -1,12 +1,12 @@
-# Handoff: Local Trader Fresh-Start Stabilization
+# Handoff: Local Trader Stabilization
 
-Updated: 2026-05-28
+Updated: 2026-05-29
 
 ## Purpose
 
 This handoff is for continuing local trader work after a completed cold local
-rebuild of `data/`. The next goal is to tighten the local trader contract with
-capital-slot policy and pre-trade risk gates, while deferring simulator
+rebuild of `data/` and a focused runtime-state/capital-slot hardening slice.
+The next goal is to tighten pre-trade risk gates while deferring simulator
 implementation until those runtime decisions are stable.
 
 Do not call the system production-ready for real capital. The production
@@ -48,26 +48,21 @@ Preserve these terms:
 
 ## Branch And Working Tree
 
-Current branch for this planning/docs work:
+Current branch for this runtime hardening work:
 
 ```text
-local-trader-fresh-start-docs
+local-trader-runtime-state-hardening
 ```
 
 Baseline before the branch:
 
 ```text
-main...origin/main at 1a96f6fc Merge simulation scenario lab docs
+main was clean and already up to date with origin/main before branching.
 ```
 
 Known uncommitted/untracked work carried onto this branch:
 
-- Simulation documentation updates under `simulation/`.
-- New simulation docs:
-  - `simulation/IMPLEMENTATION_PLAN.md`
-  - `simulation/STREAM_SIMULATION.md`
-- New content docs under `.content/docs/`.
-- Fresh-start trader docs updates in `.agents/` and `docs/`.
+- None at branch creation.
 
 ## Current Verified State
 
@@ -75,7 +70,7 @@ Latest offline verification:
 
 ```text
 .venv/bin/python -m pytest -q
-267 passed, 3 deselected
+276 passed, 3 deselected
 ```
 
 Latest lint verification:
@@ -99,9 +94,130 @@ Implications:
 - Current local state after the extended observation drill has 2 open
   state-only positions and 0 exchange/client order ids. Treat them as local
   accounting state only; do not force-close them for documentation cleanup.
+- Current local `runtime_state.observer_run` still contains the historical
+  pre-fix stale marker from the interrupted drill:
+  `status = RUNNING`, `max_ticks = 180`, `completed_ticks = 0`,
+  `open_position_ids = []`.
 - Old open-position notes from before deletion remain stale.
 - Future fresh-start drills should still recreate state through supported CLI
   flows, not manual file edits.
+
+## Latest Implementation Slice: Runtime State And Capital Slots
+
+Completed on 2026-05-29 from branch
+`local-trader-runtime-state-hardening`.
+
+Preflight:
+
+- `main` was clean and up to date with `origin/main`.
+- New branch created from `main`.
+- Launchd observer service was not loaded.
+- Launchd dev Telegram daemon was not loaded.
+- Process scan showed no trader, observer, Prefect, dev Telegram daemon, or
+  `caffeinate` process. Only Telegram Desktop crash-handler processes matched
+  the broad Telegram search term.
+
+Code changes:
+
+- `record_observer_run_started` now persists `open_position_ids` from actual
+  SQLite open positions instead of seeding an empty list.
+- `run_trader_loop` now records `observer_run.status = INTERRUPTED` when the
+  async trader task is cancelled, preserving open-position IDs from SQLite
+  before re-raising cancellation.
+- `execute_tick` now re-checks dynamic pair-queue decisions against the latest
+  SQLite open positions before each transition, so same-tick entries cannot
+  oversubscribe capital slots.
+
+Behavior tests added:
+
+- Observer start markers include pre-existing open state-only positions.
+- Cancelled trader runs persist `INTERRUPTED` with actual open-position IDs.
+- Execution-path capital-slot tests cover:
+  - global max open positions blocking the second same-tick entry;
+  - max positions per asset blocking a new entry without closing existing
+    positions;
+  - max positions per pair blocking a flip replacement entry while recording
+    the signal-driven close.
+- Existing natural-exit coverage remains green: queue blocks do not prevent an
+  open position from exiting on a `FLAT` signal.
+
+Verification:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_trader_runner_shutdown.py tests/engine/trader/runtime/test_health.py tests/interfaces/telegram/test_daemon.py -q
+27 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/test_pair_queue.py tests/engine/trader/runtime/test_trader_runner_shutdown.py -q
+13 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting -q
+110 passed
+
+.venv/bin/python -m pytest -q
+272 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+Local DB check after the code slice:
+
+- `spread_positions`: `2` closed, `2` open.
+- Exchange/client order-id verification still returned `0`.
+- The old `runtime_state.observer_run` marker remains stale because this slice
+  did not manually rewrite historical local state.
+
+## Latest Implementation Slice: Pre-Trade Notional/Exposure Gate
+
+Completed on 2026-05-29 from branch
+`local-trader-runtime-state-hardening`.
+
+Code changes:
+
+- Added `risk.max_portfolio_exposure` to `configs/risk/alpha_v1.yml` and the
+  typed `RiskConfig` contract.
+- Added `src/engine/trader/runtime/pre_trade_risk.py` as the execution-flow
+  pre-trade risk policy module.
+- `run_trader_loop` now passes typed pre-trade risk policy from `RiskConfig`
+  into tick execution.
+- `route_signal_transition` now evaluates pre-trade risk before opening a new
+  spread or a flip replacement entry.
+- New runtime entries are sized to `risk.max_cluster_exposure`; for the current
+  dev risk config, a 60/40 signal becomes 0.06/0.04 state-only leg targets.
+- New entries are blocked before opening if projected portfolio exposure
+  exceeds `risk.max_portfolio_exposure` or projected leverage exceeds
+  `risk.max_leverage`.
+- Blocked pre-trade entries emit explicit operator-visible reasons such as
+  `portfolio_exposure_above_max` and `max_leverage_exceeded`.
+- Blocked pre-trade entries do not create spread positions, leg targets, or
+  exchange/client order ids.
+- Flip replacement checks exclude the currently open pair from projected
+  exposure. If the replacement entry is blocked, the signal-driven close still
+  happens and the replacement entry is skipped.
+
+Behavior tests added:
+
+- Runtime entries are sized to the cluster exposure cap.
+- Portfolio exposure blocks new entries without opening a position.
+- Leverage exposure blocks new entries without recording leg targets.
+- Existing capital-slot and natural-exit execution-path tests remain green.
+- Config tests prove `max_portfolio_exposure` is explicit in risk YAML.
+
+Verification:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/test_signal_transition.py tests/engine/trader/config/test_loader.py tests/risk/test_position_sizer.py -q
+38 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+167 passed
+
+.venv/bin/python -m pytest -q
+276 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
 
 ## Fresh-Start Drill Results
 
@@ -557,18 +673,12 @@ Any non-zero exchange/client order id count is a stop-and-investigate event.
 
 Do this before simulator implementation:
 
-1. Tighten capital-slot policy through execution-path tests:
-   - global max open positions
-   - max positions per pair
-   - max positions per asset
-   - explicit block reasons
-2. Add or tighten pre-trade risk gates:
-   - notional sizing
-   - leverage
-   - exposure
+1. Add or tighten remaining pre-trade risk gates:
    - precision
    - liquidity policy
    - kill-switch state
+2. Strengthen readonly market-data cadence/backoff for longer unattended local
+   state-only runs.
 3. Strengthen reconciliation and command drills:
    - read-only mismatch snapshots
    - `/pause` and `/resume`

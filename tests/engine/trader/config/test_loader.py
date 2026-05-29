@@ -43,6 +43,8 @@ def test_valid_operator_configs_parse():
     assert run_profile.pipeline == "configs/pipelines/dev.yml"
     assert run_profile.skip_fetch is False
     assert load_risk_config("configs/risk/alpha_v1.yml").max_leverage == 10.0
+    assert load_risk_config("configs/risk/alpha_v1.yml").max_cluster_exposure == 0.10
+    assert load_risk_config("configs/risk/alpha_v1.yml").max_portfolio_exposure == 0.30
     assert load_telegram_config("configs/telegram/dev.yml").environment == "DEV"
     assert load_telegram_config("configs/telegram/dev.yml").holding_period_bar_minutes == 1
     assert (
@@ -213,6 +215,13 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("health_stale_after_minutes",),
             load_telegram_config,
             "health_stale_after_minutes",
+        ),
+        (
+            "configs/risk/alpha_v1.yml",
+            "risk",
+            ("max_portfolio_exposure",),
+            load_risk_config,
+            "max_portfolio_exposure",
         ),
         (
             "configs/risk/alpha_v1.yml",
