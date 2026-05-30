@@ -4,6 +4,7 @@ from typing import Any
 
 from src.core.logger import logger
 from src.engine.trader.execution.liquidation import execute_emergency_liquidation
+from src.engine.trader.execution.market_data import ReadonlyMarketDataFetchPolicy
 from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
 
@@ -16,6 +17,7 @@ async def process_user_commands(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    market_data_fetch_policy: ReadonlyMarketDataFetchPolicy,
 ) -> None:
     """Claim and execute all pending UI commands."""
     commands = state.claim_pending_commands()
@@ -35,6 +37,7 @@ async def process_user_commands(
                     exchange_id=exchange_id,
                     api_key=api_key,
                     api_secret=api_secret,
+                    market_data_fetch_policy=market_data_fetch_policy,
                     target=None,
                 )
             elif action == "/stop":
@@ -46,6 +49,7 @@ async def process_user_commands(
                     exchange_id=exchange_id,
                     api_key=api_key,
                     api_secret=api_secret,
+                    market_data_fetch_policy=market_data_fetch_policy,
                     target=target,
                 )
             elif action == "/pause":

@@ -49,18 +49,18 @@ Preserve these terms:
 
 ## Branch And Working Tree
 
-Current branch for operator kill-switch control work:
+Current branch for operator run-state/status and readonly market-data hardening:
 
 ```text
-local-trader-operator-kill-switch-control
+local-trader-operator-run-state-status
 ```
 
 Baseline before this branch:
 
 ```text
-main was updated by merging local-trader-kill-switch-risk-gate at merge commit
-6e86815d (`Merge local trader kill-switch risk gate`) and pushed to
-origin/main. This branch was created from that updated main.
+main was updated by merging local-trader-operator-kill-switch-control at merge
+commit 45eb9cfd (`Merge local trader operator kill-switch control`) and pushed
+to origin/main. This branch was created from that updated main.
 ```
 
 Known uncommitted/untracked work carried onto this branch:
@@ -91,6 +91,16 @@ Latest offline verification:
 Latest lint verification:
 
 ```text
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+Latest local verification after the current uncommitted slices:
+
+```text
+.venv/bin/python -m pytest -q
+315 passed, 3 deselected
+
 .venv/bin/ruff check src tests
 All checks passed!
 ```
@@ -533,6 +543,41 @@ Read-only local dev DB inspect after the slice:
     "activated_at": null
   }
 }
+```
+
+## Current Uncommitted Slice: Operator Run-State Status
+
+- Read-only `/run_status` monitoring classifies stale persisted `RUNNING`
+  markers as `STALE_RUN_MARKER` instead of implying that an observer process is
+  active.
+- A `RUNNING` marker is stale when its latest tick is stale, no first tick
+  arrives within the configured stale window, or its start time is missing or
+  malformed.
+- Run-status snapshots use actual SQLite open positions. The historical local
+  stale marker remains unchanged, but read-only status now surfaces open IDs
+  `[3, 4]`.
+
+## Current Uncommitted Slice: Readonly Runtime Market Data
+
+- Added typed pipeline `execution.market_data_fetch` policy:
+  `request_timeout_seconds`, `max_attempts`, and `retry_backoff_seconds`.
+- Runtime OHLCV reads now apply a per-request timeout and exponential bounded
+  retry backoff before raising an auditable readonly fetch error.
+- Tick execution reuses shared-symbol candles within a tick when the cached
+  request window is sufficient, reducing duplicate readonly provider calls.
+- Explicit local-state stop commands use the same readonly fetch policy.
+- The slice does not submit, cancel, modify, rebalance, hot-reload, promote
+  artifacts, force-close from pair changes, or increase capital exposure.
+- Offline behavior tests cover retry-success, retry exhaustion, timeout,
+  invalid policy values, strict config, and shared-symbol per-tick reuse.
+- Verification:
+
+```text
+.venv/bin/python -m pytest -q
+315 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
 ```
 
 ## Fresh-Start Drill Results
@@ -989,17 +1034,13 @@ Any non-zero exchange/client order id count is a stop-and-investigate event.
 
 Do this before simulator implementation:
 
-1. Add or tighten remaining pre-trade risk gates:
-   - precision
-   - liquidity policy
-   - kill-switch state
-2. Strengthen readonly market-data cadence/backoff for longer unattended local
-   state-only runs.
-3. Strengthen reconciliation and command drills:
+1. Strengthen reconciliation and command drills:
    - read-only mismatch snapshots
    - `/pause` and `/resume`
    - `/stop` and `/stop_all` only in archived/dedicated local state
-4. Only then start simulator Phase 1.
+2. Calibrate pair-validity queue thresholds after the remaining runtime
+   stabilization behavior is durable.
+3. Only then start simulator Phase 1.
 
 ## Simulator Boundary
 

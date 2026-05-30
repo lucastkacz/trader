@@ -38,6 +38,12 @@ state, emits reports, and sends notifications.
 Execution code may read market data. Live order mutation must be isolated behind
 explicit execution modules and controlled by explicit execution mode.
 
+Runtime OHLCV reads use explicit typed `execution.market_data_fetch` policy for
+request timeout, bounded attempts, and retry backoff. Tick execution reuses a
+symbol's fetched candles within the same tick when the cached request window is
+sufficient. These controls reduce readonly provider pressure and bound stalls;
+they do not submit, cancel, modify, or close exchange orders.
+
 The intended progression is:
 
 ```text

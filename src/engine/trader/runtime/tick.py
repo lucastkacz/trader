@@ -7,7 +7,10 @@ from typing import Any, Sequence
 
 from src.core.logger import logger
 from src.engine.trader.config import OrderExecutionConfig, StrategyConfig
-from src.engine.trader.execution.market_data import fetch_recent_candles
+from src.engine.trader.execution.market_data import (
+    ReadonlyMarketDataFetchPolicy,
+    fetch_recent_candles,
+)
 from src.engine.trader.execution.orders import OrderExecutionAdapter
 from src.engine.trader.execution.pnl import calculate_per_pair_pnl, calculate_unrealized_pnl
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
@@ -53,6 +56,7 @@ async def execute_tick(
     api_secret: str,
     order_execution_cfg: OrderExecutionConfig,
     order_execution_adapter: OrderExecutionAdapter | None,
+    market_data_fetch_policy: ReadonlyMarketDataFetchPolicy | None = None,
     pair_queue_policy: PairQueuePolicy | None = None,
     pair_validity_snapshots: Sequence[PairValiditySnapshot] | None = None,
     pair_queue_enabled: bool = False,
@@ -66,6 +70,7 @@ async def execute_tick(
     logger.info(f"═══ ENGINE TICK @ {datetime.now(timezone.utc).isoformat()} ═══")
     pair_prices = {}
     evaluations = []
+    candle_cache = {}
     for pair in pairs:
         evaluation = await _evaluate_pair_tick(
             pair=pair,
@@ -76,6 +81,8 @@ async def execute_tick(
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            market_data_fetch_policy=market_data_fetch_policy,
+            candle_cache=candle_cache,
             pre_trade_risk_policy=pre_trade_risk_policy,
         )
         if evaluation is not None:
@@ -133,10 +140,20 @@ async def _evaluate_pair_tick(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    market_data_fetch_policy: ReadonlyMarketDataFetchPolicy | None,
+    candle_cache: dict[str, tuple[int, Any]],
     pre_trade_risk_policy: PreTradeRiskPolicy | None,
 ) -> PairTickEvaluation | None:
     pair_label = f"{pair['Asset_X']}|{pair['Asset_Y']}"
-    df_a, df_b = await _fetch_pair_candles(pair, timeframe, exchange_id, api_key, api_secret)
+    df_a, df_b = await _fetch_pair_candles(
+        pair,
+        timeframe,
+        exchange_id,
+        api_key,
+        api_secret,
+        market_data_fetch_policy=market_data_fetch_policy,
+        candle_cache=candle_cache,
+    )
     if df_a is None or df_b is None:
         return None
     liquidity_snapshot = (
@@ -191,29 +208,65 @@ async def _fetch_pair_candles(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    *,
+    market_data_fetch_policy: ReadonlyMarketDataFetchPolicy | None,
+    candle_cache: dict[str, tuple[int, Any]],
 ) -> tuple[Any | None, Any | None]:
     bars_needed = pair["Best_Params"]["lookback_bars"] + 50
     try:
-        df_a = await fetch_recent_candles(
-            pair["Asset_X"],
-            bars_needed,
-            timeframe,
+        df_a = await _fetch_symbol_candles(
+            symbol=pair["Asset_X"],
+            bars_needed=bars_needed,
+            timeframe=timeframe,
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            policy=market_data_fetch_policy,
+            candle_cache=candle_cache,
         )
-        df_b = await fetch_recent_candles(
-            pair["Asset_Y"],
-            bars_needed,
-            timeframe,
+        df_b = await _fetch_symbol_candles(
+            symbol=pair["Asset_Y"],
+            bars_needed=bars_needed,
+            timeframe=timeframe,
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            policy=market_data_fetch_policy,
+            candle_cache=candle_cache,
         )
     except Exception as exc:
         logger.warning(f"Failed fetching data for {pair['Asset_X']}|{pair['Asset_Y']}: {exc}")
         return None, None
     return df_a, df_b
+
+
+async def _fetch_symbol_candles(
+    *,
+    symbol: str,
+    bars_needed: int,
+    timeframe: str,
+    exchange_id: str,
+    api_key: str,
+    api_secret: str,
+    policy: ReadonlyMarketDataFetchPolicy | None,
+    candle_cache: dict[str, tuple[int, Any]],
+) -> Any:
+    cached = candle_cache.get(symbol)
+    if cached is not None and cached[0] >= bars_needed:
+        return cached[1]
+    if policy is None:
+        raise ValueError("Readonly market-data fetch policy is required for runtime OHLCV reads")
+    candles = await fetch_recent_candles(
+        symbol,
+        bars_needed,
+        timeframe,
+        exchange_id=exchange_id,
+        api_key=api_key,
+        api_secret=api_secret,
+        policy=policy,
+    )
+    candle_cache[symbol] = (bars_needed, candles)
+    return candles
 
 
 def _snapshot_tick_equity(

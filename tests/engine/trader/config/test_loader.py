@@ -28,6 +28,9 @@ def test_valid_operator_configs_parse():
     assert dev_pipeline.execution.max_ticks is None
     assert dev_pipeline.execution.market_data_base_dir == "data/parquet"
     assert dev_pipeline.execution.artifact_base_dir == "data/universes"
+    assert dev_pipeline.execution.market_data_fetch.request_timeout_seconds == 15.0
+    assert dev_pipeline.execution.market_data_fetch.max_attempts == 3
+    assert dev_pipeline.execution.market_data_fetch.retry_backoff_seconds == 2.0
     assert dev_pipeline.execution.order_execution.mode == "state_only"
     assert load_pipeline_config("configs/pipelines/uat.yml").execution.max_ticks is None
     assert load_pipeline_config("configs/pipelines/prod.yml").execution.max_ticks is None
@@ -136,6 +139,34 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("execution", "market_data_base_dir"),
             load_pipeline_config,
             "market_data_base_dir",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("execution", "market_data_fetch"),
+            load_pipeline_config,
+            "market_data_fetch",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("execution", "market_data_fetch", "request_timeout_seconds"),
+            load_pipeline_config,
+            "request_timeout_seconds",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("execution", "market_data_fetch", "max_attempts"),
+            load_pipeline_config,
+            "max_attempts",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("execution", "market_data_fetch", "retry_backoff_seconds"),
+            load_pipeline_config,
+            "retry_backoff_seconds",
         ),
         (
             "configs/pipelines/dev.yml",

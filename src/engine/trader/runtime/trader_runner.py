@@ -9,6 +9,7 @@ from src.core.logger import logger
 from src.engine.trader.commands.processor import process_user_commands
 from src.engine.trader.config import PipelineConfig, RiskConfig, StrategyConfig
 from src.engine.trader.execution.orders import CCXTOrderExecutionAdapter
+from src.engine.trader.execution.market_data import ReadonlyMarketDataFetchPolicy
 from src.engine.trader.reconciliation import ExchangeSnapshotProvider, run_boot_reconciliation
 from src.engine.trader.runtime.monitoring.health import (
     build_trader_health_snapshot,
@@ -171,9 +172,20 @@ async def _run_ticks(
     if open_pos:
         logger.info(f"Resuming with {len(open_pos)} open positions.")
 
+    market_data_fetch_policy = ReadonlyMarketDataFetchPolicy(
+        **pipeline_cfg.execution.market_data_fetch.to_runtime_policy_kwargs()
+    )
     tick_count = 0
     while True:
-        await _sleep_until_next_tick(state, pairs, pipeline_cfg, notifier, api_key, api_secret)
+        await _sleep_until_next_tick(
+            state,
+            pairs,
+            pipeline_cfg,
+            notifier,
+            api_key,
+            api_secret,
+            market_data_fetch_policy,
+        )
         pair_queue_enabled = (
             pipeline_cfg.execution.pair_queue.enabled
             and pipeline_cfg.execution.pair_queue.mode == "future_entries"
@@ -201,6 +213,7 @@ async def _run_ticks(
             exchange_id=pipeline_cfg.execution.exchange,
             api_key=api_key,
             api_secret=api_secret,
+            market_data_fetch_policy=market_data_fetch_policy,
             order_execution_cfg=pipeline_cfg.execution.order_execution,
             order_execution_adapter=order_adapter,
             pair_queue_policy=PairQueuePolicy(
@@ -262,6 +275,7 @@ async def _sleep_until_next_tick(
     notifier: TelegramNotifier,
     api_key: str,
     api_secret: str,
+    market_data_fetch_policy: ReadonlyMarketDataFetchPolicy,
 ) -> None:
     execution_cfg = pipeline_cfg.execution
     sleep_seconds = (
@@ -280,6 +294,7 @@ async def _sleep_until_next_tick(
             exchange_id=execution_cfg.exchange,
             api_key=api_key,
             api_secret=api_secret,
+            market_data_fetch_policy=market_data_fetch_policy,
         )
         now = datetime.now(timezone.utc)
         if now >= target_time:

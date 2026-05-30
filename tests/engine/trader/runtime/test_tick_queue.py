@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from src.engine.trader.config import OrderExecutionConfig, load_strategy_config
+from src.engine.trader.execution.market_data import ReadonlyMarketDataFetchPolicy
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
 from src.engine.trader.runtime.pair_validity.models import PairValiditySnapshot
 from src.engine.trader.runtime.risk import PreTradeRiskPolicy
@@ -91,6 +92,14 @@ def _pre_trade_policy(
         order_quantity_step=order_quantity_step,
         liquidity_lookback_bars=liquidity_lookback_bars,
         min_recent_quote_volume=min_recent_quote_volume,
+    )
+
+
+def _market_data_fetch_policy() -> ReadonlyMarketDataFetchPolicy:
+    return ReadonlyMarketDataFetchPolicy(
+        request_timeout_seconds=1.0,
+        max_attempts=2,
+        retry_backoff_seconds=0.0,
     )
 
 
@@ -1073,3 +1082,51 @@ async def test_queue_rank_controls_future_entry_order(
     )
 
     assert routed == ["HIGH/USDT|DDD/USDT", "LOW/USDT|BBB/USDT"]
+
+
+@pytest.mark.asyncio
+async def test_tick_reuses_shared_symbol_candles_within_one_tick(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    calls = []
+
+    async def fake_fetch_recent_candles(symbol, *args, **kwargs):
+        calls.append(symbol)
+        return pd.DataFrame(
+            {
+                "timestamp": [1, 2],
+                "close": [100.0, 101.0],
+                "volume": [1000.0, 1000.0],
+            }
+        )
+
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.fetch_recent_candles",
+        fake_fetch_recent_candles,
+    )
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal("FLAT", z_score=0.1),
+    )
+
+    await execute_tick(
+        pairs=[
+            _pair("AAA/USDT", "BBB/USDT"),
+            _pair("AAA/USDT", "CCC/USDT"),
+        ],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        market_data_fetch_policy=_market_data_fetch_policy(),
+    )
+
+    assert calls == ["AAA/USDT", "BBB/USDT", "CCC/USDT"]

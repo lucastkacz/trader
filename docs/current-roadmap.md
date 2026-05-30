@@ -126,6 +126,28 @@ Operator kill-switch control slice completed on 2026-05-30:
   `.venv/bin/python -m src.engine.trader.cli.risk_kill_switch --pipeline configs/pipelines/dev.yml --json inspect`
   returned `active: false` for `data/dev/trades_1m.db`.
 
+Operator run-state/status polish completed on 2026-05-30:
+
+- Read-only `/run_status` monitoring now classifies persisted `RUNNING` markers
+  as `STALE_RUN_MARKER` when the latest tick is stale, no first tick arrives
+  within the configured stale window, or the marker start time is malformed.
+- A stale marker no longer implies that an observer process is active.
+- Run-status snapshots surface actual SQLite open-position IDs instead of
+  trusting a historical marker payload. The old local marker was not rewritten.
+
+Readonly runtime market-data hardening completed on 2026-05-30:
+
+- Pipeline config now declares explicit typed `execution.market_data_fetch`
+  policy for request timeout, bounded attempts, and retry backoff.
+- Runtime OHLCV reads retry with exponential backoff and raise an auditable
+  readonly fetch error after the configured attempt limit.
+- Trader tick evaluation reuses shared-symbol candles within one tick when the
+  cached request window is sufficient, reducing duplicate provider calls.
+- The same readonly fetch policy applies to explicit local-state stop commands.
+  It does not add exchange mutation or force-close behavior from pair changes.
+- Verification after the slice: `.venv/bin/python -m pytest -q` reported
+  `315 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -242,8 +264,8 @@ Required next behavior:
 - Emit operator-visible block reasons for every pre-trade rejection.
 - Preserve natural exit: risk and slot limits may block future entries, but
   must not force-close or rebalance existing positions.
-- Treat readonly market-data cadence/backoff as part of local trader
-  stabilization before longer unattended runs.
+- Keep readonly provider failures bounded and operator-visible during longer
+  unattended state-only runs.
 - Keep pair-validity threshold tuning separate from capital sizing.
 - Defer simulator implementation until capital slots and pre-trade risk gates
   are stable enough to be durable runtime behavior.

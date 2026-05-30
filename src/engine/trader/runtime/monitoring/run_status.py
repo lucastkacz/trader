@@ -120,17 +120,20 @@ def build_run_status_snapshot(
     now: datetime | None = None,
 ) -> RunStatusSnapshot:
     """Build an operator drill snapshot from persisted runtime state only."""
+    reference_time = now or datetime.now(timezone.utc)
     health = build_trader_health_snapshot(
         state,
         environment=environment,
         stale_after_minutes=stale_after_minutes,
-        now=now,
+        now=reference_time,
     )
     run_marker = _observer_run_marker(state)
     open_position_ids = _open_position_ids(state)
     observer_status, observer_detail = _classify_observer_status(
         health=health,
         run_marker=run_marker,
+        stale_after_minutes=stale_after_minutes,
+        now=reference_time,
     )
 
     return RunStatusSnapshot(
@@ -153,6 +156,8 @@ def _classify_observer_status(
     *,
     health: TraderHealthSnapshot,
     run_marker: dict[str, Any] | None,
+    stale_after_minutes: float,
+    now: datetime,
 ) -> tuple[str, str]:
     marker_status = run_marker.get("status") if run_marker else None
 
@@ -167,12 +172,37 @@ def _classify_observer_status(
         return "STOPPED_UNEXPECTEDLY", str(run_marker.get("reason") or "unknown error")
     if marker_status == "INTERRUPTED":
         return "INTERRUPTED", "Observer was interrupted before natural completion."
-    if health.status == "STALE":
-        return "STALE_UNEXPECTEDLY", "Latest tick is older than the configured stale window."
+    if marker_status == "RUNNING" and health.status == "STALE":
+        return (
+            "STALE_RUN_MARKER",
+            "Observer run marker is still RUNNING, but latest tick is stale; "
+            "no active process is implied. "
+            f"Current open local positions: {health.open_positions}.",
+        )
+    if marker_status == "RUNNING" and health.status == "NO_TICKS":
+        marker_age = _observer_marker_age_minutes(run_marker, now)
+        if marker_age is None:
+            return (
+                "STALE_RUN_MARKER",
+                "Observer run marker is still RUNNING, but its start time is missing "
+                "or invalid; no active process is implied. "
+                f"Current open local positions: {health.open_positions}.",
+            )
+        if marker_age > stale_after_minutes:
+            return (
+                "STALE_RUN_MARKER",
+                "Observer run marker is still RUNNING, but no tick arrived within "
+                f"{stale_after_minutes:.1f} minutes; no active process is implied. "
+                f"Current open local positions: {health.open_positions}.",
+            )
+        return (
+            "RUNNING_WAITING_FOR_FIRST_TICK",
+            "Observer boot marker exists; no tick recorded yet.",
+        )
     if marker_status == "RUNNING" and health.status != "NO_TICKS":
         return "RUNNING_FRESH", "Observer has recent persisted tick state."
-    if marker_status == "RUNNING":
-        return "RUNNING_WAITING_FOR_FIRST_TICK", "Observer boot marker exists; no tick recorded yet."
+    if health.status == "STALE":
+        return "STALE_UNEXPECTEDLY", "Latest tick is older than the configured stale window."
     if health.status == "NO_TICKS":
         return "NO_TICKS", "No persisted tick signals found."
     return "FRESH_NO_RUN_MARKER", "Runtime state is fresh, but no observer run marker was found."
@@ -190,6 +220,28 @@ def _current_run_value(state: TradeStateManager, key: str) -> Any:
 
 def _open_position_ids(state: TradeStateManager) -> list[int]:
     return [int(position["id"]) for position in state.get_open_positions()]
+
+
+def _observer_marker_age_minutes(
+    run_marker: dict[str, Any] | None,
+    now: datetime,
+) -> float | None:
+    started_at = _parse_timestamp(run_marker.get("started_at") if run_marker else None)
+    if started_at is None:
+        return None
+    return max(0.0, (now - started_at).total_seconds() / 60.0)
+
+
+def _parse_timestamp(timestamp: Any) -> datetime | None:
+    if not isinstance(timestamp, str) or not timestamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _state_only_identifier_count(state: TradeStateManager) -> int:

@@ -19,6 +19,20 @@ class OrderExecutionConfig(StrictConfigModel):
     client_order_prefix: str = Field(min_length=1)
 
 
+class MarketDataFetchConfig(StrictConfigModel):
+    request_timeout_seconds: float = Field(gt=0)
+    max_attempts: int = Field(gt=0)
+    retry_backoff_seconds: float = Field(ge=0)
+
+    def to_runtime_policy_kwargs(self) -> dict[str, object]:
+        """Return kwargs for runtime readonly OHLCV fetch policy."""
+        return {
+            "request_timeout_seconds": self.request_timeout_seconds,
+            "max_attempts": self.max_attempts,
+            "retry_backoff_seconds": self.retry_backoff_seconds,
+        }
+
+
 class PairRefreshConfig(StrictConfigModel):
     mode: Literal["manual"]
     reload_policy: Literal["on_boot"]
@@ -119,6 +133,7 @@ class PipelineExecutionConfig(StrictConfigModel):
     max_ticks: int | None = Field(gt=0)
     heartbeat_seconds: int = Field(gt=0)
     sync_to_boundary: bool
+    market_data_fetch: MarketDataFetchConfig
     order_execution: OrderExecutionConfig
     pair_refresh: PairRefreshConfig
     pair_validity: PairValidityDiagnosticsConfig

@@ -13,6 +13,10 @@ pipeline:
     max_ticks: null
     heartbeat_seconds: 14400
     sync_to_boundary: true
+    market_data_fetch:
+      request_timeout_seconds: 30.0
+      max_attempts: 3
+      retry_backoff_seconds: 5.0
     order_execution:
       mode: "state_only"
       fill_poll_attempts: 0

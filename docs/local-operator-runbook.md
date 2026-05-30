@@ -70,6 +70,12 @@ decisions before each tick transition. Queue decisions may block new entries,
 but they must not force-close, rebalance, promote artifacts, hot-reload
 execution, or bypass natural-exit evaluation for existing positions.
 
+Runtime OHLCV reads use the typed `execution.market_data_fetch` policy from the
+pipeline config. The policy applies a per-request timeout and bounded retry
+backoff, and tick execution reuses shared-symbol candles within one tick when
+the cached request window is sufficient. Exhausted reads remain read-only and
+are logged as explicit pair fetch failures.
+
 If this is a cold local rebuild, do not start the observer before running the
 research, promotion, refresh, and report steps below. Execution needs a promoted
 artifact to load on boot.
