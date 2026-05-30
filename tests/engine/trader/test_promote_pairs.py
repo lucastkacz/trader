@@ -61,6 +61,9 @@ pipeline:
       request_timeout_seconds: 15.0
       max_attempts: 3
       retry_backoff_seconds: 2.0
+    reconciliation:
+      snapshot_timeout_seconds: 15.0
+      stale_order_after_seconds: 120.0
     order_execution:
       mode: "state_only"
       fill_poll_attempts: 0

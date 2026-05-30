@@ -40,13 +40,25 @@ def _compute_state_ledger(
 ) -> StateLedgerSnapshot:
     """Summarize state-ledger tables without changing trader state."""
     latest_run_status = None
+    latest_run_deltas = []
     if reconciliation_runs:
-        latest_run_status = reconciliation_runs[-1].get("status")
+        latest_run = reconciliation_runs[-1]
+        latest_run_status = latest_run.get("status")
+        latest_run_deltas = [
+            delta
+            for delta in reconciliation_deltas
+            if delta.get("run_id") == latest_run.get("id")
+        ]
 
     return StateLedgerSnapshot(
         total_order_events=len(order_events),
         leg_targets_by_status_role=_count_leg_targets_by_status_role(leg_fills),
         user_commands_by_status=_count_by_key(user_commands, "status"),
         latest_reconciliation_run_status=latest_run_status,
-        reconciliation_delta_count=len(reconciliation_deltas),
+        reconciliation_delta_count=len(latest_run_deltas),
+        total_reconciliation_delta_count=len(reconciliation_deltas),
+        latest_reconciliation_deltas_by_type=_count_by_key(
+            latest_run_deltas,
+            "delta_type",
+        ),
     )

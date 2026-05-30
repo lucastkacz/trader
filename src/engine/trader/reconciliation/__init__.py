@@ -6,6 +6,7 @@ from src.engine.trader.reconciliation.service import (
     ReadOnlyReconciliationAuditor,
     ReconciliationAuditReport,
     ReconciliationDeltaType,
+    ReconciliationPolicy,
     run_boot_reconciliation,
     run_read_only_audit,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "ReadOnlyReconciliationAuditor",
     "ReconciliationAuditReport",
     "ReconciliationDeltaType",
+    "ReconciliationPolicy",
     "run_boot_reconciliation",
     "run_read_only_audit",
 ]

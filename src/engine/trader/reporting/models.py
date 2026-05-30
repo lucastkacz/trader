@@ -58,6 +58,8 @@ class StateLedgerSnapshot:
     user_commands_by_status: dict[str, int]
     latest_reconciliation_run_status: Optional[str]
     reconciliation_delta_count: int
+    total_reconciliation_delta_count: int
+    latest_reconciliation_deltas_by_type: dict[str, int]
 
 
 @dataclass

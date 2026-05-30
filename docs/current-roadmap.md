@@ -148,6 +148,34 @@ Readonly runtime market-data hardening completed on 2026-05-30:
 - Verification after the slice: `.venv/bin/python -m pytest -q` reported
   `315 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
 
+Read-only reconciliation visibility completed on 2026-05-30:
+
+- Pipeline config now declares explicit typed `execution.reconciliation`
+  policy for snapshot timeout and stale in-flight order age.
+- Reconciliation snapshots surface `LOCAL_PARTIAL_FILL`, `STALE_LOCAL_ORDER`,
+  and `SNAPSHOT_PROVIDER_FAILURE` as auditable `NO_ACTION` deltas.
+- Snapshot-provider reads are timeout-bounded. Reconciliation remains read-only:
+  it does not submit, cancel, modify, repair, or close exchange positions.
+- Reports separate latest reconciliation deltas from historical delta totals
+  and show latest delta-type counts.
+- Offline verification after the slice: `.venv/bin/python -m pytest -q`
+  reported `322 passed, 3 deselected`; `.venv/bin/ruff check src tests`
+  passed.
+
+Local command/reconciliation drill completed on 2026-05-30:
+
+- The dev DB dummy positions were intentionally manipulated after operator
+  approval. `/pause`, `/resume`, `/stop <PAIR>`, and `/stop_all` all completed
+  through the command module interface.
+- The two remaining dummy open state-only positions were locally closed. The
+  dev DB now contains 4 closed positions and 0 open positions.
+- Fake read-only reconciliation snapshots recorded one
+  `EXCHANGE_ONLY_POSITION`, one `SNAPSHOT_PROVIDER_FAILURE`, then a final
+  `MATCHED` run.
+- The latest report correctly showed `0` latest reconciliation deltas while
+  preserving `2` historical deltas.
+- Exchange/client order-id invariant remained `0`.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -251,8 +279,10 @@ Current local assumption:
 
 - Dev remains on readonly credentials and state-only execution.
 - Pair queue mode remains `future_entries`.
-- The current local DB contains 2 open state-only positions from the extended
-  drill. They are accounting state only, not exchange positions.
+- The current local DB contains 4 closed dummy state-only positions and 0 open
+  positions after the local command/reconciliation drill.
+- The historical pre-fix `observer_run.status = RUNNING` marker remains
+  intentionally unchanged and surfaces read-only as `STALE_RUN_MARKER`.
 - Queue-driven entry blocking is visible in reports and must remain limited to
   future entries.
 - Existing positions must continue natural-exit evaluation.
@@ -264,8 +294,8 @@ Required next behavior:
 - Emit operator-visible block reasons for every pre-trade rejection.
 - Preserve natural exit: risk and slot limits may block future entries, but
   must not force-close or rebalance existing positions.
-- Keep readonly provider failures bounded and operator-visible during longer
-  unattended state-only runs.
+- Run a bounded state-only observation drill against the stabilized runtime
+  contracts before simulator work.
 - Keep pair-validity threshold tuning separate from capital sizing.
 - Defer simulator implementation until capital slots and pre-trade risk gates
   are stable enough to be durable runtime behavior.

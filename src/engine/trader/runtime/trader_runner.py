@@ -10,7 +10,11 @@ from src.engine.trader.commands.processor import process_user_commands
 from src.engine.trader.config import PipelineConfig, RiskConfig, StrategyConfig
 from src.engine.trader.execution.orders import CCXTOrderExecutionAdapter
 from src.engine.trader.execution.market_data import ReadonlyMarketDataFetchPolicy
-from src.engine.trader.reconciliation import ExchangeSnapshotProvider, run_boot_reconciliation
+from src.engine.trader.reconciliation import (
+    ExchangeSnapshotProvider,
+    ReconciliationPolicy,
+    run_boot_reconciliation,
+)
 from src.engine.trader.runtime.monitoring.health import (
     build_trader_health_snapshot,
     render_trader_health_snapshot,
@@ -70,7 +74,16 @@ async def run_trader_loop(
     state = TradeStateManager(db_path=execution_cfg.db_path)
     try:
         record_observer_run_started(state, max_ticks=execution_cfg.max_ticks)
-        await _run_boot_reconciliation(state, reconciliation_snapshot_provider, api_key, api_secret, notifier)
+        await _run_boot_reconciliation(
+            state,
+            reconciliation_snapshot_provider,
+            api_key,
+            api_secret,
+            ReconciliationPolicy(
+                **execution_cfg.reconciliation.to_runtime_policy_kwargs()
+            ),
+            notifier,
+        )
         await _notify_boot_health(state, pipeline_cfg, notifier)
         await _run_ticks(
             state=state,
@@ -136,12 +149,14 @@ async def _run_boot_reconciliation(
     snapshot_provider: ExchangeSnapshotProvider | None,
     api_key: str,
     api_secret: str,
+    policy: ReconciliationPolicy,
     notifier: TelegramNotifier,
 ) -> None:
     run_id = await run_boot_reconciliation(
         state=state,
         snapshot_provider=snapshot_provider,
         credentials_available=bool(api_key and api_secret),
+        policy=policy,
     )
     run = next(item for item in state.get_reconciliation_runs() if item["id"] == run_id)
     delta_count = len(state.get_reconciliation_deltas(run_id=run_id))

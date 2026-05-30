@@ -33,6 +33,18 @@ class MarketDataFetchConfig(StrictConfigModel):
         }
 
 
+class ReconciliationConfig(StrictConfigModel):
+    snapshot_timeout_seconds: float = Field(gt=0)
+    stale_order_after_seconds: float = Field(gt=0)
+
+    def to_runtime_policy_kwargs(self) -> dict[str, object]:
+        """Return kwargs for runtime read-only reconciliation policy."""
+        return {
+            "snapshot_timeout_seconds": self.snapshot_timeout_seconds,
+            "stale_order_after_seconds": self.stale_order_after_seconds,
+        }
+
+
 class PairRefreshConfig(StrictConfigModel):
     mode: Literal["manual"]
     reload_policy: Literal["on_boot"]
@@ -134,6 +146,7 @@ class PipelineExecutionConfig(StrictConfigModel):
     heartbeat_seconds: int = Field(gt=0)
     sync_to_boundary: bool
     market_data_fetch: MarketDataFetchConfig
+    reconciliation: ReconciliationConfig
     order_execution: OrderExecutionConfig
     pair_refresh: PairRefreshConfig
     pair_validity: PairValidityDiagnosticsConfig

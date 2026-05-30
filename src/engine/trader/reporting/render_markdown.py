@@ -31,7 +31,8 @@ def render_markdown(report: TradeReport) -> str:
     lines.append(f"| Order Events | {report.state_ledger.total_order_events} |")
     latest_recon = report.state_ledger.latest_reconciliation_run_status or "N/A"
     lines.append(f"| Latest Reconciliation Status | {latest_recon} |")
-    lines.append(f"| Reconciliation Deltas | {report.state_ledger.reconciliation_delta_count} |")
+    lines.append(f"| Latest Reconciliation Deltas | {report.state_ledger.reconciliation_delta_count} |")
+    lines.append(f"| Historical Reconciliation Deltas | {report.state_ledger.total_reconciliation_delta_count} |")
     lines.append("")
 
     lines.append("### Leg Order Statuses\n")

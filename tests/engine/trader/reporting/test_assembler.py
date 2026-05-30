@@ -196,6 +196,8 @@ def test_empty_database_report(state):
     assert report.state_ledger.user_commands_by_status == {}
     assert report.state_ledger.latest_reconciliation_run_status is None
     assert report.state_ledger.reconciliation_delta_count == 0
+    assert report.state_ledger.total_reconciliation_delta_count == 0
+    assert report.state_ledger.latest_reconciliation_deltas_by_type == {}
 
 
 def test_report_cli_requires_surviving_pairs_path():
@@ -480,6 +482,37 @@ def test_state_ledger_snapshot_counts_current_schema(state):
     }
     assert report.state_ledger.latest_reconciliation_run_status == "DELTA_FOUND"
     assert report.state_ledger.reconciliation_delta_count == 1
+    assert report.state_ledger.total_reconciliation_delta_count == 1
+    assert report.state_ledger.latest_reconciliation_deltas_by_type == {
+        "LOCAL_ONLY_POSITION": 1
+    }
+
+
+def test_state_ledger_separates_latest_reconciliation_deltas_from_history(state):
+    """Operators should see the latest audit count without losing historical totals."""
+    first_run = state.start_reconciliation_run(
+        exchange_snapshot={"positions": []},
+        local_open_positions=[],
+    )
+    state.record_reconciliation_delta(
+        run_id=first_run,
+        delta_type="SNAPSHOT_PROVIDER_FAILURE",
+        payload={"error": "temporary failure"},
+    )
+    state.finish_reconciliation_run(first_run, status="FAILED")
+
+    second_run = state.start_reconciliation_run(
+        exchange_snapshot={"positions": []},
+        local_open_positions=[],
+    )
+    state.finish_reconciliation_run(second_run, status="MATCHED")
+
+    report = generate_report(state, min_sharpe=1.0, surviving_pairs_path="/nonexistent/path.json")
+
+    assert report.state_ledger.latest_reconciliation_run_status == "MATCHED"
+    assert report.state_ledger.reconciliation_delta_count == 0
+    assert report.state_ledger.total_reconciliation_delta_count == 1
+    assert report.state_ledger.latest_reconciliation_deltas_by_type == {}
 
 
 def test_state_ledger_terminal_renderer_outputs_counts(state, capsys):

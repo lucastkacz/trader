@@ -176,7 +176,10 @@ def render_state_ledger(report: TradeReport) -> None:
 
     print(_metric("Order Events", str(ledger.total_order_events)))
     print(_metric("Reconciliation Status", latest_recon))
-    print(_metric("Reconciliation Deltas", str(ledger.reconciliation_delta_count)))
+    print(_metric("Latest Reconciliation Deltas", str(ledger.reconciliation_delta_count)))
+    print(_metric("Historical Reconciliation Deltas", str(ledger.total_reconciliation_delta_count)))
+    for delta_type, count in ledger.latest_reconciliation_deltas_by_type.items():
+        print(_metric(delta_type, str(count)))
 
     _subheader("Leg Order Statuses")
     if not ledger.leg_targets_by_status_role:

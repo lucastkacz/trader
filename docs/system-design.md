@@ -238,6 +238,13 @@ typed config or adapters at explicit operational seams.
 Runtime state includes positions, order lifecycle events, leg targets, equity
 snapshots, user commands, reconciliation results, and signal observations.
 
+Read-only reconciliation uses explicit typed `execution.reconciliation` policy
+for account-snapshot timeout and stale in-flight local order age. It records
+auditable deltas for local-only or exchange-only positions, quantity/side/symbol
+mismatches, partial local fills, stale local orders, and snapshot-provider
+failures. Reconciliation diagnostics use `NO_ACTION`; they do not submit,
+cancel, modify, repair, or close exchange positions.
+
 State writes must be auditable. Reporting should read state and artifacts to
 produce summaries; reporting should not mutate exchange state.
 

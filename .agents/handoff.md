@@ -99,7 +99,7 @@ Latest local verification after the current uncommitted slices:
 
 ```text
 .venv/bin/python -m pytest -q
-315 passed, 3 deselected
+322 passed, 3 deselected
 
 .venv/bin/ruff check src tests
 All checks passed!
@@ -116,9 +116,9 @@ Implications:
 - Current promoted artifact:
   `data/universes/1m/surviving_pairs.json`.
 - Current local parquet store: `data/parquet/bybit/1m/`.
-- Current local state after the extended observation drill has 2 open
-  state-only positions and 0 exchange/client order ids. Treat them as local
-  accounting state only; do not force-close them for documentation cleanup.
+- The dummy dev DB was intentionally manipulated after operator approval during
+  the local command/reconciliation drill. It now has 4 closed state-only
+  positions, 0 open positions, and 0 exchange/client order ids.
 - Current local `runtime_state.observer_run` still contains the historical
   pre-fix stale marker from the interrupted drill:
   `status = RUNNING`, `max_ticks = 180`, `completed_ticks = 0`,
@@ -580,6 +580,50 @@ Read-only local dev DB inspect after the slice:
 All checks passed!
 ```
 
+## Current Uncommitted Slice: Read-Only Reconciliation Visibility
+
+- Added typed pipeline `execution.reconciliation` policy:
+  `snapshot_timeout_seconds` and `stale_order_after_seconds`.
+- Snapshot-provider reads are timeout-bounded.
+- Reconciliation records auditable `NO_ACTION` deltas for:
+  - `LOCAL_PARTIAL_FILL`
+  - `STALE_LOCAL_ORDER`
+  - `SNAPSHOT_PROVIDER_FAILURE`
+- Existing position comparison deltas remain read-only:
+  local-only, exchange-only, quantity mismatch, side mismatch, and symbol
+  mismatch.
+- Reports now separate latest-run reconciliation deltas from historical delta
+  totals and surface latest delta-type counts.
+- No reconciliation path submits, cancels, modifies, repairs, or closes
+  exchange state.
+
+Local dev DB drill:
+
+- Confirmed no trader, observer, Prefect, Telegram bot, or `caffeinate`
+  process was active. Only Telegram Desktop crash-handler helpers matched the
+  broad process search.
+- Used fake readonly prices to execute `/pause`, `/resume`,
+  `/stop ASTER/USDT|ADA/USDT`, and `/stop_all` through the command module
+  interface.
+- The dev DB dummy positions are now all locally closed:
+  `spread_positions = 4 CLOSED`, `0 OPEN`.
+- Fake snapshot providers recorded:
+  - `DELTA_FOUND` with `EXCHANGE_ONLY_POSITION`
+  - `FAILED` with `SNAPSHOT_PROVIDER_FAILURE`
+  - final `MATCHED` with no latest deltas
+- Reports surface `0` latest reconciliation deltas and retain `2` historical
+  reconciliation deltas.
+- Exchange/client order-id verification remains `0`.
+- Verification:
+
+```text
+.venv/bin/python -m pytest -q
+322 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
 ## Fresh-Start Drill Results
 
 Completed on 2026-05-28 from branch `local-trader-fresh-start-docs`.
@@ -1034,10 +1078,11 @@ Any non-zero exchange/client order id count is a stop-and-investigate event.
 
 Do this before simulator implementation:
 
-1. Strengthen reconciliation and command drills:
-   - read-only mismatch snapshots
-   - `/pause` and `/resume`
-   - `/stop` and `/stop_all` only in archived/dedicated local state
+1. Run a bounded state-only observer drill against the stabilized runtime:
+   - readonly OHLCV timeout/retry behavior
+   - honest observer run-state status
+   - zero exchange/client order ids
+   - read-only reconciliation visibility
 2. Calibrate pair-validity queue thresholds after the remaining runtime
    stabilization behavior is durable.
 3. Only then start simulator Phase 1.

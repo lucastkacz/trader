@@ -1,6 +1,8 @@
 """Read-only reconciliation between local state and exchange snapshots."""
 
 import asyncio
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -18,7 +20,24 @@ class ReconciliationDeltaType(StrEnum):
     QTY_MISMATCH = "QTY_MISMATCH"
     SIDE_MISMATCH = "SIDE_MISMATCH"
     SYMBOL_MISMATCH = "SYMBOL_MISMATCH"
+    LOCAL_PARTIAL_FILL = "LOCAL_PARTIAL_FILL"
+    STALE_LOCAL_ORDER = "STALE_LOCAL_ORDER"
+    SNAPSHOT_PROVIDER_FAILURE = "SNAPSHOT_PROVIDER_FAILURE"
     MATCHED = "MATCHED"
+
+
+@dataclass(frozen=True)
+class ReconciliationPolicy:
+    """Explicit read-only reconciliation timing policy."""
+
+    snapshot_timeout_seconds: float
+    stale_order_after_seconds: float
+
+    def __post_init__(self) -> None:
+        if self.snapshot_timeout_seconds <= 0:
+            raise ValueError("snapshot_timeout_seconds must be positive")
+        if self.stale_order_after_seconds <= 0:
+            raise ValueError("stale_order_after_seconds must be positive")
 
 
 class ExchangePositionSnapshot(BaseModel):
@@ -70,11 +89,13 @@ class ReadOnlyReconciliationAuditor:
         state: TradeStateManager,
         snapshot_provider: ExchangeSnapshotProvider | None,
         credentials_available: bool,
+        policy: ReconciliationPolicy,
         qty_tolerance: float = 1e-9,
     ):
         self.state = state
         self.snapshot_provider = snapshot_provider
         self.credentials_available = credentials_available
+        self.policy = policy
         self.qty_tolerance = qty_tolerance
 
     async def run_once(self) -> ReconciliationAuditReport:
@@ -83,6 +104,7 @@ class ReadOnlyReconciliationAuditor:
             state=self.state,
             snapshot_provider=self.snapshot_provider,
             credentials_available=self.credentials_available,
+            policy=self.policy,
             qty_tolerance=self.qty_tolerance,
         )
 
@@ -121,6 +143,11 @@ def _local_open_leg_targets(state: TradeStateManager) -> list[dict[str, Any]]:
                     "symbol": leg["symbol"],
                     "side": leg["side"],
                     "target_qty": leg["target_qty"],
+                    "filled_qty": leg["filled_qty"],
+                    "status": leg["status"],
+                    "updated_at": leg["updated_at"],
+                    "exchange_order_id": leg["exchange_order_id"],
+                    "client_order_id": leg["client_order_id"],
                 }
             )
     return targets
@@ -169,7 +196,9 @@ async def run_boot_reconciliation(
     state: TradeStateManager,
     snapshot_provider: ExchangeSnapshotProvider | None,
     credentials_available: bool,
+    policy: ReconciliationPolicy,
     qty_tolerance: float = 1e-9,
+    now: datetime | None = None,
 ) -> int:
     """
     Record a read-only exchange/local reconciliation run.
@@ -199,12 +228,25 @@ async def run_boot_reconciliation(
         return run_id
 
     try:
-        exchange_positions = await snapshot_provider.fetch_open_positions()
+        exchange_positions = await asyncio.wait_for(
+            snapshot_provider.fetch_open_positions(),
+            timeout=policy.snapshot_timeout_seconds,
+        )
     except Exception as exc:
+        error = _snapshot_provider_error(exc)
         run_id = state.start_reconciliation_run(
-            exchange_snapshot={"positions": [], "error": str(exc)},
+            exchange_snapshot={"positions": [], "error": error},
             local_open_positions=local_open_positions,
             status="FAILED",
+        )
+        state.record_reconciliation_delta(
+            run_id=run_id,
+            delta_type=ReconciliationDeltaType.SNAPSHOT_PROVIDER_FAILURE.value,
+            action_taken="NO_ACTION",
+            payload={
+                "error": error,
+                "error_type": type(exc).__name__,
+            },
         )
         state.finish_reconciliation_run(run_id, status="FAILED")
         return run_id
@@ -218,7 +260,13 @@ async def run_boot_reconciliation(
     local_legs = _local_open_leg_targets(state)
     exchange_by_symbol = {position.symbol: position for position in exchange_positions}
     consumed_symbols = set()
-    has_unmatched_delta = False
+    has_unmatched_delta = _record_local_leg_lifecycle_deltas(
+        state=state,
+        run_id=run_id,
+        local_legs=local_legs,
+        policy=policy,
+        now=now or datetime.now(timezone.utc),
+    )
 
     for local_leg in local_legs:
         delta_type, exchange_pos = _classify_leg(local_leg, exchange_by_symbol, qty_tolerance)
@@ -276,6 +324,7 @@ async def run_read_only_audit(
     state: TradeStateManager,
     snapshot_provider: ExchangeSnapshotProvider | None,
     credentials_available: bool,
+    policy: ReconciliationPolicy,
     qty_tolerance: float = 1e-9,
 ) -> ReconciliationAuditReport:
     """
@@ -289,6 +338,7 @@ async def run_read_only_audit(
         state=state,
         snapshot_provider=snapshot_provider,
         credentials_available=credentials_available,
+        policy=policy,
         qty_tolerance=qty_tolerance,
     )
     run = next(row for row in state.get_reconciliation_runs() if row["id"] == run_id)
@@ -303,3 +353,65 @@ async def run_read_only_audit(
         unresolved_delta_count=len(unresolved_deltas),
         unresolved_deltas=unresolved_deltas,
     )
+
+
+def _record_local_leg_lifecycle_deltas(
+    *,
+    state: TradeStateManager,
+    run_id: int,
+    local_legs: list[dict[str, Any]],
+    policy: ReconciliationPolicy,
+    now: datetime,
+) -> bool:
+    has_unmatched_delta = False
+    for local_leg in local_legs:
+        if local_leg["status"] == "PARTIALLY_FILLED":
+            has_unmatched_delta = True
+            state.record_reconciliation_delta(
+                run_id=run_id,
+                delta_type=ReconciliationDeltaType.LOCAL_PARTIAL_FILL.value,
+                symbol=local_leg["symbol"],
+                spread_id=local_leg["spread_id"],
+                action_taken="NO_ACTION",
+                payload={"local_leg": local_leg},
+            )
+
+        age_seconds = _leg_age_seconds(local_leg.get("updated_at"), now)
+        if (
+            local_leg["status"]
+            in {"SUBMIT_REQUESTED", "ACKNOWLEDGED", "PARTIALLY_FILLED", "CANCEL_REQUESTED"}
+            and age_seconds is not None
+            and age_seconds > policy.stale_order_after_seconds
+        ):
+            has_unmatched_delta = True
+            state.record_reconciliation_delta(
+                run_id=run_id,
+                delta_type=ReconciliationDeltaType.STALE_LOCAL_ORDER.value,
+                symbol=local_leg["symbol"],
+                spread_id=local_leg["spread_id"],
+                action_taken="NO_ACTION",
+                payload={
+                    "local_leg": local_leg,
+                    "age_seconds": age_seconds,
+                    "stale_order_after_seconds": policy.stale_order_after_seconds,
+                },
+            )
+    return has_unmatched_delta
+
+
+def _leg_age_seconds(updated_at: Any, now: datetime) -> float | None:
+    if not isinstance(updated_at, str) or not updated_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0.0, (now.astimezone(timezone.utc) - parsed).total_seconds())
+
+
+def _snapshot_provider_error(exc: Exception) -> str:
+    if isinstance(exc, TimeoutError):
+        return "snapshot request timed out"
+    return str(exc)
