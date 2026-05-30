@@ -84,6 +84,24 @@ Liquidity slice completed on 2026-05-29:
   `178 passed`; `.venv/bin/python -m pytest -q` reported
   `287 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
 
+Kill-switch entry-gate slice completed on 2026-05-29:
+
+- Runtime risk state now has a typed durable kill-switch helper over SQLite
+  `runtime_state` instead of ad hoc runtime dictionaries at call sites.
+- The pre-trade risk path now reads the durable kill-switch state before opening
+  new entries or flip replacement entries.
+- When active, the switch blocks additional exposure with operator-visible
+  reason `risk_kill_switch_active`.
+- The gate preserves natural exits: existing positions still receive normal
+  `FLAT` signal handling and are not force-closed or rebalanced.
+- Malformed kill-switch runtime payloads are treated as inactive rather than
+  crashing the trader.
+- Focused verification after this slice:
+  `.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_signal_transition.py -q`
+  reported `25 passed`; runtime/config/risk verification reported
+  `185 passed`; `.venv/bin/python -m pytest -q` reported
+  `294 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -159,6 +177,9 @@ Already available locally:
   typed as `RiskConfig`: max per-position cluster exposure, max portfolio
   exposure, max leverage, minimum order quantity, minimum order notional, order
   quantity step, liquidity lookback bars, and minimum recent quote volume.
+- Runtime kill-switch entry state is explicit in SQLite `runtime_state` through
+  typed runtime risk helpers. It blocks future exposure only and does not imply
+  automatic liquidation.
 - Pipeline config now declares explicit `execution.pair_queue` policy for
   queue behavior, scoring weights, validity thresholds, and
   allocation caps. `null` means intentionally unlimited for caps and optional
@@ -189,8 +210,8 @@ Current local assumption:
 
 Required next behavior:
 
-- Add or tighten the remaining state-only pre-trade checks for kill-switch
-  state.
+- Add an operator-facing path for setting and clearing the durable risk
+  kill-switch state.
 - Keep each gate explicit in typed config or runtime policy, not hidden
   constants.
 - Emit operator-visible block reasons for every pre-trade rejection.

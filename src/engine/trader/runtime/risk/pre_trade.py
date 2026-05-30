@@ -8,6 +8,7 @@ from src.engine.trader.runtime.risk.models import (
     PreTradeLiquiditySnapshot,
     PreTradeRiskDecision,
     PreTradeRiskPolicy,
+    RiskKillSwitchState,
 )
 
 
@@ -18,6 +19,7 @@ def evaluate_pre_trade_entry(
     policy: PreTradeRiskPolicy,
     replacing_pair_label: str | None = None,
     liquidity: PreTradeLiquiditySnapshot | None = None,
+    kill_switch: RiskKillSwitchState | None = None,
 ) -> PreTradeRiskDecision:
     """Size and validate a proposed entry against current runtime exposure."""
     raw_weight_a = float(result.weight_a)
@@ -67,6 +69,7 @@ def evaluate_pre_trade_entry(
         )
     )
     block_reasons.extend(_liquidity_block_reasons(liquidity=liquidity, policy=policy))
+    block_reasons.extend(_kill_switch_block_reasons(kill_switch))
 
     return PreTradeRiskDecision(
         entry_allowed=not block_reasons,
@@ -142,6 +145,14 @@ def _liquidity_block_reasons(
         return ["liquidity_snapshot_missing"]
     if any(volume < policy.min_recent_quote_volume for volume in quote_volumes):
         return ["liquidity_below_min"]
+    return []
+
+
+def _kill_switch_block_reasons(
+    kill_switch: RiskKillSwitchState | None,
+) -> list[str]:
+    if kill_switch is not None and kill_switch.active:
+        return ["risk_kill_switch_active"]
     return []
 
 

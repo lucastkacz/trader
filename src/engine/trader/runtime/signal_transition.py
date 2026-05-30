@@ -12,6 +12,7 @@ from src.engine.trader.runtime.risk import (
     PreTradeRiskDecision,
     PreTradeRiskPolicy,
     evaluate_pre_trade_entry,
+    get_risk_kill_switch_state,
 )
 from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram.notifier import TelegramNotifier
@@ -247,9 +248,10 @@ def _evaluate_pre_trade_risk(
 ) -> PreTradeRiskDecision:
     if policy is None:
         notional = abs(float(result.weight_a)) + abs(float(result.weight_b))
+        kill_switch = get_risk_kill_switch_state(state)
         return PreTradeRiskDecision(
-            entry_allowed=True,
-            block_reasons=[],
+            entry_allowed=not kill_switch.active,
+            block_reasons=["risk_kill_switch_active"] if kill_switch.active else [],
             sized_weight_a=float(result.weight_a),
             sized_weight_b=float(result.weight_b),
             proposed_notional_pct=notional,
@@ -262,6 +264,7 @@ def _evaluate_pre_trade_risk(
         policy=policy,
         replacing_pair_label=replacing_pair_label,
         liquidity=liquidity,
+        kill_switch=get_risk_kill_switch_state(state),
     )
 
 

@@ -63,6 +63,15 @@ class PreTradeLiquiditySnapshot:
     observation_bars: int
 
 
+@dataclass(frozen=True)
+class RiskKillSwitchState:
+    """Typed durable risk kill-switch state."""
+
+    active: bool
+    reason: str | None = None
+    activated_at: str | None = None
+
+
 def pre_trade_policy_from_config(risk_cfg: RiskConfig) -> PreTradeRiskPolicy:
     """Convert typed operator risk config into runtime entry policy."""
     return PreTradeRiskPolicy(

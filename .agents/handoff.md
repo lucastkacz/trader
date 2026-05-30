@@ -49,17 +49,17 @@ Preserve these terms:
 
 ## Branch And Working Tree
 
-Current branch for this liquidity risk-gate work:
+Current branch for this kill-switch risk-gate work:
 
 ```text
-local-trader-liquidity-risk-gates
+local-trader-kill-switch-risk-gate
 ```
 
 Baseline before this branch:
 
 ```text
-local-trader-precision-risk-gates was committed at 56370aa9
-(`Add precision pre-trade risk gates`), then this branch was created from that
+local-trader-liquidity-risk-gates was committed at 3aa42893
+(`Add liquidity pre-trade risk gate`), then this branch was created from that
 commit.
 ```
 
@@ -72,14 +72,14 @@ Known uncommitted/untracked work carried onto this branch:
 Latest offline verification:
 
 ```text
-.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py tests/engine/trader/runtime/test_signal_transition.py -q
-46 passed
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_signal_transition.py -q
+25 passed
 
 .venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
-178 passed
+185 passed
 
 .venv/bin/python -m pytest -q
-287 passed, 3 deselected
+294 passed, 3 deselected
 ```
 
 Latest lint verification:
@@ -365,6 +365,64 @@ Verification so far:
 
 .venv/bin/python -m pytest -q
 287 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+## Latest Implementation Slice: Risk Kill-Switch Entry Gate
+
+Completed on 2026-05-29 from branch
+`local-trader-kill-switch-risk-gate`.
+
+Preflight:
+
+- Committed the completed liquidity slice on `local-trader-liquidity-risk-gates`:
+  `3aa42893 Add liquidity pre-trade risk gate`.
+- Created `local-trader-kill-switch-risk-gate` from that commit.
+- Process scan showed no trader, observer, Prefect, dev Telegram daemon, or
+  `caffeinate` process before the slice.
+
+Code changes:
+
+- Added `src/engine/trader/runtime/risk/kill_switch.py` as the typed runtime
+  state helper for the durable risk kill switch.
+- The helper persists state under SQLite runtime key `risk.kill_switch` and
+  exposes typed operations to activate, clear, and read the switch.
+- Malformed runtime-state payloads are treated as inactive so a bad local value
+  does not crash entry evaluation.
+- `evaluate_pre_trade_entry` now accepts typed kill-switch state and appends
+  `risk_kill_switch_active` when the switch is active.
+- `route_signal_transition` reads the durable kill-switch state before entry
+  and flip-replacement pre-trade decisions.
+- The gate blocks only new entries or flip replacement entries. Existing
+  positions still receive normal natural-exit signal handling.
+- The slice is validation/state-only. It does not submit, cancel, modify,
+  rebalance, force-close, hot-reload, promote artifacts, or increase capital
+  exposure.
+
+Behavior tests added:
+
+- Active risk kill switch blocks a new entry before creating a spread position
+  or leg targets.
+- Active risk kill switch blocks a flip replacement while preserving the
+  signal-driven close and skipping the replacement open.
+- Active risk kill switch does not prevent an existing position from closing on
+  a natural `FLAT` signal.
+- Runtime helper tests cover inactive default state, typed activate/clear
+  persistence, malformed payload handling, and non-empty activation reasons.
+
+Verification so far:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_signal_transition.py -q
+25 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+185 passed
+
+.venv/bin/python -m pytest -q
+294 passed, 3 deselected
 
 .venv/bin/ruff check src tests
 All checks passed!

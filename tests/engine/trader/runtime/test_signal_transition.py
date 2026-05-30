@@ -24,6 +24,9 @@ class FakeState:
         self.opened.append(kwargs)
         return 43
 
+    def get_runtime_state(self, key, default=None):
+        return default
+
 
 @pytest.fixture
 def state_only_order_execution():

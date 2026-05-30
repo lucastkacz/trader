@@ -8,6 +8,7 @@ from src.engine.trader.config import OrderExecutionConfig, load_strategy_config
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
 from src.engine.trader.runtime.pair_validity.models import PairValiditySnapshot
 from src.engine.trader.runtime.risk import PreTradeRiskPolicy
+from src.engine.trader.runtime.risk.kill_switch import activate_risk_kill_switch
 from src.engine.trader.runtime.tick import execute_tick
 from src.engine.trader.state.manager import TradeStateManager
 
@@ -651,6 +652,173 @@ async def test_pre_trade_liquidity_blocked_flip_closes_without_replacement_open(
     sent_messages = [call.args[0] for call in notifier.send.await_args_list]
     assert any("EXIT SIGNAL: AAA/USDT|BBB/USDT" in message for message in sent_messages)
     assert any("liquidity_below_min" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_risk_kill_switch_blocks_new_entry_without_opening_position(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    activate_risk_kill_switch(
+        state,
+        reason="operator review",
+        activated_at="2026-05-29T00:00:00+00:00",
+    )
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", _fake_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal("LONG_SPREAD"),
+    )
+
+    await execute_tick(
+        pairs=[_pair("AAA/USDT", "BBB/USDT")],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(),
+    )
+
+    assert state.get_all_orders() == []
+    assert state.get_leg_fills() == []
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("risk_kill_switch_active" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_risk_kill_switch_blocks_flip_replacement_but_preserves_close(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    pair = _pair("AAA/USDT", "BBB/USDT")
+    pair_label = "AAA/USDT|BBB/USDT"
+    state.open_position(
+        pair_label,
+        "AAA/USDT",
+        "BBB/USDT",
+        "LONG_SPREAD",
+        100.0,
+        50.0,
+        0.6,
+        0.4,
+        -2.5,
+        20,
+    )
+    activate_risk_kill_switch(
+        state,
+        reason="operator review",
+        activated_at="2026-05-29T00:00:00+00:00",
+    )
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", _fake_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal("SHORT_SPREAD"),
+    )
+
+    await execute_tick(
+        pairs=[pair],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            max_positions_per_pair=2,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(),
+    )
+
+    assert state.get_open_positions() == []
+    assert len(state.get_all_closed()) == 1
+    legs = state.get_leg_fills()
+    assert sum(leg["leg_role"] == "OPEN" for leg in legs) == 2
+    assert sum(leg["leg_role"] == "CLOSE" for leg in legs) == 2
+    assert all(leg["exchange_order_id"] is None for leg in legs)
+    assert all(leg["client_order_id"] is None for leg in legs)
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("EXIT SIGNAL: AAA/USDT|BBB/USDT" in message for message in sent_messages)
+    assert any("risk_kill_switch_active" in message for message in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_risk_kill_switch_does_not_prevent_existing_position_natural_exit(
+    monkeypatch,
+    state,
+    notifier,
+    state_only_order_execution,
+):
+    pair = _pair("AAA/USDT", "BBB/USDT")
+    pair_label = "AAA/USDT|BBB/USDT"
+    state.open_position(
+        pair_label,
+        "AAA/USDT",
+        "BBB/USDT",
+        "LONG_SPREAD",
+        100.0,
+        50.0,
+        0.6,
+        0.4,
+        -2.5,
+        20,
+    )
+    activate_risk_kill_switch(
+        state,
+        reason="operator review",
+        activated_at="2026-05-29T00:00:00+00:00",
+    )
+    monkeypatch.setattr("src.engine.trader.runtime.tick._fetch_pair_candles", _fake_candles)
+    monkeypatch.setattr(
+        "src.engine.trader.runtime.tick.evaluate_signal",
+        lambda **kwargs: _signal("FLAT", z_score=0.1),
+    )
+
+    await execute_tick(
+        pairs=[pair],
+        state=state,
+        notifier=notifier,
+        timeframe="1m",
+        strategy_cfg=load_strategy_config("configs/strategy/dev.yml"),
+        exchange_id="bybit",
+        api_key="",
+        api_secret="",
+        order_execution_cfg=state_only_order_execution,
+        order_execution_adapter=None,
+        pair_queue_policy=PairQueuePolicy(
+            block_on_missing_validity=False,
+            require_entry_signal=True,
+        ),
+        pair_queue_enabled=True,
+        pre_trade_risk_policy=_pre_trade_policy(),
+    )
+
+    assert state.get_open_positions() == []
+    closed = state.get_all_closed()
+    assert len(closed) == 1
+    assert closed[0]["close_reason"] == "SIGNAL_EXIT"
+    sent_messages = [call.args[0] for call in notifier.send.await_args_list]
+    assert any("EXIT SIGNAL: AAA/USDT|BBB/USDT" in message for message in sent_messages)
+    assert not any("risk_kill_switch_active" in message for message in sent_messages)
 
 
 @pytest.mark.asyncio
