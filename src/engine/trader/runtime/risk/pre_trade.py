@@ -4,50 +4,12 @@ from dataclasses import dataclass
 import math
 from typing import Any, Mapping, Sequence
 
-from src.engine.trader.config import RiskConfig
-
-
-@dataclass(frozen=True)
-class PreTradeRiskPolicy:
-    """Runtime policy for state-only and live entry risk checks."""
-
-    max_cluster_exposure: float
-    max_portfolio_exposure: float
-    max_leverage: float
-
-    def __post_init__(self) -> None:
-        if self.max_cluster_exposure <= 0:
-            raise ValueError("max_cluster_exposure must be positive")
-        if self.max_portfolio_exposure <= 0:
-            raise ValueError("max_portfolio_exposure must be positive")
-        if self.max_portfolio_exposure < self.max_cluster_exposure:
-            raise ValueError(
-                "max_portfolio_exposure must be greater than or equal to max_cluster_exposure"
-            )
-        if self.max_leverage <= 0:
-            raise ValueError("max_leverage must be positive")
-
-
-@dataclass(frozen=True)
-class PreTradeRiskDecision:
-    """Risk result for a proposed spread entry."""
-
-    entry_allowed: bool
-    block_reasons: list[str]
-    sized_weight_a: float
-    sized_weight_b: float
-    proposed_notional_pct: float
-    projected_portfolio_exposure: float
-    projected_leverage: float
-
-
-def pre_trade_policy_from_config(risk_cfg: RiskConfig) -> PreTradeRiskPolicy:
-    """Convert typed operator risk config into runtime entry policy."""
-    return PreTradeRiskPolicy(
-        max_cluster_exposure=risk_cfg.max_cluster_exposure,
-        max_portfolio_exposure=risk_cfg.max_portfolio_exposure,
-        max_leverage=risk_cfg.max_leverage,
-    )
+from src.engine.trader.runtime.risk.models import (
+    PreTradeLiquiditySnapshot,
+    PreTradeRiskDecision,
+    PreTradeRiskPolicy,
+    RiskKillSwitchState,
+)
 
 
 def evaluate_pre_trade_entry(
@@ -56,6 +18,8 @@ def evaluate_pre_trade_entry(
     open_positions: Sequence[Mapping[str, Any]],
     policy: PreTradeRiskPolicy,
     replacing_pair_label: str | None = None,
+    liquidity: PreTradeLiquiditySnapshot | None = None,
+    kill_switch: RiskKillSwitchState | None = None,
 ) -> PreTradeRiskDecision:
     """Size and validate a proposed entry against current runtime exposure."""
     raw_weight_a = float(result.weight_a)
@@ -95,6 +59,17 @@ def evaluate_pre_trade_entry(
         block_reasons.append("portfolio_exposure_above_max")
     if projected_leverage > policy.max_leverage + 1e-12:
         block_reasons.append("max_leverage_exceeded")
+    block_reasons.extend(
+        _order_constraint_block_reasons(
+            leg_targets=[
+                _LegTarget(quantity=abs(sized_weight_a), price=float(result.price_a)),
+                _LegTarget(quantity=abs(sized_weight_b), price=float(result.price_b)),
+            ],
+            policy=policy,
+        )
+    )
+    block_reasons.extend(_liquidity_block_reasons(liquidity=liquidity, policy=policy))
+    block_reasons.extend(_kill_switch_block_reasons(kill_switch))
 
     return PreTradeRiskDecision(
         entry_allowed=not block_reasons,
@@ -122,3 +97,67 @@ def _open_position_exposure(
 
 def _finite_positive(value: float) -> bool:
     return math.isfinite(value) and value > 0.0
+
+
+@dataclass(frozen=True)
+class _LegTarget:
+    quantity: float
+    price: float
+
+
+def _order_constraint_block_reasons(
+    *,
+    leg_targets: Sequence[_LegTarget],
+    policy: PreTradeRiskPolicy,
+) -> list[str]:
+    reasons: list[str] = []
+    if any(not _finite_positive(target.quantity) for target in leg_targets):
+        reasons.append("order_quantity_below_min")
+    elif any(target.quantity < policy.min_order_quantity for target in leg_targets):
+        reasons.append("order_quantity_below_min")
+
+    if any(not _finite_positive(target.price) for target in leg_targets):
+        reasons.append("order_notional_below_min")
+    elif any(
+        target.quantity * target.price < policy.min_order_notional
+        for target in leg_targets
+    ):
+        reasons.append("order_notional_below_min")
+
+    if any(
+        not _is_valid_quantity_step(target.quantity, policy.order_quantity_step)
+        for target in leg_targets
+    ):
+        reasons.append("order_precision_invalid")
+
+    return reasons
+
+
+def _liquidity_block_reasons(
+    *,
+    liquidity: PreTradeLiquiditySnapshot | None,
+    policy: PreTradeRiskPolicy,
+) -> list[str]:
+    if liquidity is None:
+        return ["liquidity_snapshot_missing"]
+    quote_volumes = [liquidity.quote_volume_a, liquidity.quote_volume_b]
+    if any(volume is None or not _finite_positive(volume) for volume in quote_volumes):
+        return ["liquidity_snapshot_missing"]
+    if any(volume < policy.min_recent_quote_volume for volume in quote_volumes):
+        return ["liquidity_below_min"]
+    return []
+
+
+def _kill_switch_block_reasons(
+    kill_switch: RiskKillSwitchState | None,
+) -> list[str]:
+    if kill_switch is not None and kill_switch.active:
+        return ["risk_kill_switch_active"]
+    return []
+
+
+def _is_valid_quantity_step(quantity: float, step: float) -> bool:
+    if not _finite_positive(quantity) or not _finite_positive(step):
+        return False
+    step_count = quantity / step
+    return math.isclose(step_count, round(step_count), rel_tol=0.0, abs_tol=1e-9)

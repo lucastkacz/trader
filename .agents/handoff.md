@@ -5,9 +5,10 @@ Updated: 2026-05-29
 ## Purpose
 
 This handoff is for continuing local trader work after a completed cold local
-rebuild of `data/` and a focused runtime-state/capital-slot hardening slice.
-The next goal is to tighten pre-trade risk gates while deferring simulator
-implementation until those runtime decisions are stable.
+rebuild of `data/` and focused runtime-state/capital-slot/pre-trade risk
+hardening slices. The next goal is to keep tightening local trader stabilization
+gates while deferring simulator implementation until those runtime decisions are
+stable.
 
 Do not call the system production-ready for real capital. The production
 readiness gate in `docs/engineering-rules.md` still applies.
@@ -48,16 +49,18 @@ Preserve these terms:
 
 ## Branch And Working Tree
 
-Current branch for this runtime hardening work:
+Current branch for this kill-switch risk-gate work:
 
 ```text
-local-trader-runtime-state-hardening
+local-trader-kill-switch-risk-gate
 ```
 
-Baseline before the branch:
+Baseline before this branch:
 
 ```text
-main was clean and already up to date with origin/main before branching.
+local-trader-liquidity-risk-gates was committed at 3aa42893
+(`Add liquidity pre-trade risk gate`), then this branch was created from that
+commit.
 ```
 
 Known uncommitted/untracked work carried onto this branch:
@@ -69,8 +72,14 @@ Known uncommitted/untracked work carried onto this branch:
 Latest offline verification:
 
 ```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_signal_transition.py -q
+25 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+185 passed
+
 .venv/bin/python -m pytest -q
-276 passed, 3 deselected
+294 passed, 3 deselected
 ```
 
 Latest lint verification:
@@ -214,6 +223,206 @@ Verification:
 
 .venv/bin/python -m pytest -q
 276 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+## Latest Implementation Slice: Precision And Minimum-Size Gate
+
+Completed on 2026-05-29 from branch
+`local-trader-precision-risk-gates`.
+
+Preflight:
+
+- Started on `local-trader-runtime-state-hardening` at commit `fef2938b`
+  (`Harden runtime state and pre-trade risk gates`).
+- `main` was checked out and `git pull --ff-only` reported
+  `Already up to date`.
+- `local-trader-runtime-state-hardening` was not yet contained in `main`, so it
+  was merged locally with commit message
+  `Merge local trader runtime state hardening`.
+- New branch `local-trader-precision-risk-gates` was created from updated
+  `main`.
+- Launchd observer service `com.quant.dev-state-only-observer` was not loaded.
+- Launchd dev Telegram daemon `com.quant.dev-telegram-daemon` was not loaded.
+- Process scans showed no trader, observer, Prefect, dev Telegram daemon, or
+  `caffeinate` process. Only Telegram Desktop crash-handler processes matched
+  the broader Telegram search term.
+
+Code changes:
+
+- Added explicit risk YAML fields:
+  `min_order_quantity`, `min_order_notional`, and `order_quantity_step`.
+- Added those fields to the typed `RiskConfig` contract and to
+  `PreTradeRiskPolicy`.
+- `pre_trade_policy_from_config` now carries the typed precision/min-size
+  policy into runtime pre-trade checks.
+- `evaluate_pre_trade_entry` now validates both sized leg targets before any
+  state open:
+  - target quantity must meet `min_order_quantity`;
+  - target notional (`target quantity * signal price`) must meet
+    `min_order_notional`;
+  - target quantity must align to `order_quantity_step`.
+- New block reasons are operator-visible through the existing pre-trade risk
+  notification path:
+  `order_quantity_below_min`, `order_notional_below_min`, and
+  `order_precision_invalid`.
+- The slice is validation-only. It does not submit, cancel, modify, rebalance,
+  force-close, hot-reload, promote artifacts, or increase capital exposure.
+
+Behavior tests added:
+
+- Quantity minimum blocks a new entry before creating a spread position or leg
+  targets.
+- Notional minimum blocks a new entry before creating leg targets.
+- Quantity-step precision blocks a new entry before creating positions, leg
+  targets, or exchange/client order ids.
+- A blocked flip replacement still records the signal-driven close, creates no
+  replacement open position, creates no extra `OPEN` leg targets beyond the
+  original state-only position, and records no exchange/client order ids.
+- Config tests prove the new risk YAML fields are explicit and required.
+
+Verification so far:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py -q
+39 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+174 passed
+
+.venv/bin/python -m pytest -q
+283 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+## Latest Implementation Slice: Liquidity Pre-Trade Gate
+
+Completed on 2026-05-29 from branch
+`local-trader-liquidity-risk-gates`.
+
+Preflight:
+
+- Committed the completed precision/min-size slice on
+  `local-trader-precision-risk-gates`:
+  `56370aa9 Add precision pre-trade risk gates`.
+- Created `local-trader-liquidity-risk-gates` from that commit.
+- No trader, observer, Prefect, dev Telegram daemon, or `caffeinate` process was
+  started for this slice.
+
+Structure changes:
+
+- Created `src/engine/trader/runtime/risk/` as the package home for runtime
+  entry-risk policy.
+- Moved the old loose `runtime/pre_trade_risk.py` module under the new package
+  and split it into typed models, liquidity evidence, and pre-trade entry
+  evaluation modules.
+- Updated runtime callers and tests to import through
+  `src.engine.trader.runtime.risk`.
+- This is the only folder move in the slice; `tick.py`, `signal_transition.py`,
+  `scheduler.py`, and `trader_runner.py` remain in the runtime root until a
+  later behavior-backed refactor justifies moving them.
+
+Code changes:
+
+- Added explicit risk YAML fields:
+  `liquidity_lookback_bars` and `min_recent_quote_volume`.
+- Added those fields to the typed `RiskConfig` contract and to
+  `PreTradeRiskPolicy`.
+- Tick execution now builds a `PreTradeLiquiditySnapshot` from the fetched OHLCV
+  data before routing a transition.
+- Liquidity evidence uses average quote volume over the configured lookback:
+  `close * volume` for each leg.
+- `evaluate_pre_trade_entry` now blocks new entries and flip replacement
+  entries when liquidity evidence is missing or below the configured minimum.
+- New block reasons are operator-visible through the existing pre-trade risk
+  notification path:
+  `liquidity_snapshot_missing` and `liquidity_below_min`.
+- The slice is validation-only. It does not submit, cancel, modify, rebalance,
+  force-close, hot-reload, promote artifacts, or increase capital exposure.
+
+Behavior tests added:
+
+- Low recent quote volume blocks a new entry before creating a spread position
+  or leg targets.
+- Low recent quote volume blocks a flip replacement while preserving the
+  signal-driven close and skipping the replacement open.
+- Config tests prove the new risk YAML fields are explicit and required.
+- Existing precision/min-size, exposure/leverage, capital-slot, and
+  natural-exit tests remain green.
+
+Verification so far:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py tests/engine/trader/runtime/test_signal_transition.py -q
+46 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+178 passed
+
+.venv/bin/python -m pytest -q
+287 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+## Latest Implementation Slice: Risk Kill-Switch Entry Gate
+
+Completed on 2026-05-29 from branch
+`local-trader-kill-switch-risk-gate`.
+
+Preflight:
+
+- Committed the completed liquidity slice on `local-trader-liquidity-risk-gates`:
+  `3aa42893 Add liquidity pre-trade risk gate`.
+- Created `local-trader-kill-switch-risk-gate` from that commit.
+- Process scan showed no trader, observer, Prefect, dev Telegram daemon, or
+  `caffeinate` process before the slice.
+
+Code changes:
+
+- Added `src/engine/trader/runtime/risk/kill_switch.py` as the typed runtime
+  state helper for the durable risk kill switch.
+- The helper persists state under SQLite runtime key `risk.kill_switch` and
+  exposes typed operations to activate, clear, and read the switch.
+- Malformed runtime-state payloads are treated as inactive so a bad local value
+  does not crash entry evaluation.
+- `evaluate_pre_trade_entry` now accepts typed kill-switch state and appends
+  `risk_kill_switch_active` when the switch is active.
+- `route_signal_transition` reads the durable kill-switch state before entry
+  and flip-replacement pre-trade decisions.
+- The gate blocks only new entries or flip replacement entries. Existing
+  positions still receive normal natural-exit signal handling.
+- The slice is validation/state-only. It does not submit, cancel, modify,
+  rebalance, force-close, hot-reload, promote artifacts, or increase capital
+  exposure.
+
+Behavior tests added:
+
+- Active risk kill switch blocks a new entry before creating a spread position
+  or leg targets.
+- Active risk kill switch blocks a flip replacement while preserving the
+  signal-driven close and skipping the replacement open.
+- Active risk kill switch does not prevent an existing position from closing on
+  a natural `FLAT` signal.
+- Runtime helper tests cover inactive default state, typed activate/clear
+  persistence, malformed payload handling, and non-empty activation reasons.
+
+Verification so far:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_signal_transition.py -q
+25 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
+185 passed
+
+.venv/bin/python -m pytest -q
+294 passed, 3 deselected
 
 .venv/bin/ruff check src tests
 All checks passed!

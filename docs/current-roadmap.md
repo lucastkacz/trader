@@ -42,6 +42,66 @@ Latest stabilization slice completed on 2026-05-29:
   while SQLite has 2 open state-only positions. This historical local state was
   not manually rewritten.
 
+Precision/min-size slice completed on 2026-05-29:
+
+- Runtime pre-trade risk policy now includes explicit typed checks for
+  `min_order_quantity`, `min_order_notional`, and `order_quantity_step`.
+- New entries and flip replacement entries are blocked before opening when a
+  sized leg target is below the minimum quantity, below the minimum notional, or
+  not aligned to the configured quantity step.
+- Precision/min-size blocks emit operator-visible reasons:
+  `order_quantity_below_min`, `order_notional_below_min`, and
+  `order_precision_invalid`.
+- Blocked new entries do not create spread positions, leg targets, or
+  exchange/client order ids. Blocked flip replacements still preserve the
+  signal-driven close and skip the replacement entry.
+- Verification after this slice:
+  `.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py -q`
+  reported `39 passed`; `.venv/bin/python -m pytest -q` reported
+  `283 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
+
+Liquidity slice completed on 2026-05-29:
+
+- Runtime risk gates now live under `runtime/risk/`, split into typed models,
+  liquidity evidence, and the pre-trade entry evaluator. This gives exposure,
+  precision, liquidity, and future kill-switch entry policy one package home
+  instead of growing the runtime root.
+- Runtime pre-trade risk policy now includes explicit typed liquidity checks:
+  `liquidity_lookback_bars` and `min_recent_quote_volume`.
+- Tick execution builds a recent quote-volume snapshot from fetched OHLCV
+  candles using `close * volume` for both proposed entry legs.
+- New entries and flip replacement entries are blocked before opening when
+  either leg has missing liquidity evidence or recent average quote volume below
+  policy.
+- Liquidity blocks emit operator-visible reasons:
+  `liquidity_snapshot_missing` and `liquidity_below_min`.
+- Blocked liquidity entries do not create spread positions, replacement opens,
+  exchange/client order ids, or new-entry leg targets. Blocked flip
+  replacements still preserve the signal-driven close.
+- Focused verification after this slice:
+  `.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py tests/engine/trader/runtime/test_signal_transition.py -q`
+  reported `46 passed`; runtime/config/risk verification reported
+  `178 passed`; `.venv/bin/python -m pytest -q` reported
+  `287 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
+
+Kill-switch entry-gate slice completed on 2026-05-29:
+
+- Runtime risk state now has a typed durable kill-switch helper over SQLite
+  `runtime_state` instead of ad hoc runtime dictionaries at call sites.
+- The pre-trade risk path now reads the durable kill-switch state before opening
+  new entries or flip replacement entries.
+- When active, the switch blocks additional exposure with operator-visible
+  reason `risk_kill_switch_active`.
+- The gate preserves natural exits: existing positions still receive normal
+  `FLAT` signal handling and are not force-closed or rebalanced.
+- Malformed kill-switch runtime payloads are treated as inactive rather than
+  crashing the trader.
+- Focused verification after this slice:
+  `.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_signal_transition.py -q`
+  reported `25 passed`; runtime/config/risk verification reported
+  `185 passed`; `.venv/bin/python -m pytest -q` reported
+  `294 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -115,7 +175,11 @@ Already available locally:
   each tick transition.
 - Runtime pre-trade risk policy is explicit in `configs/risk/alpha_v1.yml` and
   typed as `RiskConfig`: max per-position cluster exposure, max portfolio
-  exposure, and max leverage.
+  exposure, max leverage, minimum order quantity, minimum order notional, order
+  quantity step, liquidity lookback bars, and minimum recent quote volume.
+- Runtime kill-switch entry state is explicit in SQLite `runtime_state` through
+  typed runtime risk helpers. It blocks future exposure only and does not imply
+  automatic liquidation.
 - Pipeline config now declares explicit `execution.pair_queue` policy for
   queue behavior, scoring weights, validity thresholds, and
   allocation caps. `null` means intentionally unlimited for caps and optional
@@ -146,8 +210,8 @@ Current local assumption:
 
 Required next behavior:
 
-- Add or tighten the remaining state-only pre-trade checks for precision,
-  liquidity policy, and kill-switch state.
+- Add an operator-facing path for setting and clearing the durable risk
+  kill-switch state.
 - Keep each gate explicit in typed config or runtime policy, not hidden
   constants.
 - Emit operator-visible block reasons for every pre-trade rejection.

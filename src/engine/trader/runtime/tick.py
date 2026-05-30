@@ -17,7 +17,11 @@ from src.engine.trader.runtime.pair_queue.execution import (
     order_evaluations_for_transition,
 )
 from src.engine.trader.runtime.pair_validity.models import PairValiditySnapshot
-from src.engine.trader.runtime.pre_trade_risk import PreTradeRiskPolicy
+from src.engine.trader.runtime.risk import (
+    PreTradeLiquiditySnapshot,
+    PreTradeRiskPolicy,
+    liquidity_snapshot_from_candles,
+)
 from src.engine.trader.runtime.signal_transition import (
     determine_action,
     route_signal_transition,
@@ -35,6 +39,7 @@ class PairTickEvaluation:
     lookback_bars: int
     result: Any
     action: str
+    liquidity_snapshot: PreTradeLiquiditySnapshot | None
 
 
 async def execute_tick(
@@ -71,6 +76,7 @@ async def execute_tick(
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            pre_trade_risk_policy=pre_trade_risk_policy,
         )
         if evaluation is not None:
             evaluations.append(evaluation)
@@ -113,6 +119,7 @@ async def execute_tick(
             allow_new_entry=allow_new_entry,
             entry_block_reasons=decision.block_reasons if decision is not None else None,
             pre_trade_risk_policy=pre_trade_risk_policy,
+            pre_trade_liquidity_snapshot=evaluation.liquidity_snapshot,
         )
     _snapshot_tick_equity(state, pair_prices)
 
@@ -126,11 +133,21 @@ async def _evaluate_pair_tick(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    pre_trade_risk_policy: PreTradeRiskPolicy | None,
 ) -> PairTickEvaluation | None:
     pair_label = f"{pair['Asset_X']}|{pair['Asset_Y']}"
     df_a, df_b = await _fetch_pair_candles(pair, timeframe, exchange_id, api_key, api_secret)
     if df_a is None or df_b is None:
         return None
+    liquidity_snapshot = (
+        liquidity_snapshot_from_candles(
+            df_a,
+            df_b,
+            lookback_bars=pre_trade_risk_policy.liquidity_lookback_bars,
+        )
+        if pre_trade_risk_policy is not None
+        else None
+    )
 
     current_pos = state.get_position_for_pair(pair_label)
     current_side = current_pos["side"] if current_pos else None
@@ -164,6 +181,7 @@ async def _evaluate_pair_tick(
         lookback_bars=best_params["lookback_bars"],
         result=result,
         action=action,
+        liquidity_snapshot=liquidity_snapshot,
     )
 
 

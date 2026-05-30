@@ -22,7 +22,7 @@ from src.engine.trader.runtime.monitoring.run_status import (
 )
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
 from src.engine.trader.runtime.pair_validity import PairValidityConfig, build_pair_validity_report
-from src.engine.trader.runtime.pre_trade_risk import pre_trade_policy_from_config
+from src.engine.trader.runtime.risk import pre_trade_policy_from_config
 from src.engine.trader.runtime.artifacts import load_tier1_pairs, promoted_pair_artifact_path
 from src.engine.trader.runtime.scheduler import seconds_until_next_candle
 from src.engine.trader.runtime.tick import execute_tick
