@@ -123,7 +123,8 @@ The platform should treat these as separate concerns:
 
 - **Artifact/data age**: wall-clock time and bars elapsed since the research
   input window ended, since the candidate artifact was generated, and since the
-  artifact was promoted.
+  artifact was promoted. Persisted local OHLCV freshness is also bounded
+  against the current wall clock through typed pair-validity policy.
 - **Statistical drift**: changes in hedge ratio, spread mean/std, correlation,
   cointegration p-value, half-life, and z-score distribution when measured on a
   recent rolling window versus the research window.
@@ -150,7 +151,8 @@ promoted artifact
 The refresh command uses readonly credentials, fetches only market data for
 symbols in the promoted artifact, and writes local parquet. It does not write a
 new promoted artifact, automate promotion, hot-reload execution, submit orders,
-or force-close positions.
+or force-close positions. Pagination continues until the requested closed-candle
+boundary, and incomplete refresh windows are surfaced explicitly.
 
 Later Telegram visibility may surface the same diagnostics. Later entry gating
 may block new entries for pairs whose quantified diagnostics exceed configured

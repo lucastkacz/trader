@@ -100,6 +100,73 @@ async def test_refresh_promoted_pair_data_fetches_unique_artifact_symbols(tmp_pa
     assert {result.status for result in report.results} == {"REFRESHED"}
 
 
+@pytest.mark.asyncio
+async def test_refresh_symbol_continues_after_partial_page_before_closed_candle_end(tmp_path):
+    storage = ParquetStorage(str(tmp_path / "parquet"))
+    calls = []
+    pages = [
+        _ohlcv("2026-05-18T00:00:00Z", periods=3),
+        _ohlcv("2026-05-18T00:03:00Z", periods=2),
+        _ohlcv("2026-05-18T00:05:00Z", periods=2),
+    ]
+
+    async def fake_fetch_klines(**kwargs):
+        calls.append(kwargs)
+        return pages[len(calls) - 1]
+
+    result = await refresh_symbol_market_data(
+        storage=storage,
+        exchange=object(),
+        exchange_id="bybit",
+        symbol="AAA/USDT",
+        timeframe="1m",
+        policy=PairDataRefreshPolicy(
+            overlap_bars=0,
+            missing_lookback_bars=7,
+            fetch_limit=3,
+        ),
+        fetch_klines=fake_fetch_klines,
+        end_ms=_ms("2026-05-18T00:06:00Z"),
+    )
+
+    assert result.status == "REFRESHED"
+    assert result.after_latest_at == "2026-05-18T00:06:00+00:00"
+    assert result.fetched_bars == 7
+    assert len(calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_refresh_symbol_labels_incomplete_window_honestly(tmp_path):
+    storage = ParquetStorage(str(tmp_path / "parquet"))
+    pages = [
+        _ohlcv("2026-05-18T00:00:00Z", periods=2),
+        pd.DataFrame(),
+    ]
+
+    async def fake_fetch_klines(**kwargs):
+        return pages.pop(0)
+
+    result = await refresh_symbol_market_data(
+        storage=storage,
+        exchange=object(),
+        exchange_id="bybit",
+        symbol="AAA/USDT",
+        timeframe="1m",
+        policy=PairDataRefreshPolicy(
+            overlap_bars=0,
+            missing_lookback_bars=5,
+            fetch_limit=3,
+        ),
+        fetch_klines=fake_fetch_klines,
+        end_ms=_ms("2026-05-18T00:04:00Z"),
+    )
+
+    metadata = storage.read_metadata("AAA/USDT", "1m", exchange="bybit")
+    assert result.status == "INCOMPLETE"
+    assert result.notes == ["local_data_older_than_closed_candle_end"]
+    assert metadata["refresh_status"] == "INCOMPLETE"
+
+
 def test_pair_data_refresh_policy_rejects_invalid_values():
     with pytest.raises(ValueError, match="overlap_bars"):
         PairDataRefreshPolicy(overlap_bars=-1, missing_lookback_bars=10, fetch_limit=100)

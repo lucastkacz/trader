@@ -153,6 +153,8 @@ async def refresh_symbol_market_data(
         end_ms=end_ms,
     )
     if fetched.empty:
+        if before_latest_ms is not None and before_latest_ms < end_ms:
+            notes.append("local_data_older_than_closed_candle_end")
         return _result(
             symbol=symbol,
             status="NO_NEW_DATA",
@@ -166,6 +168,11 @@ async def refresh_symbol_market_data(
         )
 
     merged = _merge_ohlcv(existing, fetched)
+    after_latest_ms = _latest_timestamp_ms(merged)
+    refresh_status = "REFRESHED"
+    if after_latest_ms is not None and after_latest_ms < end_ms:
+        refresh_status = "INCOMPLETE"
+        notes.append("local_data_older_than_closed_candle_end")
     metadata = _refresh_metadata(
         storage=storage,
         symbol=symbol,
@@ -174,13 +181,13 @@ async def refresh_symbol_market_data(
         rows=len(merged),
         first_ms=int(merged["timestamp"].min()),
         refreshed_until_ms=int(merged["timestamp"].max()),
+        refresh_status=refresh_status,
         policy=policy,
     )
     storage.save_ohlcv(symbol, timeframe, merged, metadata, exchange=exchange_id)
-    after_latest_ms = _latest_timestamp_ms(merged)
     return _result(
         symbol=symbol,
-        status="REFRESHED",
+        status=refresh_status,
         before_latest_ms=before_latest_ms,
         after_latest_ms=after_latest_ms,
         fetched_bars=len(fetched),
@@ -223,8 +230,6 @@ async def _fetch_window(
         if next_since <= current_since:
             break
         current_since = next_since
-        if len(normalized) < policy.fetch_limit:
-            break
     if not frames:
         return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
     return _merge_ohlcv(pd.DataFrame(), pd.concat(frames, ignore_index=True))
@@ -306,6 +311,7 @@ def _refresh_metadata(
     rows: int,
     first_ms: int,
     refreshed_until_ms: int,
+    refresh_status: str,
     policy: PairDataRefreshPolicy,
 ) -> dict[str, str]:
     existing = storage.read_metadata(symbol, timeframe, exchange=exchange_id)
@@ -314,7 +320,7 @@ def _refresh_metadata(
         "source": exchange_id,
         "timeframe": timeframe,
         "status": existing.get("status") or "REFRESHED",
-        "refresh_status": "REFRESHED",
+        "refresh_status": refresh_status,
         "total_candles": str(rows),
         "last_ts": str(refreshed_until_ms),
         "last_refresh_at": _utc_now().isoformat(),

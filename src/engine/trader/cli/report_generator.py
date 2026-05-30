@@ -82,8 +82,14 @@ def main() -> None:
     parser.add_argument(
         "--pair-validity-min-bars",
         type=int,
-        default=30,
+        default=None,
         help="Minimum recent bars required before drift diagnostics are trusted",
+    )
+    parser.add_argument(
+        "--max-latest-data-age-bars",
+        type=int,
+        default=None,
+        help="Flag persisted market data older than this many timeframe bars",
     )
     parser.add_argument(
         "--open-position-review-half-life-multiple",
@@ -105,7 +111,7 @@ def main() -> None:
             min_sharpe=report_inputs["min_sharpe"],
             surviving_pairs_path=report_inputs["surviving_pairs_path"],
             market_data_base_dir=report_inputs["market_data_base_dir"],
-            pair_validity_config=_pair_validity_config(args),
+            pair_validity_config=report_inputs["pair_validity_config"],
             pair_queue_policy=report_inputs["pair_queue_policy"],
             pair_queue_enabled=report_inputs["pair_queue_enabled"],
         )
@@ -143,14 +149,33 @@ def main() -> None:
         state.close()
 
 
-def _pair_validity_config(args: argparse.Namespace) -> PairValidityConfig | None:
+def _pair_validity_config(args: argparse.Namespace, pipeline_cfg) -> PairValidityConfig | None:
     if args.market_data_base_dir is None and args.pipeline is None:
         return None
+    configured = pipeline_cfg.execution.pair_validity if pipeline_cfg is not None else None
     return PairValidityConfig(
-        recent_window_bars=args.pair_validity_window_bars,
-        min_recent_bars=args.pair_validity_min_bars,
+        recent_window_bars=(
+            args.pair_validity_window_bars
+            if args.pair_validity_window_bars is not None
+            else configured.recent_window_bars if configured is not None else None
+        ),
+        min_recent_bars=(
+            args.pair_validity_min_bars
+            if args.pair_validity_min_bars is not None
+            else configured.min_recent_bars if configured is not None else 30
+        ),
+        max_latest_data_age_bars=(
+            args.max_latest_data_age_bars
+            if args.max_latest_data_age_bars is not None
+            else configured.max_latest_data_age_bars if configured is not None else None
+        ),
         open_position_review_half_life_multiple=(
             args.open_position_review_half_life_multiple
+            if args.open_position_review_half_life_multiple is not None
+            else (
+                configured.open_position_review_half_life_multiple
+                if configured is not None else None
+            )
         ),
     )
 
@@ -200,6 +225,7 @@ def _resolve_report_inputs(args: argparse.Namespace) -> dict[str, object]:
         "min_sharpe": min_sharpe,
         "surviving_pairs_path": surviving_pairs_path,
         "market_data_base_dir": market_data_base_dir,
+        "pair_validity_config": _pair_validity_config(args, pipeline_cfg),
         "pair_queue_enabled": pair_queue_enabled,
         "pair_queue_policy": pair_queue_policy,
     }

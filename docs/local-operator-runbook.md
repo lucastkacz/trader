@@ -188,7 +188,8 @@ under natural exit unless a separate explicit operator command is issued.
 Refresh local parquet data for symbols in the promoted pair artifact before
 using pair-validity diagnostics. This is a readonly market-data operation and
 does not promote artifacts, hot-reload execution, submit orders, or close
-positions.
+positions. Treat any `INCOMPLETE` refresh result as a stop-and-investigate
+event before starting an observer.
 
 ```bash
 .venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
@@ -205,8 +206,13 @@ Human-readable report:
   --pipeline configs/pipelines/dev.yml \
   --pair-validity-window-bars 240 \
   --pair-validity-min-bars 60 \
+  --max-latest-data-age-bars 5 \
   --open-position-review-half-life-multiple 3
 ```
+
+When `--pipeline` is supplied, pair-validity settings default to the typed
+`execution.pair_validity` policy. The flags above are explicit operator
+overrides for review or calibration.
 
 When pair-validity diagnostics are enabled, the report also includes the dynamic
 pair queue. This queue ranks promoted pairs for future entries using the
@@ -223,6 +229,7 @@ Automation-safe JSON report:
   --pipeline configs/pipelines/dev.yml \
   --pair-validity-window-bars 240 \
   --pair-validity-min-bars 60 \
+  --max-latest-data-age-bars 5 \
   --open-position-review-half-life-multiple 3 \
   --json
 ```

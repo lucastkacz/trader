@@ -34,6 +34,10 @@ def test_all_shipped_pipeline_configs_declare_pair_validity_policy():
     assert {cfg.execution.pair_validity.recent_window_bars for cfg in parsed} == {240}
     assert {cfg.execution.pair_validity.min_recent_bars for cfg in parsed} == {60}
     assert {
+        cfg.execution.pair_validity.max_latest_data_age_bars
+        for cfg in parsed
+    } == {2, 5}
+    assert {
         cfg.execution.pair_validity.open_position_review_half_life_multiple
         for cfg in parsed
     } == {3.0}
@@ -46,6 +50,10 @@ def test_all_shipped_pipeline_configs_declare_pair_validity_policy():
         (("execution", "pair_validity"), "pair_validity"),
         (("execution", "pair_validity", "recent_window_bars"), "recent_window_bars"),
         (("execution", "pair_validity", "min_recent_bars"), "min_recent_bars"),
+        (
+            ("execution", "pair_validity", "max_latest_data_age_bars"),
+            "max_latest_data_age_bars",
+        ),
         (
             ("execution", "pair_validity", "open_position_review_half_life_multiple"),
             "open_position_review_half_life_multiple",

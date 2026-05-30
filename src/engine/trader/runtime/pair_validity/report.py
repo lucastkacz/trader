@@ -142,8 +142,16 @@ def _build_pair_snapshot(
     )
     if market is None:
         notes.append("missing_recent_market_data")
+        operator_review_reasons.append("missing_recent_market_data")
 
     latest_data_at = None if market is None else latest_timestamp(market)
+    latest_data_age_bars = bars_between(latest_data_at, now, timeframe)
+    if (
+        latest_data_age_bars is not None
+        and config.max_latest_data_age_bars is not None
+        and latest_data_age_bars > config.max_latest_data_age_bars
+    ):
+        operator_review_reasons.append("market_data_older_than_latest_age_limit")
     if latest_data_at is not None and latest_data_at < artifact_generated_at:
         operator_review_reasons.append("market_data_older_than_artifact_generation")
     if (

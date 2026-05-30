@@ -33,6 +33,7 @@ pipeline:
     pair_validity:
       recent_window_bars: 240
       min_recent_bars: 60
+      max_latest_data_age_bars: 2
       open_position_review_half_life_multiple: 3.0
     pair_queue:
       enabled: true

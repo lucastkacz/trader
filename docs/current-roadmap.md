@@ -216,13 +216,24 @@ Fresh-start drill completed:
 - The longer drill exposed rate-limit/network stalls in readonly Bybit fetches
   and stale shutdown status: `runtime_state.observer_run` remained `RUNNING`
   after SIGTERM even though the trader closed its database connection cleanly.
+- A follow-up stabilization drill on 2026-05-30 exposed and fixed premature
+  readonly refresh pagination plus missing wall-clock freshness gating for
+  persisted local OHLCV.
+- The corrected refresh advanced all 5 promoted symbols from
+  `2026-05-30T01:20:00+00:00` through the expected closed candle
+  `2026-05-30T23:22:00+00:00`.
+- A bounded 5-tick state-only observer then completed naturally with
+  `observer_run.status = COMPLETED_MAX_TICKS`, 0 open positions, and 0
+  non-null exchange/client order ids.
 
 Already available locally:
 
 - Report CLI computes read-only pair validity diagnostics from the promoted
   artifact, refreshed local parquet data, and persisted runtime state.
 - Refresh CLI fetches/appends recent OHLCV only for symbols in the promoted
-  artifact, using readonly credentials and local parquet writes.
+  artifact, using readonly credentials and local parquet writes. Pagination
+  continues through the requested closed-candle boundary and reports
+  incomplete windows explicitly.
 - Diagnostics include artifact/data age in bars and time, hedge-ratio drift,
   correlation drift, cointegration drift, half-life drift, execution behavior,
   and explicit review reasons such as stale market data or an open position
@@ -262,7 +273,8 @@ Already available locally:
   allocation caps. `null` means intentionally unlimited for caps and optional
   thresholds.
 - Pipeline config now declares explicit `execution.pair_validity` diagnostics
-  policy used by execution-time queue consumption.
+  policy used by execution-time queue consumption, including a maximum
+  wall-clock age in timeframe bars for persisted local OHLCV.
 - Fresh research candidate artifacts now carry baseline fields needed for
   validity diagnostics: research window start/end/bars, baseline correlation,
   canonical spread mean/std, and z-score distribution stats. Stress filtering
@@ -281,8 +293,9 @@ Current local assumption:
 - Pair queue mode remains `future_entries`.
 - The current local DB contains 4 closed dummy state-only positions and 0 open
   positions after the local command/reconciliation drill.
-- The historical pre-fix `observer_run.status = RUNNING` marker remains
-  intentionally unchanged and surfaces read-only as `STALE_RUN_MARKER`.
+- The historical pre-fix stale marker was replaced naturally by the successful
+  bounded drill: `observer_run.status = COMPLETED_MAX_TICKS`,
+  `completed_ticks = 5`, and `open_position_ids = []`.
 - Queue-driven entry blocking is visible in reports and must remain limited to
   future entries.
 - Existing positions must continue natural-exit evaluation.
@@ -294,8 +307,9 @@ Required next behavior:
 - Emit operator-visible block reasons for every pre-trade rejection.
 - Preserve natural exit: risk and slot limits may block future entries, but
   must not force-close or rebalance existing positions.
-- Run a bounded state-only observation drill against the stabilized runtime
-  contracts before simulator work.
+- Decide and test the readonly reconciliation snapshot-provider boundary before
+  simulator work; `SKIPPED_NO_SNAPSHOT_PROVIDER` remains visible as a health
+  warning.
 - Keep pair-validity threshold tuning separate from capital sizing.
 - Defer simulator implementation until capital slots and pre-trade risk gates
   are stable enough to be durable runtime behavior.

@@ -54,6 +54,7 @@ class PairRefreshConfig(StrictConfigModel):
 class PairValidityDiagnosticsConfig(StrictConfigModel):
     recent_window_bars: int | None = Field(gt=0)
     min_recent_bars: int = Field(gt=0)
+    max_latest_data_age_bars: int | None = Field(gt=0)
     open_position_review_half_life_multiple: float | None = Field(gt=0)
 
     def to_runtime_config_kwargs(self) -> dict[str, object]:
@@ -61,6 +62,7 @@ class PairValidityDiagnosticsConfig(StrictConfigModel):
         return {
             "recent_window_bars": self.recent_window_bars,
             "min_recent_bars": self.min_recent_bars,
+            "max_latest_data_age_bars": self.max_latest_data_age_bars,
             "open_position_review_half_life_multiple": (
                 self.open_position_review_half_life_multiple
             ),

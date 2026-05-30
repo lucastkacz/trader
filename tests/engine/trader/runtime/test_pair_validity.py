@@ -33,6 +33,7 @@ def test_pair_validity_computes_recent_drift_and_artifact_age(tmp_path):
             config=PairValidityConfig(
                 recent_window_bars=120,
                 min_recent_bars=60,
+                max_latest_data_age_bars=None,
                 open_position_review_half_life_multiple=None,
             ),
             now=datetime(2026, 5, 18, 3, 0, tzinfo=timezone.utc),
@@ -81,6 +82,7 @@ def test_pair_validity_uses_research_baseline_fields_when_present(tmp_path):
             config=PairValidityConfig(
                 recent_window_bars=120,
                 min_recent_bars=60,
+                max_latest_data_age_bars=None,
                 open_position_review_half_life_multiple=None,
             ),
             now=datetime(2026, 5, 18, 3, 0, tzinfo=timezone.utc),
@@ -113,6 +115,7 @@ def test_pair_validity_records_missing_market_data_without_mutation(tmp_path):
             config=PairValidityConfig(
                 recent_window_bars=60,
                 min_recent_bars=30,
+                max_latest_data_age_bars=None,
                 open_position_review_half_life_multiple=None,
             ),
             now=datetime(2026, 5, 18, 3, 0, tzinfo=timezone.utc),
@@ -125,6 +128,36 @@ def test_pair_validity_records_missing_market_data_without_mutation(tmp_path):
     assert snapshot.recent_observation_bars == 0
     assert snapshot.recent_hedge_ratio is None
     assert "missing_recent_market_data" in snapshot.notes
+    assert "missing_recent_market_data" in snapshot.operator_review_reasons
+
+
+def test_pair_validity_flags_market_data_older_than_latest_age_limit(tmp_path):
+    artifact_path = _write_artifact(tmp_path)
+    storage = ParquetStorage(base_dir=str(tmp_path / "parquet"))
+    frame_x, frame_y = _cointegrated_ohlcv_frames(periods=180)
+    storage.save_ohlcv("AAA/USDT", "1m", frame_x, {}, exchange="bybit")
+    storage.save_ohlcv("BBB/USDT", "1m", frame_y, {}, exchange="bybit")
+    state = TradeStateManager(db_path=":memory:")
+
+    try:
+        report = build_pair_validity_report(
+            surviving_pairs_path=artifact_path,
+            market_data_base_dir=tmp_path / "parquet",
+            state=state,
+            config=PairValidityConfig(
+                recent_window_bars=60,
+                min_recent_bars=30,
+                max_latest_data_age_bars=5,
+                open_position_review_half_life_multiple=None,
+            ),
+            now=datetime(2026, 5, 18, 3, 10, tzinfo=timezone.utc),
+        )
+    finally:
+        state.close()
+
+    assert "market_data_older_than_latest_age_limit" in (
+        report.snapshots[0].operator_review_reasons
+    )
 
 
 def test_open_position_half_life_review_reason_does_not_close_position(tmp_path):
@@ -163,6 +196,7 @@ def test_open_position_half_life_review_reason_does_not_close_position(tmp_path)
             config=PairValidityConfig(
                 recent_window_bars=60,
                 min_recent_bars=30,
+                max_latest_data_age_bars=None,
                 open_position_review_half_life_multiple=2.0,
             ),
             now=datetime(2026, 5, 18, 3, 0, tzinfo=timezone.utc),
@@ -216,6 +250,7 @@ def test_pair_validity_flags_market_data_older_than_artifact_and_position(tmp_pa
             config=PairValidityConfig(
                 recent_window_bars=60,
                 min_recent_bars=30,
+                max_latest_data_age_bars=None,
                 open_position_review_half_life_multiple=3.0,
             ),
             now=datetime(2026, 5, 18, 3, 30, tzinfo=timezone.utc),
@@ -257,6 +292,7 @@ def test_pair_validity_optional_builder_returns_unavailable_report_on_failure(tm
             config=PairValidityConfig(
                 recent_window_bars=60,
                 min_recent_bars=30,
+                max_latest_data_age_bars=None,
                 open_position_review_half_life_multiple=None,
             ),
         )

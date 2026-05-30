@@ -9,6 +9,7 @@ class PairValidityConfig:
 
     recent_window_bars: int | None
     min_recent_bars: int
+    max_latest_data_age_bars: int | None
     open_position_review_half_life_multiple: float | None
 
     def __post_init__(self) -> None:
@@ -16,6 +17,11 @@ class PairValidityConfig:
             raise ValueError("recent_window_bars must be positive when provided")
         if self.min_recent_bars <= 0:
             raise ValueError("min_recent_bars must be positive")
+        if (
+            self.max_latest_data_age_bars is not None
+            and self.max_latest_data_age_bars <= 0
+        ):
+            raise ValueError("max_latest_data_age_bars must be positive when provided")
         if (
             self.open_position_review_half_life_multiple is not None
             and self.open_position_review_half_life_multiple <= 0
@@ -90,4 +96,3 @@ class PairValidityReport:
     pair_count: int
     snapshots: list[PairValiditySnapshot]
     notes: list[str] = field(default_factory=list)
-

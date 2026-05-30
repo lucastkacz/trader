@@ -65,7 +65,8 @@ to origin/main. This branch was created from that updated main.
 
 Known uncommitted/untracked work carried onto this branch:
 
-- None at branch creation.
+- User-owned `TODO` edits are present locally. Preserve them and exclude them
+  from stabilization commits.
 
 ## Current Verified State
 
@@ -99,7 +100,7 @@ Latest local verification after the current uncommitted slices:
 
 ```text
 .venv/bin/python -m pytest -q
-322 passed, 3 deselected
+328 passed, 3 deselected
 
 .venv/bin/ruff check src tests
 All checks passed!
@@ -119,13 +120,72 @@ Implications:
 - The dummy dev DB was intentionally manipulated after operator approval during
   the local command/reconciliation drill. It now has 4 closed state-only
   positions, 0 open positions, and 0 exchange/client order ids.
-- Current local `runtime_state.observer_run` still contains the historical
-  pre-fix stale marker from the interrupted drill:
-  `status = RUNNING`, `max_ticks = 180`, `completed_ticks = 0`,
+- Current local `runtime_state.observer_run` was naturally replaced by the
+  successful bounded drill marker:
+  `status = COMPLETED_MAX_TICKS`, `max_ticks = 5`, `completed_ticks = 5`,
   `open_position_ids = []`.
 - Old open-position notes from before deletion remain stale.
 - Future fresh-start drills should still recreate state through supported CLI
   flows, not manual file edits.
+
+## Latest Implementation Slice: Readonly Refresh And Freshness Gating
+
+Completed locally on 2026-05-30 from branch
+`local-trader-operator-run-state-status`.
+
+The pre-run readonly refresh exposed a bounded safety issue:
+
+- All 5 promoted symbols stopped at `2026-05-30T01:20:00+00:00` even though
+  the refresh ran at `2026-05-30T23:17:37+00:00`.
+- The report still showed no pair-validity review reasons and queue decisions
+  still allowed future entries.
+
+Code changes:
+
+- Readonly refresh pagination now continues after a short page while the
+  requested closed-candle boundary has not been reached.
+- Refresh results report `INCOMPLETE` with
+  `local_data_older_than_closed_candle_end` when persisted data still ends
+  before that boundary.
+- Typed `execution.pair_validity.max_latest_data_age_bars` policy now gates
+  persisted local OHLCV freshness against the wall clock.
+- Missing local OHLCV is also an operator-review reason.
+- Pipeline-backed report generation now inherits the typed pair-validity
+  policy by default while preserving explicit CLI overrides.
+
+Verification:
+
+```text
+.venv/bin/python -m pytest -q
+328 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+Readonly refresh proof:
+
+- All 5 promoted symbols advanced from `2026-05-30T01:20:00+00:00` to the
+  expected closed candle `2026-05-30T23:22:00+00:00`.
+- Every symbol reported `REFRESHED` with no notes.
+- The follow-up report showed no operator-review reasons for the 3 promoted
+  pairs and queue entry policy was open.
+
+Bounded state-only observer proof:
+
+- Preflight showed readonly credentials, `order_execution.mode = state_only`,
+  inactive kill switch, 4 closed dummy positions, 0 open positions, and 0
+  exchange/client order ids.
+- The 5-tick observer completed naturally with
+  `observer_run.status = COMPLETED_MAX_TICKS`, `completed_ticks = 5`, and
+  `open_position_ids = []`.
+- Typed operator status reported `CLEANLY_STOPPED_MAX_TICKS` and
+  `state_only_identifier_count = 0`.
+- Health remains `RECONCILIATION_WARNING` because boot reconciliation is
+  explicitly `SKIPPED_NO_SNAPSHOT_PROVIDER`; no reconciliation deltas were
+  recorded and no actions were taken.
+- Post-run process checks showed no trader, observer, Prefect, `caffeinate`, or
+  Telegram bot process.
 
 ## Latest Implementation Slice: Runtime State And Capital Slots
 
@@ -712,12 +772,14 @@ Reports:
   --pipeline configs/pipelines/dev.yml \
   --pair-validity-window-bars 240 \
   --pair-validity-min-bars 60 \
+  --max-latest-data-age-bars 5 \
   --open-position-review-half-life-multiple 3
 
 .venv/bin/python -m src.engine.trader.cli.report_generator \
   --pipeline configs/pipelines/dev.yml \
   --pair-validity-window-bars 240 \
   --pair-validity-min-bars 60 \
+  --max-latest-data-age-bars 5 \
   --open-position-review-half-life-multiple 3 \
   --json
 ```
@@ -1078,14 +1140,12 @@ Any non-zero exchange/client order id count is a stop-and-investigate event.
 
 Do this before simulator implementation:
 
-1. Run a bounded state-only observer drill against the stabilized runtime:
-   - readonly OHLCV timeout/retry behavior
-   - honest observer run-state status
-   - zero exchange/client order ids
-   - read-only reconciliation visibility
-2. Calibrate pair-validity queue thresholds after the remaining runtime
-   stabilization behavior is durable.
-3. Only then start simulator Phase 1.
+1. Calibrate pair-validity queue thresholds now that readonly refresh
+   pagination and wall-clock freshness gating are durable.
+2. Decide and test the readonly reconciliation snapshot-provider boundary;
+   `SKIPPED_NO_SNAPSHOT_PROVIDER` remains an honest health warning.
+3. Review the remaining stabilization gates, then start simulator Phase 1 only
+   when the local trader contract is stable.
 
 ## Simulator Boundary
 
