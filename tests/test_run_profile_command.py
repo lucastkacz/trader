@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 
 import pytest
@@ -68,3 +69,31 @@ async def test_execute_command_applies_bounded_runtime_overrides(monkeypatch):
 def test_execute_command_bounds_must_be_positive():
     with pytest.raises(argparse.ArgumentTypeError):
         main._positive_int("0")
+
+
+@pytest.mark.asyncio
+async def test_main_risk_kill_switch_command_inspects_state(tmp_path, monkeypatch, capsys):
+    db_path = tmp_path / "trades.db"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "main.py",
+            "risk-kill-switch",
+            "--db-path",
+            str(db_path),
+            "--json",
+            "inspect",
+        ],
+    )
+
+    await main.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["action"] == "inspect"
+    assert payload["db_path"] == str(db_path)
+    assert payload["state"] == {
+        "active": False,
+        "reason": None,
+        "activated_at": None,
+    }

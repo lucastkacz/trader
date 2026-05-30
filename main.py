@@ -14,6 +14,11 @@ from src.engine.trader.cli.promote_pairs import (
     add_promote_pairs_parser,
     promote_pairs_from_args,
 )
+from src.engine.trader.cli.risk_kill_switch import (
+    add_risk_kill_switch_parser,
+    print_risk_kill_switch_result,
+    risk_kill_switch_from_args,
+)
 from src.pipeline.master_flow import research_flow, execute_flow
 
 async def main():
@@ -43,6 +48,9 @@ async def main():
 
     # --- PROMOTION COMMAND ---
     add_promote_pairs_parser(subparsers)
+
+    # --- RISK KILL SWITCH COMMAND ---
+    add_risk_kill_switch_parser(subparsers)
 
     args = parser.parse_args()
 
@@ -96,6 +104,10 @@ async def main():
         result = promote_pairs_from_args(args)
         print(f"Promoted artifact: {result.promoted_path}")
         print(f"Promotion audit: {result.audit_path}")
+
+    elif args.command == "risk-kill-switch":
+        result = risk_kill_switch_from_args(args)
+        print_risk_kill_switch_result(result, as_json=args.json)
         
     else:
         parser.print_help()

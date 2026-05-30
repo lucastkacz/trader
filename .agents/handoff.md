@@ -1,6 +1,6 @@
 # Handoff: Local Trader Stabilization
 
-Updated: 2026-05-29
+Updated: 2026-05-30
 
 ## Purpose
 
@@ -49,18 +49,18 @@ Preserve these terms:
 
 ## Branch And Working Tree
 
-Current branch for this kill-switch risk-gate work:
+Current branch for operator kill-switch control work:
 
 ```text
-local-trader-kill-switch-risk-gate
+local-trader-operator-kill-switch-control
 ```
 
 Baseline before this branch:
 
 ```text
-local-trader-liquidity-risk-gates was committed at 3aa42893
-(`Add liquidity pre-trade risk gate`), then this branch was created from that
-commit.
+main was updated by merging local-trader-kill-switch-risk-gate at merge commit
+6e86815d (`Merge local trader kill-switch risk gate`) and pushed to
+origin/main. This branch was created from that updated main.
 ```
 
 Known uncommitted/untracked work carried onto this branch:
@@ -73,13 +73,19 @@ Latest offline verification:
 
 ```text
 .venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_signal_transition.py -q
-25 passed
+25 passed before this operator-control slice
 
 .venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk -q
-185 passed
+185 passed before this operator-control slice
+
+.venv/bin/python -m pytest tests/engine/trader/test_risk_kill_switch_cli.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_blocks_new_entry_without_opening_position tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_blocks_flip_replacement_but_preserves_close tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_does_not_prevent_existing_position_natural_exit tests/test_run_profile_command.py -q
+16 passed
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk tests/engine/trader/test_risk_kill_switch_cli.py tests/test_run_profile_command.py -q
+194 passed
 
 .venv/bin/python -m pytest -q
-294 passed, 3 deselected
+300 passed, 3 deselected
 ```
 
 Latest lint verification:
@@ -426,6 +432,107 @@ Verification so far:
 
 .venv/bin/ruff check src tests
 All checks passed!
+```
+
+## Latest Implementation Slice: Operator Risk Kill-Switch Control
+
+Completed on 2026-05-30 from branch
+`local-trader-operator-kill-switch-control`.
+
+Preflight:
+
+- Confirmed `local-trader-kill-switch-risk-gate` existed at
+  `e3fe52a8` (`Add risk kill-switch entry gate`) and contained the completed
+  durable risk entry-gate work.
+- Switched to `main`, fetched `origin`, and confirmed there were no remote-only
+  commits. Local `main` was ahead of `origin/main` by the runtime-state
+  hardening commits.
+- Merged `local-trader-kill-switch-risk-gate` into `main` with merge commit
+  `6e86815d` (`Merge local trader kill-switch risk gate`) and pushed
+  `origin/main` from `a070c76e` to `6e86815d`.
+- Created `local-trader-operator-kill-switch-control` from updated `main`.
+- Launchd observer service `com.quant.dev-state-only-observer` was not loaded.
+- Launchd dev Telegram daemon `com.quant.dev-telegram-daemon` was not loaded.
+- Process scan showed no local trader, observer, Prefect, Telegram bot, or
+  `caffeinate` process. Only VS Code Python tooling and Telegram Desktop
+  crash-handler processes matched the broad search terms.
+
+Code changes:
+
+- Added `src/engine/trader/cli/risk_kill_switch.py` as the operator CLI for
+  durable runtime risk kill-switch control.
+- The CLI supports:
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
+  --pipeline configs/pipelines/dev.yml \
+  inspect
+
+.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
+  --pipeline configs/pipelines/dev.yml \
+  activate \
+  --reason "operator review"
+
+.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
+  --pipeline configs/pipelines/dev.yml \
+  clear
+```
+
+- `--db-path` can be used instead of `--pipeline`; when both are supplied,
+  the explicit DB path wins.
+- `--json` provides automation-safe inspect/command output.
+- `main.py risk-kill-switch` exposes the same control path through the
+  top-level operational CLI.
+- CLI call sites use the typed runtime risk helper functions:
+  `get_risk_kill_switch_state`, `activate_risk_kill_switch`, and
+  `clear_risk_kill_switch`. They do not read or mutate raw runtime-state
+  dictionaries.
+- The slice is state-only. It does not submit, cancel, modify, rebalance,
+  force-close, hot-reload, promote artifacts, or increase capital exposure.
+
+Behavior tests added:
+
+- CLI activation persists an active durable switch with an operator-visible
+  reason.
+- CLI clear persists an inactive switch.
+- CLI inspect returns the current typed state, including JSON output.
+- Malformed durable runtime payloads inspect as inactive.
+- Pipeline config resolution uses typed pipeline config to locate the runtime
+  SQLite DB.
+- The top-level `main.py risk-kill-switch` command is wired and returns JSON
+  inspect output.
+- Existing runtime tests still cover active switch blocking new entries and
+  flip replacement entries while preserving natural exits.
+
+Verification:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/test_risk_kill_switch_cli.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_blocks_new_entry_without_opening_position tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_blocks_flip_replacement_but_preserves_close tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_does_not_prevent_existing_position_natural_exit tests/test_run_profile_command.py -q
+16 passed
+
+.venv/bin/ruff check src tests
+All checks passed!
+
+.venv/bin/python -m pytest tests/engine/trader/runtime tests/engine/trader/state tests/engine/trader/reporting tests/engine/trader/config tests/risk tests/engine/trader/test_risk_kill_switch_cli.py tests/test_run_profile_command.py -q
+194 passed
+
+.venv/bin/python -m pytest -q
+300 passed, 3 deselected
+```
+
+Read-only local dev DB inspect after the slice:
+
+```text
+.venv/bin/python -m src.engine.trader.cli.risk_kill_switch --pipeline configs/pipelines/dev.yml --json inspect
+{
+  "action": "inspect",
+  "db_path": "data/dev/trades_1m.db",
+  "state": {
+    "active": false,
+    "reason": null,
+    "activated_at": null
+  }
+}
 ```
 
 ## Fresh-Start Drill Results
