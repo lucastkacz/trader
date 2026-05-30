@@ -2,12 +2,13 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Local Pre-Trade Risk Gates
+## Now: Local Trader Stabilization Gates
 
 Goal:
 
 ```text
-make state-only entry decisions pass explicit pre-trade checks before building
+keep state-only execution behind explicit entry gates, durable operator
+controls, and observable run-state/reconciliation behavior before building
 synthetic replay around the trader
 ```
 
@@ -102,6 +103,29 @@ Kill-switch entry-gate slice completed on 2026-05-29:
   `185 passed`; `.venv/bin/python -m pytest -q` reported
   `294 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
 
+Operator kill-switch control slice completed on 2026-05-30:
+
+- Added an operator CLI for the durable runtime risk kill switch:
+  `src.engine.trader.cli.risk_kill_switch`.
+- The CLI supports `inspect`, `activate --reason ...`, and `clear` using
+  typed pipeline config or an explicit SQLite `--db-path`.
+- `main.py risk-kill-switch` now exposes the same control path through the
+  top-level operational CLI.
+- The control path uses typed runtime risk helpers instead of raw
+  `runtime_state` dictionaries at call sites.
+- Activating the switch remains state-only and blocks future entries through
+  the existing `risk_kill_switch_active` pre-trade reason. It does not submit,
+  cancel, modify, rebalance, force-close, hot-reload, promote artifacts, or
+  increase capital exposure.
+- Focused verification after this slice:
+  `.venv/bin/python -m pytest tests/engine/trader/test_risk_kill_switch_cli.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_blocks_new_entry_without_opening_position tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_blocks_flip_replacement_but_preserves_close tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_does_not_prevent_existing_position_natural_exit tests/test_run_profile_command.py -q`
+  reported `16 passed`; runtime/config/risk verification reported
+  `194 passed`; `.venv/bin/python -m pytest -q` reported
+  `300 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
+- Read-only local inspect after the slice:
+  `.venv/bin/python -m src.engine.trader.cli.risk_kill_switch --pipeline configs/pipelines/dev.yml --json inspect`
+  returned `active: false` for `data/dev/trades_1m.db`.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -180,6 +204,9 @@ Already available locally:
 - Runtime kill-switch entry state is explicit in SQLite `runtime_state` through
   typed runtime risk helpers. It blocks future exposure only and does not imply
   automatic liquidation.
+- Operator CLI controls can inspect, activate, and clear the durable runtime
+  kill switch through either `main.py risk-kill-switch` or
+  `python -m src.engine.trader.cli.risk_kill_switch`.
 - Pipeline config now declares explicit `execution.pair_queue` policy for
   queue behavior, scoring weights, validity thresholds, and
   allocation caps. `null` means intentionally unlimited for caps and optional
@@ -210,8 +237,6 @@ Current local assumption:
 
 Required next behavior:
 
-- Add an operator-facing path for setting and clearing the durable risk
-  kill-switch state.
 - Keep each gate explicit in typed config or runtime policy, not hidden
   constants.
 - Emit operator-visible block reasons for every pre-trade rejection.

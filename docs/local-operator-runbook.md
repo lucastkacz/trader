@@ -110,7 +110,61 @@ sqlite3 data/dev/trades_1m.db \
   'select id, status, started_at, finished_at from reconciliation_runs order by id;'
 ```
 
-## 5. Refresh Pair Data And Generate Validity Reports
+## 5. Control The Runtime Risk Kill Switch
+
+Use the durable risk kill switch when the operator wants to block future
+entries while preserving normal natural-exit handling for existing positions.
+This is a local SQLite runtime-state control. It does not submit, cancel,
+modify, rebalance, force-close, hot-reload, promote artifacts, or mutate
+exchange state.
+
+Inspect current state:
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
+  --pipeline configs/pipelines/dev.yml \
+  inspect
+```
+
+Automation-safe JSON inspect:
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
+  --pipeline configs/pipelines/dev.yml \
+  --json \
+  inspect
+```
+
+Activate the switch with an operator-visible reason:
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
+  --pipeline configs/pipelines/dev.yml \
+  activate \
+  --reason "operator review"
+```
+
+Clear the switch:
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
+  --pipeline configs/pipelines/dev.yml \
+  clear
+```
+
+The same control is available through the top-level CLI:
+
+```bash
+.venv/bin/python main.py risk-kill-switch \
+  --pipeline configs/pipelines/dev.yml \
+  inspect
+```
+
+When active, new entries and flip replacement entries are blocked with
+`risk_kill_switch_active`. Existing open state-only positions should continue
+under natural exit unless a separate explicit operator command is issued.
+
+## 6. Refresh Pair Data And Generate Validity Reports
 
 Refresh local parquet data for symbols in the promoted pair artifact before
 using pair-validity diagnostics. This is a readonly market-data operation and
@@ -168,7 +222,7 @@ For a cold local rebuild, run research and promotion before this section:
 After promotion, run the refresh and report commands above before starting a
 bounded execution observer.
 
-## 6. Confirm No Exchange Mutation Happened
+## 7. Confirm No Exchange Mutation Happened
 
 Any non-zero result here is a stop-and-investigate event:
 
@@ -180,7 +234,7 @@ sqlite3 data/dev/trades_1m.db \
 State-only runs should record local leg targets without exchange or client order
 ids.
 
-## 7. Telegram Command Drill
+## 8. Telegram Command Drill
 
 Use the dev Telegram config:
 
@@ -217,7 +271,7 @@ Send commands from the configured dev chat:
 Then inspect `user_commands` in SQLite. In state-only mode these commands mutate
 local runtime state only; they must not submit, cancel, or close exchange orders.
 
-## 8. Archive Local Data Before Clearing
+## 9. Archive Local Data Before Clearing
 
 Archive the current dev database and promoted artifact before a fresh drill:
 
