@@ -1,6 +1,7 @@
 """Markdown rendering for trader reports."""
 
 from src.engine.trader.reporting.models import TradeReport
+from src.engine.trader.runtime.pair_queue import PairQueueValidityThresholdEvidence
 
 
 def render_markdown(report: TradeReport) -> str:
@@ -119,21 +120,26 @@ def render_markdown(report: TradeReport) -> str:
         lines.append("## Dynamic Pair Queue\n")
         lines.append(
             "| Rank | Pair | Entry Allowed | Total | Research | Validity | "
-            "Opportunity | Blocks | Review |"
+            "Opportunity | Blocks | Review | Triggered Thresholds |"
         )
         lines.append(
             "|------|------|---------------|-------|----------|----------|"
-            "-------------|--------|--------|"
+            "-------------|--------|--------|----------------------|"
         )
         for decision in report.pair_queue.decisions:
             blocks = ", ".join(decision.block_reasons) if decision.block_reasons else "none"
             review = ", ".join(decision.review_reasons) if decision.review_reasons else "none"
+            thresholds = ", ".join(
+                _fmt_threshold_evidence(evidence)
+                for evidence in decision.validity_threshold_evidence
+                if evidence.triggered
+            ) or "none"
             lines.append(
                 f"| {decision.current_rank} | {decision.pair_label} | "
                 f"{'yes' if decision.entry_allowed else 'no'} | "
                 f"{decision.score_total:.3f} | {decision.score_research:.3f} | "
                 f"{decision.score_validity:.3f} | {decision.score_opportunity:.3f} | "
-                f"{blocks} | {review} |"
+                f"{blocks} | {review} | {thresholds} |"
             )
         lines.append("")
 
@@ -172,3 +178,10 @@ def _fmt_pair(recent: float | None, research: float | None) -> str:
     if research is None:
         return f"{recent:.3f}"
     return f"{recent:.3f}/{research:.3f}"
+
+
+def _fmt_threshold_evidence(evidence: PairQueueValidityThresholdEvidence) -> str:
+    return (
+        f"{evidence.metric}={evidence.measured_value:g} "
+        f"{evidence.trigger_condition} {evidence.configured_threshold:g}"
+    )

@@ -222,6 +222,11 @@ the same configured queue policy may block new entries only; it must not place
 orders by itself, hot-reload execution, promote artifacts, force-close, or
 rebalance positions.
 
+The JSON queue decisions include structured `validity_threshold_evidence` for
+each optional threshold. Use it during calibration to inspect the measurement,
+configured threshold, comparison operator, and whether the threshold is enabled
+or triggered. A `null` configured threshold is intentional and remains disabled.
+
 Automation-safe JSON report:
 
 ```bash

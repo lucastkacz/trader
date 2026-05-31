@@ -176,6 +176,20 @@ Local command/reconciliation drill completed on 2026-05-30:
   preserving `2` historical deltas.
 - Exchange/client order-id invariant remained `0`.
 
+Pair-validity queue calibration review completed on 2026-05-31:
+
+- A readonly refresh advanced all 5 promoted symbols through
+  `2026-05-31T08:06:00+00:00` with `REFRESHED` status and no notes.
+- The fresh report exposed only 3 promoted dev pairs and one current 240-bar
+  window per pair. That is useful diagnostic evidence, but not enough to set
+  defensible correlation, p-value, hedge-ratio drift, half-life drift, or
+  promotion-age entry thresholds.
+- Dev, UAT, and prod queue thresholds remain explicitly `null`.
+- Queue snapshots now carry structured validity-threshold evidence for each
+  decision: measurement, configured threshold, comparison operator, enabled
+  state, and triggered state. Human reports render comparisons that block an
+  entry.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -333,15 +347,24 @@ Do not increase real-capital exposure while the active work is local trader
 stabilization. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
 
-## Next: Queue Policy Threshold Calibration
+## Next: Readonly Reconciliation Snapshot Provider
 
 ```text
-tune pair-validity thresholds after queue-driven state-only behavior and
-capital-slot behavior are both tested
+decide and test the readonly exchange-snapshot provider seam
+-> replace SKIPPED_NO_SNAPSHOT_PROVIDER when readonly account access is available
+-> keep every reconciliation result diagnostic-only with NO_ACTION
 ```
 
-Tune thresholds for correlation, p-value, hedge-ratio drift, half-life drift,
-and bars since promotion after slot-policy behavior is no longer moving.
+Keep `SKIPPED_NO_SNAPSHOT_PROVIDER` as an honest health warning until a typed
+readonly provider is selected and tested. Do not add repair, cancel, modify, or
+close behavior to reconciliation.
+
+## Later: Queue Threshold Activation
+
+Enable dev-only correlation, p-value, hedge-ratio drift, half-life drift, or
+promotion-age gates only after a larger observation window and more
+promoted-pair samples exist. Keep UAT and prod explicit `null` until evidence
+supports separate environment calibration.
 
 ## Later: Scheduled Candidate Regeneration
 

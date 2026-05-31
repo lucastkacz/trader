@@ -25,6 +25,16 @@ def test_all_shipped_pipeline_configs_declare_future_entry_pair_queue():
         cfg.execution.pair_queue.allocation.max_positions_per_asset
         for cfg in parsed
     } == {None}
+    assert {
+        (
+            cfg.execution.pair_queue.validity_thresholds.max_bars_since_promotion,
+            cfg.execution.pair_queue.validity_thresholds.min_recent_correlation,
+            cfg.execution.pair_queue.validity_thresholds.max_recent_p_value,
+            cfg.execution.pair_queue.validity_thresholds.max_abs_hedge_ratio_drift_pct,
+            cfg.execution.pair_queue.validity_thresholds.max_half_life_drift_pct,
+        )
+        for cfg in parsed
+    } == {(None, None, None, None, None)}
 
 
 def test_all_shipped_pipeline_configs_declare_pair_validity_policy():

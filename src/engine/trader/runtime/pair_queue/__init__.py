@@ -6,6 +6,7 @@ from src.engine.trader.runtime.pair_queue.models import (
     PairQueueOpportunity,
     PairQueuePolicy,
     PairQueueSnapshot,
+    PairQueueValidityThresholdEvidence,
 )
 from src.engine.trader.runtime.pair_queue.ranking import (
     build_open_position_exposures,
@@ -20,6 +21,7 @@ __all__ = [
     "PairQueueOpportunity",
     "PairQueuePolicy",
     "PairQueueSnapshot",
+    "PairQueueValidityThresholdEvidence",
     "build_open_position_exposures",
     "build_pair_queue_opportunity",
     "build_pair_queue_opportunities_from_signals",

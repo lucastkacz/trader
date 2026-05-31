@@ -1,6 +1,7 @@
 """Terminal rendering for trader reports."""
 
 from src.engine.trader.reporting.models import TradeReport
+from src.engine.trader.runtime.pair_queue import PairQueueValidityThresholdEvidence
 
 
 class C:
@@ -295,6 +296,13 @@ def render_pair_queue(report: TradeReport, filter_pair: str = None) -> None:
             print(f"  {C.DIM}  └─ Blocks: {', '.join(decision.block_reasons)}{C.RESET}")
         if decision.review_reasons:
             print(f"  {C.DIM}  └─ Review: {', '.join(decision.review_reasons)}{C.RESET}")
+        triggered_thresholds = [
+            _fmt_threshold_evidence(evidence)
+            for evidence in decision.validity_threshold_evidence
+            if evidence.triggered
+        ]
+        if triggered_thresholds:
+            print(f"  {C.DIM}  └─ Thresholds: {', '.join(triggered_thresholds)}{C.RESET}")
         if decision.notes:
             print(f"  {C.DIM}  └─ Notes: {', '.join(decision.notes)}{C.RESET}")
 
@@ -342,3 +350,10 @@ def _fmt_pair(recent: float | None, research: float | None) -> str:
     if research is None:
         return f"{recent:.3f}"
     return f"{recent:.3f}/{research:.3f}"
+
+
+def _fmt_threshold_evidence(evidence: PairQueueValidityThresholdEvidence) -> str:
+    return (
+        f"{evidence.metric}={evidence.measured_value:g} "
+        f"{evidence.trigger_condition} {evidence.configured_threshold:g}"
+    )

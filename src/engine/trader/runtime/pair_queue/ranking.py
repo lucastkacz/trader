@@ -2,7 +2,7 @@
 
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from src.engine.trader.runtime.pair_queue.models import (
     OpenPositionExposure,
@@ -10,6 +10,7 @@ from src.engine.trader.runtime.pair_queue.models import (
     PairQueueOpportunity,
     PairQueuePolicy,
     PairQueueSnapshot,
+    PairQueueValidityThresholdEvidence,
 )
 from src.engine.trader.runtime.pair_validity.models import PairValiditySnapshot
 
@@ -164,7 +165,7 @@ def _build_decision(
     notes: list[str] = []
 
     score_research = _research_score(pair, policy)
-    score_validity = _validity_score(
+    score_validity, validity_threshold_evidence = _validity_score(
         validity=validity,
         policy=policy,
         block_reasons=block_reasons,
@@ -208,6 +209,7 @@ def _build_decision(
         block_reasons=block_reasons,
         review_reasons=review_reasons,
         notes=notes,
+        validity_threshold_evidence=validity_threshold_evidence,
     )
 
 
@@ -230,12 +232,12 @@ def _validity_score(
     block_reasons: list[str],
     review_reasons: list[str],
     notes: list[str],
-) -> float:
+) -> tuple[float, list[PairQueueValidityThresholdEvidence]]:
     if validity is None:
         notes.append("missing_pair_validity_snapshot")
         if policy.block_on_missing_validity:
             block_reasons.append("missing_pair_validity_snapshot")
-        return 0.0
+        return 0.0, []
 
     review_reasons.extend(validity.operator_review_reasons)
     review_reasons.extend(validity.open_position_review_reasons)
@@ -248,44 +250,97 @@ def _validity_score(
     score -= 0.05 * len(validity.open_position_review_reasons)
     score -= 0.02 * len(validity.notes)
 
-    if (
-        policy.max_bars_since_promotion is not None
-        and validity.bars_since_promotion is not None
-        and validity.bars_since_promotion > policy.max_bars_since_promotion
-    ):
-        block_reasons.append("bars_since_promotion_above_max")
-        score -= 0.25
-    if (
-        policy.min_recent_correlation is not None
-        and validity.recent_correlation is not None
-        and validity.recent_correlation < policy.min_recent_correlation
-    ):
-        block_reasons.append("recent_correlation_below_min")
-        score -= 0.25
-    if (
-        policy.max_recent_p_value is not None
-        and validity.recent_p_value is not None
-        and validity.recent_p_value > policy.max_recent_p_value
-    ):
-        block_reasons.append("recent_cointegration_p_value_above_max")
-        score -= 0.25
-    if (
-        policy.max_abs_hedge_ratio_drift_pct is not None
-        and validity.hedge_ratio_drift_pct is not None
-        and abs(validity.hedge_ratio_drift_pct)
-        > policy.max_abs_hedge_ratio_drift_pct
-    ):
-        block_reasons.append("hedge_ratio_drift_above_max")
-        score -= 0.20
-    if (
-        policy.max_half_life_drift_pct is not None
-        and validity.half_life_drift_pct is not None
-        and validity.half_life_drift_pct > policy.max_half_life_drift_pct
-    ):
-        block_reasons.append("half_life_drift_above_max")
-        score -= 0.20
+    threshold_evidence = _build_validity_threshold_evidence(validity, policy)
+    for evidence in threshold_evidence:
+        if evidence.triggered:
+            block_reasons.append(evidence.block_reason)
+            score -= _validity_threshold_score_penalty(evidence.block_reason)
 
-    return _clamp01(score)
+    return _clamp01(score), threshold_evidence
+
+
+def _build_validity_threshold_evidence(
+    validity: PairValiditySnapshot,
+    policy: PairQueuePolicy,
+) -> list[PairQueueValidityThresholdEvidence]:
+    """Describe every optional validity threshold, including disabled ones."""
+    return [
+        _threshold_evidence(
+            metric="bars_since_promotion",
+            block_reason="bars_since_promotion_above_max",
+            trigger_condition=">",
+            measured_value=validity.bars_since_promotion,
+            configured_threshold=policy.max_bars_since_promotion,
+        ),
+        _threshold_evidence(
+            metric="recent_correlation",
+            block_reason="recent_correlation_below_min",
+            trigger_condition="<",
+            measured_value=validity.recent_correlation,
+            configured_threshold=policy.min_recent_correlation,
+        ),
+        _threshold_evidence(
+            metric="recent_p_value",
+            block_reason="recent_cointegration_p_value_above_max",
+            trigger_condition=">",
+            measured_value=validity.recent_p_value,
+            configured_threshold=policy.max_recent_p_value,
+        ),
+        _threshold_evidence(
+            metric="abs_hedge_ratio_drift_pct",
+            block_reason="hedge_ratio_drift_above_max",
+            trigger_condition=">",
+            measured_value=(
+                abs(validity.hedge_ratio_drift_pct)
+                if validity.hedge_ratio_drift_pct is not None
+                else None
+            ),
+            configured_threshold=policy.max_abs_hedge_ratio_drift_pct,
+        ),
+        _threshold_evidence(
+            metric="half_life_drift_pct",
+            block_reason="half_life_drift_above_max",
+            trigger_condition=">",
+            measured_value=validity.half_life_drift_pct,
+            configured_threshold=policy.max_half_life_drift_pct,
+        ),
+    ]
+
+
+def _threshold_evidence(
+    *,
+    metric: str,
+    block_reason: str,
+    trigger_condition: Literal[">", "<"],
+    measured_value: int | float | None,
+    configured_threshold: int | float | None,
+) -> PairQueueValidityThresholdEvidence:
+    enforced = configured_threshold is not None
+    triggered = False
+    if measured_value is not None and configured_threshold is not None:
+        if trigger_condition == ">":
+            triggered = measured_value > configured_threshold
+        else:
+            triggered = measured_value < configured_threshold
+    return PairQueueValidityThresholdEvidence(
+        metric=metric,
+        block_reason=block_reason,
+        trigger_condition=trigger_condition,
+        measured_value=measured_value,
+        configured_threshold=configured_threshold,
+        enforced=enforced,
+        triggered=triggered,
+    )
+
+
+def _validity_threshold_score_penalty(block_reason: str) -> float:
+    if block_reason in {
+        "bars_since_promotion_above_max",
+        "recent_correlation_below_min",
+        "recent_cointegration_p_value_above_max",
+    }:
+        return 0.25
+    return 0.20
 
 
 def _opportunity_score(
@@ -371,6 +426,7 @@ def _with_current_rank(
         block_reasons=decision.block_reasons,
         review_reasons=decision.review_reasons,
         notes=decision.notes,
+        validity_threshold_evidence=decision.validity_threshold_evidence,
     )
 
 

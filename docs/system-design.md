@@ -177,6 +177,12 @@ Each decision should explain its score components, current rank, whether a new
 entry is allowed, and the exact block or review reasons. The queue is an
 auditable decision snapshot, not a hidden mutable scheduler.
 
+Queue decisions also carry structured validity-threshold evidence: the
+measurement, configured threshold, comparison operator, whether the threshold
+is enabled, and whether it triggered. Disabled `null` thresholds remain visible
+as intentional policy so later calibration can use report evidence without
+silently activating entry gates.
+
 The current safe implementation surfaces ranking through reports when
 pair-validity diagnostics are requested and can consume the same queue decisions
 inside execution when `execution.pair_queue.mode` is `future_entries`. Execution

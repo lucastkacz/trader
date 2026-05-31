@@ -160,6 +160,23 @@ def test_pair_queue_blocks_invalid_pairs_for_new_entries_only():
         "hedge_ratio_drift_above_max",
         "half_life_drift_above_max",
     ]
+    assert [
+        (
+            evidence.metric,
+            evidence.measured_value,
+            evidence.configured_threshold,
+            evidence.trigger_condition,
+            evidence.enforced,
+            evidence.triggered,
+        )
+        for evidence in decision.validity_threshold_evidence
+    ] == [
+        ("bars_since_promotion", 120, None, ">", False, False),
+        ("recent_correlation", 0.40, 0.55, "<", True, True),
+        ("recent_p_value", 0.20, 0.10, ">", True, True),
+        ("abs_hedge_ratio_drift_pct", 35.0, 20.0, ">", True, True),
+        ("half_life_drift_pct", 150.0, 100.0, ">", True, True),
+    ]
 
 
 def test_pair_queue_respects_capital_slots_and_existing_exposure():

@@ -1,6 +1,6 @@
 # Handoff: Local Trader Stabilization
 
-Updated: 2026-05-30
+Updated: 2026-05-31
 
 ## Purpose
 
@@ -186,6 +186,63 @@ Bounded state-only observer proof:
   recorded and no actions were taken.
 - Post-run process checks showed no trader, observer, Prefect, `caffeinate`, or
   Telegram bot process.
+
+## Latest Implementation Slice: Pair-Validity Queue Calibration Evidence
+
+Completed locally on 2026-05-31 from branch
+`local-trader-operator-run-state-status`.
+
+Calibration decision:
+
+- A readonly refresh advanced all 5 promoted symbols from
+  `2026-05-30T23:22:00+00:00` through `2026-05-31T08:06:00+00:00`.
+- Every symbol reported `REFRESHED` with no notes.
+- The fresh report exposed only 3 promoted dev pairs and one current 240-bar
+  window per pair. This is not enough evidence to choose defensible
+  correlation, p-value, hedge-ratio drift, half-life drift, or promotion-age
+  entry thresholds.
+- Dev, UAT, and prod queue thresholds remain explicitly `null`.
+- Threshold activation should be dev-only first, after a larger observation
+  window and more promoted-pair samples exist. Keep UAT and prod explicit
+  `null` until separate environment evidence supports calibration.
+
+Code changes:
+
+- Dynamic pair-queue decisions now expose structured
+  `validity_threshold_evidence` for each optional queue threshold.
+- Evidence includes the measured value, configured threshold, comparison
+  operator, whether the threshold is enabled, and whether it triggered.
+- Terminal and Markdown reports render comparisons that actually block an
+  entry. JSON reports retain all comparisons, including disabled `null`
+  thresholds, for calibration.
+- Existing queue block behavior remains unchanged. The slice does not enable
+  thresholds, alter allocation caps, submit orders, cancel, modify, rebalance,
+  force-close, hot-reload, promote artifacts, or increase capital exposure.
+
+Fresh report evidence:
+
+- `ALT/USDT|1000BONK/USDT`: correlation `0.7440`, p-value `0.3827`,
+  hedge-ratio drift `+50.8%`, half-life drift `-92.9%`.
+- `ASTER/USDT|ADA/USDT`: correlation `0.3239`, p-value `0.4486`,
+  hedge-ratio drift `+142.7%`, half-life drift `-78.0%`.
+- `ASTER/USDT|AVAX/USDT`: correlation `0.0111`, p-value `0.3329`,
+  hedge-ratio drift `-94.0%`, half-life drift `-62.1%`.
+- Every pair had `bars_since_promotion = 3886`.
+- Every pair remained entry-allowed because optional thresholds are still
+  disabled and freshness review reasons cleared after refresh.
+
+Verification:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/runtime/test_pair_queue.py tests/engine/trader/config/test_pair_queue_config.py tests/engine/trader/reporting/test_assembler.py -q
+45 passed
+
+.venv/bin/python -m pytest -q
+329 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
 
 ## Latest Implementation Slice: Runtime State And Capital Slots
 

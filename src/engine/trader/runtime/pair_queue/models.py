@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,19 @@ class OpenPositionExposure:
 
 
 @dataclass(frozen=True)
+class PairQueueValidityThresholdEvidence:
+    """Auditable comparison between one validity measurement and queue policy."""
+
+    metric: str
+    block_reason: str
+    trigger_condition: Literal[">", "<"]
+    measured_value: int | float | None
+    configured_threshold: int | float | None
+    enforced: bool
+    triggered: bool
+
+
+@dataclass(frozen=True)
 class PairQueueDecision:
     """Auditable dry-run decision for one promoted pair."""
 
@@ -93,6 +107,9 @@ class PairQueueDecision:
     block_reasons: list[str] = field(default_factory=list)
     review_reasons: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    validity_threshold_evidence: list[PairQueueValidityThresholdEvidence] = field(
+        default_factory=list
+    )
 
 
 @dataclass(frozen=True)
@@ -101,4 +118,3 @@ class PairQueueSnapshot:
 
     generated_at: datetime
     decisions: list[PairQueueDecision]
-

@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from src.engine.trader.cli.report_generator import (
     main as report_main,
+    render_pair_queue,
     render_state_ledger,
 )
 from src.engine.trader.reporting.assembler import generate_report
@@ -21,8 +22,10 @@ from src.engine.trader.reporting.metrics import (
     _compute_sortino,
     _detect_bars_per_year,
 )
+from src.engine.trader.reporting.render_markdown import render_markdown
 from src.engine.trader.state.manager import TradeStateManager
 from src.engine.trader.reporting.render_terminal import _format_bar_interval
+from src.engine.trader.runtime.pair_queue import PairQueuePolicy
 from src.engine.trader.runtime.pair_validity.models import (
     PairValidityReport,
     PairValiditySnapshot,
@@ -344,6 +347,63 @@ def test_report_pair_queue_marks_open_positions_as_entry_blocked(state, tmp_path
     assert decision.entry_allowed is False
     assert decision.has_open_position is True
     assert decision.block_reasons == ["pair_position_limit_reached"]
+
+
+def test_report_pair_queue_surfaces_triggered_threshold_evidence(
+    state,
+    tmp_path,
+    capsys,
+):
+    artifact_path = _write_surviving_pairs_artifact(
+        tmp_path,
+        pairs=[_surviving_pair("AAA/USDT", "BBB/USDT")],
+    )
+    validity = PairValidityReport(
+        artifact_path=str(artifact_path),
+        timeframe="1m",
+        exchange="bybit",
+        pair_count=1,
+        snapshots=[_pair_validity_snapshot("AAA/USDT|BBB/USDT")],
+    )
+
+    with patch(
+        "src.engine.trader.reporting.assembler.build_pair_validity_report_if_configured",
+        return_value=validity,
+    ):
+        report = generate_report(
+            state,
+            min_sharpe=1.0,
+            surviving_pairs_path=str(artifact_path),
+            market_data_base_dir=str(tmp_path / "parquet"),
+            pair_queue_policy=PairQueuePolicy(max_bars_since_promotion=30),
+        )
+
+    decision = report.pair_queue.decisions[0]
+    evidence = decision.validity_threshold_evidence[0]
+    assert decision.block_reasons == ["bars_since_promotion_above_max"]
+    assert evidence.metric == "bars_since_promotion"
+    assert evidence.measured_value == 60
+    assert evidence.configured_threshold == 30
+    assert evidence.trigger_condition == ">"
+    assert evidence.enforced is True
+    assert evidence.triggered is True
+    assert (
+        report.to_dict()["pair_queue"]["decisions"][0]["validity_threshold_evidence"][0]
+        == {
+            "metric": "bars_since_promotion",
+            "block_reason": "bars_since_promotion_above_max",
+            "trigger_condition": ">",
+            "measured_value": 60,
+            "configured_threshold": 30,
+            "enforced": True,
+            "triggered": True,
+        }
+    )
+    assert "bars_since_promotion=60 > 30" in render_markdown(report)
+
+    render_pair_queue(report)
+
+    assert "Thresholds: bars_since_promotion=60 > 30" in capsys.readouterr().out
 
 
 def test_sharpe_ratio_calculation(state):
