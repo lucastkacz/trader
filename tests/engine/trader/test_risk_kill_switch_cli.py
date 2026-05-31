@@ -162,6 +162,7 @@ pipeline:
       max_attempts: 3
       retry_backoff_seconds: 2.0
     reconciliation:
+      snapshot_provider: "ccxt_readonly"
       snapshot_timeout_seconds: 15.0
       stale_order_after_seconds: 120.0
     order_execution:

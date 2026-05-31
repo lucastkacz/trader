@@ -190,6 +190,22 @@ Pair-validity queue calibration review completed on 2026-05-31:
   state, and triggered state. Human reports render comparisons that block an
   entry.
 
+Readonly reconciliation snapshot-provider boundary completed on 2026-05-31:
+
+- Typed pipeline config now selects `execution.reconciliation.snapshot_provider`
+  explicitly as `ccxt_readonly` or `none`.
+- The CCXT readonly adapter fetches account positions only, normalizes open
+  snapshots, filters zero positions, and closes its exchange client after each
+  request.
+- Runtime boot reconciliation constructs the configured adapter from the typed
+  exchange and selected credential tier. The injected protocol remains
+  available for offline tests.
+- A direct readonly dev probe reported `0` exchange open positions.
+- A bounded one-tick state-only drill persisted `MATCHED`, `0` latest deltas,
+  `0` open local positions, and `0` exchange/client order IDs, then stopped
+  naturally with no remaining trader or Prefect process.
+- Reconciliation remains diagnostic-only: every delta still uses `NO_ACTION`.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -321,12 +337,11 @@ Required next behavior:
 - Emit operator-visible block reasons for every pre-trade rejection.
 - Preserve natural exit: risk and slot limits may block future entries, but
   must not force-close or rebalance existing positions.
-- Decide and test the readonly reconciliation snapshot-provider boundary before
-  simulator work; `SKIPPED_NO_SNAPSHOT_PROVIDER` remains visible as a health
-  warning.
+- Keep reconciliation diagnostic-only after wiring the typed readonly snapshot
+  provider. The explicit `none` mode must retain
+  `SKIPPED_NO_SNAPSHOT_PROVIDER` as an honest health warning.
 - Keep pair-validity threshold tuning separate from capital sizing.
-- Defer simulator implementation until capital slots and pre-trade risk gates
-  are stable enough to be durable runtime behavior.
+- Review the remaining stabilization gates before simulator Phase 1.
 
 Do not implement:
 
@@ -347,17 +362,17 @@ Do not increase real-capital exposure while the active work is local trader
 stabilization. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
 
-## Next: Readonly Reconciliation Snapshot Provider
+## Next: Final Stabilization-Gate Review
 
 ```text
-decide and test the readonly exchange-snapshot provider seam
--> replace SKIPPED_NO_SNAPSHOT_PROVIDER when readonly account access is available
--> keep every reconciliation result diagnostic-only with NO_ACTION
+review remaining local trader stabilization gates
+-> confirm simulator Phase 1 can consume stable public runtime seams
+-> keep real-capital promotion out of scope
 ```
 
-Keep `SKIPPED_NO_SNAPSHOT_PROVIDER` as an honest health warning until a typed
-readonly provider is selected and tested. Do not add repair, cancel, modify, or
-close behavior to reconciliation.
+Review the local trader contract before starting simulator implementation.
+Reconciliation, pair queue, natural exit, pre-trade risk, operator controls,
+and readonly market-data behavior should stay explicit and behavior-tested.
 
 ## Later: Queue Threshold Activation
 

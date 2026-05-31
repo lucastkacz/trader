@@ -124,10 +124,13 @@ sqlite3 data/dev/trades_1m.db \
 ```
 
 Boot reconciliation is read-only. The typed pipeline
-`execution.reconciliation` policy bounds snapshot reads and declares when an
-in-flight local order is stale. Deltas such as `LOCAL_PARTIAL_FILL`,
-`STALE_LOCAL_ORDER`, and `SNAPSHOT_PROVIDER_FAILURE` are diagnostics with
-`NO_ACTION`; they do not repair or mutate exchange state.
+`execution.reconciliation` policy selects the snapshot provider, bounds
+snapshot reads, and declares when an in-flight local order is stale.
+`snapshot_provider: "ccxt_readonly"` reads account positions through CCXT and
+closes the client after the snapshot. `snapshot_provider: "none"` preserves an
+explicit `SKIPPED_NO_SNAPSHOT_PROVIDER` warning. Deltas such as
+`LOCAL_PARTIAL_FILL`, `STALE_LOCAL_ORDER`, and `SNAPSHOT_PROVIDER_FAILURE` are
+diagnostics with `NO_ACTION`; they do not repair or mutate exchange state.
 
 ## 5. Control The Runtime Risk Kill Switch
 

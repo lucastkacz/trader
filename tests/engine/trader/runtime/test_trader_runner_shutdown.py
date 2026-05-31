@@ -19,6 +19,10 @@ from src.engine.trader.runtime.monitoring.run_status import (
     record_observer_run_started,
 )
 from src.engine.trader.runtime.trader_runner import run_trader_loop
+from src.engine.trader.reconciliation import CCXTReadOnlySnapshotProvider
+from src.engine.trader.runtime.trader_runner import (
+    _build_reconciliation_snapshot_provider,
+)
 from src.engine.trader.state.manager import TradeStateManager
 
 
@@ -89,6 +93,36 @@ def test_observer_start_marker_captures_existing_open_positions(tmp_path):
     assert marker["max_ticks"] == 180
     assert marker["completed_ticks"] == 0
     assert marker["open_position_ids"] == [spread_id]
+
+
+def test_runtime_builds_configured_readonly_reconciliation_snapshot_provider():
+    execution_cfg = load_pipeline_config("configs/pipelines/dev.yml").execution
+
+    provider = _build_reconciliation_snapshot_provider(
+        execution_cfg,
+        api_key="readonly-key",
+        api_secret="readonly-secret",
+    )
+
+    assert isinstance(provider, CCXTReadOnlySnapshotProvider)
+    assert provider.exchange_id == "bybit"
+    assert provider.api_key == "readonly-key"
+    assert provider.api_secret == "readonly-secret"
+
+
+def test_runtime_can_explicitly_disable_reconciliation_snapshot_provider():
+    pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
+    pipeline_data = pipeline_cfg.model_dump()
+    pipeline_data["execution"]["reconciliation"]["snapshot_provider"] = "none"
+    execution_cfg = PipelineConfig.model_validate(pipeline_data).execution
+
+    provider = _build_reconciliation_snapshot_provider(
+        execution_cfg,
+        api_key="readonly-key",
+        api_secret="readonly-secret",
+    )
+
+    assert provider is None
 
 
 def test_run_status_classifies_old_running_marker_without_ticks_as_stale(tmp_path):

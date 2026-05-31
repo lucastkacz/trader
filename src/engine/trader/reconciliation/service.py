@@ -209,15 +209,6 @@ async def run_boot_reconciliation(
     """
     local_open_positions = state.get_open_positions()
 
-    if snapshot_provider is None:
-        run_id = state.start_reconciliation_run(
-            exchange_snapshot={"positions": [], "skipped_reason": "NO_SNAPSHOT_PROVIDER"},
-            local_open_positions=local_open_positions,
-            status="SKIPPED_NO_SNAPSHOT_PROVIDER",
-        )
-        state.finish_reconciliation_run(run_id, status="SKIPPED_NO_SNAPSHOT_PROVIDER")
-        return run_id
-
     if not credentials_available:
         run_id = state.start_reconciliation_run(
             exchange_snapshot={"positions": [], "skipped_reason": "NO_CREDENTIALS"},
@@ -225,6 +216,15 @@ async def run_boot_reconciliation(
             status="SKIPPED_NO_CREDENTIALS",
         )
         state.finish_reconciliation_run(run_id, status="SKIPPED_NO_CREDENTIALS")
+        return run_id
+
+    if snapshot_provider is None:
+        run_id = state.start_reconciliation_run(
+            exchange_snapshot={"positions": [], "skipped_reason": "NO_SNAPSHOT_PROVIDER"},
+            local_open_positions=local_open_positions,
+            status="SKIPPED_NO_SNAPSHOT_PROVIDER",
+        )
+        state.finish_reconciliation_run(run_id, status="SKIPPED_NO_SNAPSHOT_PROVIDER")
         return run_id
 
     try:

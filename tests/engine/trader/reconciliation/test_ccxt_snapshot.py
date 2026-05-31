@@ -1,0 +1,83 @@
+from unittest.mock import AsyncMock
+
+import pytest
+
+from src.engine.trader.reconciliation import CCXTReadOnlySnapshotProvider
+
+
+def _provider(exchange: AsyncMock) -> CCXTReadOnlySnapshotProvider:
+    return CCXTReadOnlySnapshotProvider(
+        exchange_id="bybit",
+        api_key="readonly-key",
+        api_secret="readonly-secret",
+        exchange_factory=lambda *_: exchange,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ccxt_snapshot_provider_normalizes_open_positions_and_ignores_zero_rows():
+    exchange = AsyncMock()
+    exchange.fetch_positions.return_value = [
+        {
+            "symbol": "BTC/USDT:USDT",
+            "side": "long",
+            "contracts": 0.6,
+        },
+        {
+            "symbol": "ETH/USDT:USDT",
+            "side": "short",
+            "contracts": 0.4,
+        },
+        {
+            "symbol": "SOL/USDT:USDT",
+            "side": None,
+            "contracts": 0.0,
+        },
+    ]
+
+    snapshots = await _provider(exchange).fetch_open_positions()
+
+    assert [snapshot.model_dump() for snapshot in snapshots] == [
+        {
+            "symbol": "BTC/USDT",
+            "side": "long",
+            "qty": 0.6,
+            "spread_id": None,
+        },
+        {
+            "symbol": "ETH/USDT",
+            "side": "short",
+            "qty": 0.4,
+            "spread_id": None,
+        },
+    ]
+    exchange.fetch_positions.assert_awaited_once_with()
+    exchange.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_ccxt_snapshot_provider_closes_exchange_after_snapshot_failure():
+    exchange = AsyncMock()
+    exchange.fetch_positions.side_effect = RuntimeError("account snapshot unavailable")
+
+    with pytest.raises(RuntimeError, match="account snapshot unavailable"):
+        await _provider(exchange).fetch_open_positions()
+
+    exchange.close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_ccxt_snapshot_provider_rejects_open_position_without_side():
+    exchange = AsyncMock()
+    exchange.fetch_positions.return_value = [
+        {
+            "symbol": "BTC/USDT:USDT",
+            "side": None,
+            "contracts": 0.6,
+        },
+    ]
+
+    with pytest.raises(ValueError, match="Open exchange position is missing side"):
+        await _provider(exchange).fetch_open_positions()
+
+    exchange.close.assert_awaited_once_with()

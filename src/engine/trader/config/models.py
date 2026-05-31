@@ -34,6 +34,7 @@ class MarketDataFetchConfig(StrictConfigModel):
 
 
 class ReconciliationConfig(StrictConfigModel):
+    snapshot_provider: Literal["none", "ccxt_readonly"]
     snapshot_timeout_seconds: float = Field(gt=0)
     stale_order_after_seconds: float = Field(gt=0)
 

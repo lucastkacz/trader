@@ -187,7 +187,68 @@ Bounded state-only observer proof:
 - Post-run process checks showed no trader, observer, Prefect, `caffeinate`, or
   Telegram bot process.
 
-## Latest Implementation Slice: Pair-Validity Queue Calibration Evidence
+## Latest Implementation Slice: Readonly Reconciliation Snapshot Provider
+
+Completed locally on 2026-05-31 from branch
+`local-trader-operator-run-state-status`.
+
+Boundary decision:
+
+- The existing `ExchangeSnapshotProvider` protocol remains the reconciliation
+  seam.
+- Added a narrow `CCXTReadOnlySnapshotProvider` adapter under the reconciliation
+  package. It calls only `fetch_positions`, normalizes non-zero position
+  snapshots, and closes its CCXT client after each request.
+- Typed pipeline config now selects
+  `execution.reconciliation.snapshot_provider` explicitly as `ccxt_readonly` or
+  `none`.
+- Runtime boot reconciliation builds the configured adapter from the typed
+  exchange and the selected credential tier. Tests can still inject a fake
+  protocol implementation.
+- `none` preserves the honest `SKIPPED_NO_SNAPSHOT_PROVIDER` mode.
+- Missing credentials are checked before provider availability, so the audit
+  records `SKIPPED_NO_CREDENTIALS` when that is the real reason no account
+  snapshot can run.
+- Reconciliation remains read-only. It does not submit, cancel, modify, repair,
+  close, rebalance, hot-reload, promote artifacts, or increase capital
+  exposure.
+
+Readonly live proof:
+
+- A direct readonly dev adapter probe reported configured credentials available
+  and `0` exchange open positions.
+- A bounded one-tick state-only observer drill completed naturally.
+- Boot reconciliation persisted `MATCHED` with `0` latest deltas.
+- `runtime_state.observer_run` persisted `COMPLETED_MAX_TICKS`,
+  `max_ticks = 1`, `completed_ticks = 1`, and `open_position_ids = []`.
+- SQLite still contains 4 closed dummy positions, 0 open positions, and 0
+  exchange/client order IDs.
+- Historical reconciliation delta count remains `2`; latest delta count is `0`.
+- The durable kill switch remains inactive.
+- Post-run process checks found no trader, Prefect, Telegram bot, or
+  `caffeinate` process. Observer and Telegram launchd services remain unloaded.
+- The post-run report correctly blocks future entries with
+  `pair_validity_operator_review_required` because persisted parquet aged past
+  the dev five-bar freshness limit during the drill. Runtime market reads do not
+  silently rewrite the operator-governed refresh store.
+
+Focused verification:
+
+```text
+.venv/bin/python -m pytest tests/engine/trader/reconciliation tests/engine/trader/runtime/test_trader_runner_shutdown.py tests/engine/trader/runtime/test_health.py tests/engine/trader/config/test_loader.py tests/engine/trader/test_promote_pairs.py tests/engine/trader/test_risk_kill_switch_cli.py tests/pipeline/test_master_flow_config.py -q
+78 passed
+
+.venv/bin/ruff check src/engine/trader/reconciliation src/engine/trader/runtime/trader_runner.py src/engine/trader/config/models.py tests/engine/trader/reconciliation tests/engine/trader/runtime/test_trader_runner_shutdown.py tests/engine/trader/config/test_loader.py tests/engine/trader/test_promote_pairs.py tests/engine/trader/test_risk_kill_switch_cli.py
+All checks passed!
+
+.venv/bin/python -m pytest -q
+336 passed, 3 deselected
+
+.venv/bin/ruff check src tests
+All checks passed!
+```
+
+## Previous Implementation Slice: Pair-Validity Queue Calibration Evidence
 
 Completed locally on 2026-05-31 from branch
 `local-trader-operator-run-state-status`.
@@ -1197,12 +1258,10 @@ Any non-zero exchange/client order id count is a stop-and-investigate event.
 
 Do this before simulator implementation:
 
-1. Calibrate pair-validity queue thresholds now that readonly refresh
-   pagination and wall-clock freshness gating are durable.
-2. Decide and test the readonly reconciliation snapshot-provider boundary;
-   `SKIPPED_NO_SNAPSHOT_PROVIDER` remains an honest health warning.
-3. Review the remaining stabilization gates, then start simulator Phase 1 only
-   when the local trader contract is stable.
+1. Review the remaining local trader stabilization gates.
+2. Confirm simulator Phase 1 can consume the stable public runtime seams.
+3. Keep pair-validity threshold activation dev-only and deferred until a larger
+   observation window and more promoted-pair samples exist.
 
 ## Simulator Boundary
 

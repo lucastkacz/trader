@@ -7,10 +7,16 @@ from typing import Any
 from src.core.config import settings
 from src.core.logger import logger
 from src.engine.trader.commands.processor import process_user_commands
-from src.engine.trader.config import PipelineConfig, RiskConfig, StrategyConfig
+from src.engine.trader.config import (
+    PipelineConfig,
+    PipelineExecutionConfig,
+    RiskConfig,
+    StrategyConfig,
+)
 from src.engine.trader.execution.orders import CCXTOrderExecutionAdapter
 from src.engine.trader.execution.market_data import ReadonlyMarketDataFetchPolicy
 from src.engine.trader.reconciliation import (
+    CCXTReadOnlySnapshotProvider,
     ExchangeSnapshotProvider,
     ReconciliationPolicy,
     run_boot_reconciliation,
@@ -52,6 +58,15 @@ async def run_trader_loop(
     execution_cfg = pipeline_cfg.execution
     api_key, api_secret = resolve_credentials(settings, execution_cfg.credential_tier)
     order_adapter = _build_order_adapter(execution_cfg, api_key, api_secret)
+    reconciliation_snapshot_provider = (
+        reconciliation_snapshot_provider
+        if reconciliation_snapshot_provider is not None
+        else _build_reconciliation_snapshot_provider(
+            execution_cfg,
+            api_key,
+            api_secret,
+        )
+    )
     _log_startup(pipeline_cfg, risk_cfg)
 
     notifier = notifier or TelegramNotifier(
@@ -122,6 +137,21 @@ def _build_order_adapter(execution_cfg, api_key: str, api_secret: str):
     if order_execution_cfg.mode != "live":
         return None
     return CCXTOrderExecutionAdapter(
+        exchange_id=execution_cfg.exchange,
+        api_key=api_key,
+        api_secret=api_secret,
+    )
+
+
+def _build_reconciliation_snapshot_provider(
+    execution_cfg: PipelineExecutionConfig,
+    api_key: str,
+    api_secret: str,
+) -> ExchangeSnapshotProvider | None:
+    """Build the configured read-only exchange snapshot adapter."""
+    if execution_cfg.reconciliation.snapshot_provider == "none":
+        return None
+    return CCXTReadOnlySnapshotProvider(
         exchange_id=execution_cfg.exchange,
         api_key=api_key,
         api_secret=api_secret,

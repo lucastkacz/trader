@@ -31,6 +31,7 @@ def test_valid_operator_configs_parse():
     assert dev_pipeline.execution.market_data_fetch.request_timeout_seconds == 15.0
     assert dev_pipeline.execution.market_data_fetch.max_attempts == 3
     assert dev_pipeline.execution.market_data_fetch.retry_backoff_seconds == 2.0
+    assert dev_pipeline.execution.reconciliation.snapshot_provider == "ccxt_readonly"
     assert dev_pipeline.execution.reconciliation.snapshot_timeout_seconds == 15.0
     assert dev_pipeline.execution.reconciliation.stale_order_after_seconds == 120.0
     assert dev_pipeline.execution.order_execution.mode == "state_only"
@@ -93,6 +94,15 @@ def test_unsupported_order_execution_mode_fails_loudly(tmp_path):
     path = write_yaml(tmp_path, cfg)
 
     with pytest.raises(ValidationError, match="mode"):
+        load_pipeline_config(path)
+
+
+def test_unsupported_reconciliation_snapshot_provider_fails_loudly(tmp_path):
+    cfg = yaml.safe_load(open("configs/pipelines/dev.yml"))
+    cfg["pipeline"]["execution"]["reconciliation"]["snapshot_provider"] = "mutating_client"
+    path = write_yaml(tmp_path, cfg)
+
+    with pytest.raises(ValidationError, match="snapshot_provider"):
         load_pipeline_config(path)
 
 
@@ -176,6 +186,13 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("execution", "reconciliation"),
             load_pipeline_config,
             "reconciliation",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("execution", "reconciliation", "snapshot_provider"),
+            load_pipeline_config,
+            "snapshot_provider",
         ),
         (
             "configs/pipelines/dev.yml",
