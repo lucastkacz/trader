@@ -206,6 +206,21 @@ Readonly reconciliation snapshot-provider boundary completed on 2026-05-31:
   naturally with no remaining trader or Prefect process.
 - Reconciliation remains diagnostic-only: every delta still uses `NO_ACTION`.
 
+Final local stabilization-gate review completed on 2026-05-31:
+
+- Simulator Phase 1 may consume the stable public runtime seams for typed
+  config, readonly market-data fetching, promoted-pair loading, dynamic queue
+  decisions, natural exits, pre-trade risk decisions, operator controls,
+  state persistence, and readonly reconciliation snapshots.
+- Entry gates remain future-entry-only. Queue blocks, capital slots,
+  pre-trade risk rejections, and the kill switch must not force-close or
+  rebalance existing positions.
+- The local trader contract is stable enough to scope offline simulator work,
+  but this is not real-capital production approval. The separate production
+  readiness gate in `docs/engineering-rules.md` still applies.
+- Dev-only pair-validity threshold activation remains deferred until a larger
+  observation window and more promoted-pair samples exist.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -325,7 +340,7 @@ Current local assumption:
   positions after the local command/reconciliation drill.
 - The historical pre-fix stale marker was replaced naturally by the successful
   bounded drill: `observer_run.status = COMPLETED_MAX_TICKS`,
-  `completed_ticks = 5`, and `open_position_ids = []`.
+  `completed_ticks = 1`, and `open_position_ids = []`.
 - Queue-driven entry blocking is visible in reports and must remain limited to
   future entries.
 - Existing positions must continue natural-exit evaluation.
@@ -362,17 +377,19 @@ Do not increase real-capital exposure while the active work is local trader
 stabilization. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
 
-## Next: Final Stabilization-Gate Review
+## Next: Simulator Phase 1 Scoping
 
 ```text
-review remaining local trader stabilization gates
--> confirm simulator Phase 1 can consume stable public runtime seams
+consume stable public runtime seams
+-> define offline replay inputs and outputs
+-> keep trader policy decisions shared instead of duplicated
 -> keep real-capital promotion out of scope
 ```
 
-Review the local trader contract before starting simulator implementation.
-Reconciliation, pair queue, natural exit, pre-trade risk, operator controls,
-and readonly market-data behavior should stay explicit and behavior-tested.
+Scope simulator Phase 1 as an offline consumer of the existing local trader
+contract. Preserve explicit reconciliation, pair queue, natural-exit,
+pre-trade-risk, operator-control, and readonly market-data behavior. Do not
+start real-capital promotion or production-readiness claims.
 
 ## Later: Queue Threshold Activation
 

@@ -96,11 +96,11 @@ Latest lint verification:
 All checks passed!
 ```
 
-Latest local verification after the current uncommitted slices:
+Latest local verification after the stabilization slices:
 
 ```text
 .venv/bin/python -m pytest -q
-328 passed, 3 deselected
+336 passed, 3 deselected
 
 .venv/bin/ruff check src tests
 All checks passed!
@@ -122,7 +122,7 @@ Implications:
   positions, 0 open positions, and 0 exchange/client order ids.
 - Current local `runtime_state.observer_run` was naturally replaced by the
   successful bounded drill marker:
-  `status = COMPLETED_MAX_TICKS`, `max_ticks = 5`, `completed_ticks = 5`,
+  `status = COMPLETED_MAX_TICKS`, `max_ticks = 1`, `completed_ticks = 1`,
   `open_position_ids = []`.
 - Old open-position notes from before deletion remain stale.
 - Future fresh-start drills should still recreate state through supported CLI
@@ -247,6 +247,29 @@ All checks passed!
 .venv/bin/ruff check src tests
 All checks passed!
 ```
+
+## Final Local Stabilization-Gate Review
+
+Completed locally on 2026-05-31 from branch
+`local-trader-operator-run-state-status`.
+
+Review conclusion:
+
+- Simulator Phase 1 may consume the stable public runtime seams for typed
+  config, readonly market-data fetching, promoted-pair loading, dynamic queue
+  decisions, natural exits, pre-trade risk decisions, operator controls,
+  state persistence, and readonly reconciliation snapshots.
+- Entry gates remain future-entry-only. Queue blocks, capital slots,
+  pre-trade risk rejections, and the kill switch must not force-close or
+  rebalance existing positions.
+- The local trader contract is stable enough to scope offline simulator work,
+  but this is not real-capital production approval. The separate production
+  readiness gate in `docs/engineering-rules.md` still applies.
+- Dev-only pair-validity threshold activation remains deferred until a larger
+  observation window and more promoted-pair samples exist.
+- The broad trader-package quality audit reported maintainability candidates,
+  primarily existing oversized orchestration and reporting surfaces. No new
+  safety defect was identified during the stabilization-gate review.
 
 ## Previous Implementation Slice: Pair-Validity Queue Calibration Evidence
 
@@ -1256,22 +1279,24 @@ Any non-zero exchange/client order id count is a stop-and-investigate event.
 
 ## Next Implementation Order
 
-Do this before simulator implementation:
+Do this in a separate simulator slice:
 
-1. Review the remaining local trader stabilization gates.
-2. Confirm simulator Phase 1 can consume the stable public runtime seams.
+1. Scope simulator Phase 1 as an offline consumer of the stable public runtime
+   seams.
+2. Keep trader policy decisions shared instead of duplicating execution
+   behavior inside simulation code.
 3. Keep pair-validity threshold activation dev-only and deferred until a larger
    observation window and more promoted-pair samples exist.
 
 ## Simulator Boundary
 
-The simulator is deferred on purpose.
+Simulator implementation remains deferred to a separate slice.
 
 Reason:
 
 ```text
-finish the local trader contract first
--> then build simulation against stable public runtime seams
+local trader contract reviewed
+-> scope simulation against stable public runtime seams
 ```
 
 Avoid implementing synthetic replay around trader behavior that is still likely
