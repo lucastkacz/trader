@@ -18,6 +18,32 @@ historical market data
 -> state, reporting, and operator controls
 ```
 
+## Offline Simulation
+
+Simulator Phase 1 is an offline consumer of shared trader policy. The first
+foundation intentionally stops at deterministic signal replay:
+
+```text
+historical candle provider
+-> deterministic replay clock
+-> shared trader signal evaluation
+-> shared signal-transition classification
+-> auditable replay observations
+```
+
+The historical candle seam returns bounded symbol candles strictly through the
+current replay timestamp so offline runs cannot silently inspect future data.
+Replay inputs and outputs are typed. The first result records the replay scope,
+window, pair labels, completed ticks, per-tick signal observations, action
+counts, and final signal sides.
+
+The foundation does not yet reuse `TradeStateManager`: its lifecycle and
+operation timestamps still read the wall clock directly. Stateful simulation
+should first add a deterministic clock seam and a narrower replay-state
+interface, then reuse shared dynamic queue and pre-trade risk decisions. Do not
+copy queue ranking, sizing, risk checks, natural-exit rules, or runtime state
+lifecycle into a separate simulator engine.
+
 ## Research Flow
 
 The research flow is offline or operator-run. It may read local data, fetch

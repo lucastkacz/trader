@@ -4,11 +4,11 @@ Updated: 2026-05-31
 
 ## Purpose
 
-This handoff is for continuing local trader work after a completed cold local
-rebuild of `data/` and focused runtime-state/capital-slot/pre-trade risk
-hardening slices. The next goal is to keep tightening local trader stabilization
-gates while deferring simulator implementation until those runtime decisions are
-stable.
+This handoff is for continuing simulator work after a completed cold local
+rebuild of `data/`, focused local-trader stabilization slices, and the first
+deterministic offline signal-replay foundation. The next goal is to isolate a
+deterministic replay-state seam before extending simulation into queue,
+pre-trade-risk, and natural-exit lifecycle behavior.
 
 Do not call the system production-ready for real capital. The production
 readiness gate in `docs/engineering-rules.md` still applies.
@@ -270,6 +270,57 @@ Review conclusion:
 - The broad trader-package quality audit reported maintainability candidates,
   primarily existing oversized orchestration and reporting surfaces. No new
   safety defect was identified during the stabilization-gate review.
+
+## Latest Implementation Slice: Simulator Phase 1 Signal Replay
+
+Completed locally on 2026-05-31 from branch
+`local-trader-operator-run-state-status`.
+
+Boundary decision:
+
+- The existing `src/simulation/` package remains the concept owner for offline
+  simulation. Do not add a parallel simulator hierarchy under trader runtime.
+- Added `src/simulation/replay.py` as one cohesive deterministic replay
+  foundation.
+- `ReplayWindow` and `ReplayClock` provide an inclusive deterministic replay
+  cadence from explicit timezone-aware timestamps and timeframe.
+- `HistoricalCandleProvider` is the narrow historical-data seam. Its contract
+  returns bounded candles strictly through the current replay timestamp.
+- `InMemoryHistoricalCandleProvider` is the first offline adapter for synthetic
+  fixtures and local callers.
+- `run_signal_replay` calls shared trader `evaluate_signal` and
+  `determine_action`; it does not copy signal thresholds or natural-exit
+  classification.
+- Replay results record scope, window, pair labels, completed ticks, each
+  signal observation, action counts, and final signal sides.
+
+Explicit deferrals:
+
+- Do not reuse `TradeStateManager` directly until its wall-clock timestamps in
+  position lifecycle and state-operation writes can be supplied through a
+  deterministic clock seam.
+- Keep dynamic queue decisions, pre-trade risk checks, simulated SQLite state,
+  PnL/friction integration, fill modeling, reconciliation, CLI/YAML wiring, and
+  live exchange mutation outside this foundation.
+- Pair-validity thresholds remain explicit `null`; no entry gate was activated.
+
+Offline behavior tests:
+
+- Replay clock ticks are deterministic and inclusive.
+- In-memory historical reads filter to the current replay timestamp.
+- Shared signal policy records `SKIP -> ENTRY -> HOLD -> EXIT -> SKIP` for a
+  synthetic natural-exit lifecycle.
+- Replay rejects historical providers that return future candles.
+
+Focused verification:
+
+```text
+.venv/bin/python -m pytest tests/simulation -q
+10 passed
+
+.venv/bin/ruff check src/simulation/replay.py tests/simulation/test_replay.py
+All checks passed!
+```
 
 ## Previous Implementation Slice: Pair-Validity Queue Calibration Evidence
 
@@ -1290,18 +1341,19 @@ Do this in a separate simulator slice:
 
 ## Simulator Boundary
 
-Simulator implementation remains deferred to a separate slice.
+The deterministic signal-replay foundation is implemented. Stateful simulator
+work remains deferred to a separate slice.
 
 Reason:
 
 ```text
-local trader contract reviewed
--> scope simulation against stable public runtime seams
+shared signal replay established
+-> isolate deterministic replay-state clock seam
+-> consume shared queue and pre-trade policy decisions
 ```
 
-Avoid implementing synthetic replay around trader behavior that is still likely
-to change, especially capital slots, pre-trade risk gates, reconciliation,
-operator kill-switch behavior, and market-data provider seams.
+Avoid copying trader behavior into a second engine. Extend replay around shared
+policies only after timestamped lifecycle writes can run deterministically.
 
 ## Safety Boundaries
 

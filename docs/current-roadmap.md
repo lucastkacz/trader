@@ -2,14 +2,13 @@
 
 This file tracks only active or near-term work. It is intentionally short.
 
-## Now: Local Trader Stabilization Gates
+## Now: Simulator Phase 1 Foundation
 
 Goal:
 
 ```text
-keep state-only execution behind explicit entry gates, durable operator
-controls, and observable run-state/reconciliation behavior before building
-synthetic replay around the trader
+consume stable trader signal policy through deterministic offline replay
+without creating a second trading engine
 ```
 
 Latest stabilization slice completed on 2026-05-29:
@@ -221,6 +220,25 @@ Final local stabilization-gate review completed on 2026-05-31:
 - Dev-only pair-validity threshold activation remains deferred until a larger
   observation window and more promoted-pair samples exist.
 
+Simulator Phase 1 signal-replay foundation completed on 2026-05-31:
+
+- Added typed offline replay inputs, an inclusive deterministic replay clock,
+  and an as-of historical candle provider seam under `src/simulation/replay.py`.
+- The in-memory historical adapter returns candles strictly through each replay
+  timestamp, and orchestration rejects provider output containing future data.
+- Replay calls shared trader `evaluate_signal` and `determine_action` policy;
+  it does not copy signal rules, queue ranking, sizing, or risk checks.
+- Auditable replay output records scope, window, pair labels, completed ticks,
+  per-tick observations, action counts, and final signal sides.
+- Direct `TradeStateManager` reuse remains deferred because its lifecycle and
+  operation timestamps still read the wall clock. The next simulator slice
+  should introduce a deterministic state seam before queue, pre-trade risk,
+  natural-exit lifecycle, or simulated persistence are wired.
+- Focused verification:
+  `.venv/bin/python -m pytest tests/simulation -q` reported `10 passed`;
+  `.venv/bin/ruff check src/simulation/replay.py tests/simulation/test_replay.py`
+  passed.
+
 Fresh-start drill completed:
 
 - The cold local lifecycle was run on 2026-05-28:
@@ -377,19 +395,21 @@ Do not increase real-capital exposure while the active work is local trader
 stabilization. Production readiness is a separate gate defined in
 `docs/engineering-rules.md`.
 
-## Next: Simulator Phase 1 Scoping
+## Next: Simulator Phase 1 Stateful Policy Planning
 
 ```text
-consume stable public runtime seams
--> define offline replay inputs and outputs
--> keep trader policy decisions shared instead of duplicated
+deterministic replay clock
+-> narrow replay-state interface
+-> shared queue and pre-trade policy decisions
+-> simulated natural-exit lifecycle
 -> keep real-capital promotion out of scope
 ```
 
-Scope simulator Phase 1 as an offline consumer of the existing local trader
-contract. Preserve explicit reconciliation, pair queue, natural-exit,
-pre-trade-risk, operator-control, and readonly market-data behavior. Do not
-start real-capital promotion or production-readiness claims.
+Extend the signal-replay foundation only after isolating timestamped state
+transitions behind a deterministic clock seam. Preserve explicit
+reconciliation, pair queue, natural-exit, pre-trade-risk, operator-control, and
+readonly market-data behavior. Do not start real-capital promotion or
+production-readiness claims.
 
 ## Later: Queue Threshold Activation
 
