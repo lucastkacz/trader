@@ -1,85 +1,77 @@
-"""
-Exchange Client
-================
-Unified CCXT adapter for fetching market data from any supported exchange.
-The exchange ID is passed as a raw CCXT identifier (e.g., "bybit", "binanceusdm")
-directly from the pipeline YAML — zero internal mapping or inference.
+"""Unified CCXT adapter for fetching market data from configured markets."""
 
-ARCHITECTURAL RULE: No default values for config-driven parameters.
-"""
+from typing import Optional
 
 import ccxt.async_support as ccxt
 import pandas as pd
-from typing import List, Optional
 
-from src.core.logger import logger, LogContext
-from src.data.fetcher.symbols import to_ccxt_linear_swap_symbol, to_display_symbol
+from src.core.logger import LogContext, logger
+from src.exchange.config.venue import CcxtExchangeConfig
+from src.data.ohlcv import normalize_ohlcv_frame
 
 
-def create_exchange(exchange_id: str, api_key: str, api_secret: str) -> ccxt.Exchange:
+def create_configured_ccxt_exchange(
+    exchange_id: str,
+    api_key: str,
+    api_secret: str,
+    exchange_config: CcxtExchangeConfig,
+) -> ccxt.Exchange:
     """
-    Factory that returns a rate-limited async CCXT exchange instance.
+    Factory for a rate-limited async CCXT exchange using typed market config.
 
     Parameters
     ----------
     exchange_id : str — raw CCXT exchange ID (e.g., "bybit", "binanceusdm", "kucoin")
     api_key : str — API key credential
     api_secret : str — API secret credential
+    exchange_config : CcxtExchangeConfig — market contract and CCXT options
 
     Returns
     -------
-    ccxt.Exchange instance ready for async operations.
+    ccxt.Exchange instance configured from operator-supplied YAML.
     """
     exchange_class = getattr(ccxt, exchange_id, None)
     if exchange_class is None:
         raise ValueError(f"Unknown CCXT exchange ID: '{exchange_id}'. Check https://docs.ccxt.com/")
 
-    return exchange_class({
-        "enableRateLimit": True,
-        "apiKey": api_key,
-        "secret": api_secret,
-        # The data/execution symbol adapter resolves pairs to linear USDT swaps
-        # (for example BTC/USDT:USDT), so keep CCXT market loading in that lane.
-        "options": {
-            "defaultType": "swap",
-            "defaultSubType": "linear",
-            "defaultSettle": "USDT",
-            "adjustForTimeDifference": True,
-            "recvWindow": 10_000,
-            "fetchMarkets": {
-                "types": ["linear"],
-            },
-        },
-    })
+    return exchange_class(
+        exchange_config.to_ccxt_kwargs(api_key=api_key, api_secret=api_secret)
+    )
 
 
-async def fetch_universe(exchange: ccxt.Exchange, min_volume: float) -> List[str]:
+async def fetch_universe(
+    exchange: ccxt.Exchange,
+    min_volume: float,
+    exchange_config: CcxtExchangeConfig,
+) -> list[str]:
     """
-    Fetches all active USDT perpetual tickers and filters by 24h quote volume.
-    Returns standardized pair symbols (e.g., "BTC/USDT") with the CCXT
-    settlement suffix stripped.
+    Fetch configured-market tickers and filter by 24h quote volume.
+    Returns native CCXT market symbols unchanged.
 
     Parameters
     ----------
     exchange : ccxt.Exchange — an initialized exchange instance
     min_volume : float — minimum 24h quote volume threshold (no default!)
+    exchange_config : CcxtExchangeConfig — market contract profile from YAML
     """
     try:
+        markets = await exchange.load_markets()
         tickers = await exchange.fetch_tickers()
         valid_pairs = []
 
         for symbol, data in tickers.items():
-            if not symbol.endswith(":USDT"):
+            market = markets.get(symbol)
+            if market is None or not exchange_config.market_contract.matches_market(market):
                 continue
 
             quote_volume = float(data.get("quoteVolume", 0) or 0)
             if quote_volume > min_volume:
-                valid_pairs.append(to_display_symbol(symbol))
+                valid_pairs.append(symbol)
 
         ctx = LogContext(trade_id="UNIVERSE_SCAN")
         logger.bind(**ctx.model_dump(exclude_none=True)).info(
             f"Filtered Universe: {len(valid_pairs)} assets above ${min_volume:,.0f} volume "
-            f"on {exchange.id}."
+            f"on {exchange.id} [{exchange_config.market_contract.name}]."
         )
         return valid_pairs
 
@@ -102,16 +94,13 @@ async def fetch_klines(
 
     Parameters
     ----------
-    exchange : ccxt.Exchange — an initialized exchange instance
-    symbol : str — standardized pair (e.g., "BTC/USDT")
-    timeframe : str — candle interval (e.g., "1m", "4h")
-    limit : int — max candles per request
-    since : int, optional — start timestamp in milliseconds
-    end_ts : int, optional — freeze-frame cutoff timestamp in milliseconds
+    exchange : ccxt.Exchange - an initialized exchange instance
+    symbol : str - native CCXT market symbol (e.g., "BTC/USDT:USDT")
+    timeframe : str - candle interval (e.g., "1m", "4h")
+    limit : int - max candles per request
+    since : int, optional - start timestamp in milliseconds
+    end_ts : int, optional - freeze-frame cutoff timestamp in milliseconds
     """
-    # CCXT represents linear swaps as base/quote:settlement (e.g. BTC/USDT:USDT).
-    ccxt_symbol = to_ccxt_linear_swap_symbol(symbol)
-
     ctx = LogContext(pair=symbol)
     logger.bind(**ctx.model_dump(exclude_none=True)).debug(
         f"[{exchange.id}] Fetching {limit} candles for {timeframe}"
@@ -119,20 +108,20 @@ async def fetch_klines(
 
     try:
         ohlcv = await exchange.fetch_ohlcv(
-            ccxt_symbol, timeframe, limit=limit, since=since
+            symbol, timeframe, limit=limit, since=since
         )
 
         df = pd.DataFrame(
             ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
         )
-        for col in ["open", "high", "low", "close", "volume"]:
-            df[col] = df[col].astype(float)
+        df = normalize_ohlcv_frame(df)
 
-        # ─── FREEZE-FRAME LOGIC ───
+        if since is not None:
+            df = df[df["timestamp"] >= since]
         if end_ts is not None:
             df = df[df["timestamp"] <= end_ts]
 
-        return df
+        return df.reset_index(drop=True)
 
     except ccxt.NetworkError as ne:
         logger.bind(**ctx.model_dump(exclude_none=True)).error(

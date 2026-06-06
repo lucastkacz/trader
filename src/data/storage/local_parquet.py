@@ -1,94 +1,140 @@
-"""
-Parquet Storage
-================
-High-performance object storage utilizing Apache Parquet.
-Injects custom metadata directly into binary schema headers.
-
-ARCHITECTURAL RULE: No default values for config-driven parameters.
-"""
-
-import os
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pandas as pd
-from typing import Dict
+from pathlib import Path
+from typing import Mapping
+
+from src.data.ohlcv import OHLCVMetadata, normalize_ohlcv_frame
 
 
-class ParquetStorage:
-    """
-    High-Performance Object Storage utilizing Apache Parquet.
-    Specifically architects Custom Metadata Injection into the binary headers.
-    """
+class LocalOHLCVParquetStore:
+    """Local Parquet-backed store for canonical OHLCV datasets."""
+
     def __init__(self, base_dir: str):
         self.base_dir = base_dir
-        os.makedirs(self.base_dir, exist_ok=True)
+        self.root = Path(base_dir)
+        self.root.mkdir(parents=True, exist_ok=True)
 
-    def _get_path(self, symbol: str, timeframe: str, exchange: str) -> str:
-        # E.g. data/parquet/bybit/4h/BTC_USDT.parquet
-        tf_dir = os.path.join(self.base_dir, exchange.lower(), timeframe)
-        os.makedirs(tf_dir, exist_ok=True)
-        clean_symbol = symbol.replace("/", "_").replace(":", "_")
-        return os.path.join(tf_dir, f"{clean_symbol}.parquet")
+    def path_for_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str,
+        exchange: str,
+        *,
+        create_parent: bool = False,
+    ) -> Path:
+        """Return the local Parquet path for one exchange/timeframe/symbol."""
+        timeframe_dir = self.root / exchange.lower() / timeframe
+        if create_parent:
+            timeframe_dir.mkdir(parents=True, exist_ok=True)
+        clean_symbol = self._clean_symbol(symbol)
+        return timeframe_dir / f"{clean_symbol}.parquet"
 
-    def save_ohlcv(self, symbol: str, timeframe: str, df: pd.DataFrame, custom_metadata: Dict[str, str], exchange: str):
-        """
-        Takes a Pandas DataFrame, converts it to an Arrow Table,
-        injects string-value metadata dictionaries directly into the internal schema,
-        and serializes to disk. 
-        """
-        filepath = self._get_path(symbol, timeframe, exchange)
+    def save_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str,
+        df: pd.DataFrame,
+        custom_metadata: Mapping[str, object] | OHLCVMetadata,
+        exchange: str,
+    ) -> None:
+        """Normalize and replace one local OHLCV Parquet dataset."""
+        filepath = self.path_for_ohlcv(symbol, timeframe, exchange, create_parent=True)
+        normalized = normalize_ohlcv_frame(df)
+        metadata = self._metadata_for_write(
+            symbol=symbol,
+            timeframe=timeframe,
+            exchange=exchange,
+            frame=normalized,
+            custom_metadata=custom_metadata,
+        )
 
-        # 1. Convert to native Arrow Table
-        table = pa.Table.from_pandas(df)
-
-        # 2. Reconstruct Metadata
-        # Arrow physically mandates metadata to be binary (bytes). 
-        # Python dicts are strings. We must encode them.
+        table = pa.Table.from_pandas(normalized, preserve_index=False)
         existing_metadata = table.schema.metadata if table.schema.metadata else {}
-
-        # Inject our Custom Payload
-        encoded_payload = {key.encode(): val.encode() for key, val in custom_metadata.items()}
+        encoded_payload = {
+            key.encode("utf-8"): value.encode("utf-8")
+            for key, value in metadata.items()
+        }
         merged_metadata = {**existing_metadata, **encoded_payload}
-
-        # 3. Mount modified schema
         new_schema = table.schema.with_metadata(merged_metadata)
-        new_table = table.cast(new_schema)
+        pq.write_table(table.cast(new_schema), filepath)
 
-        # 4. Flush to disk (using aggressive Snappy compression by default)
-        pq.write_table(new_table, filepath)
-
-    def read_metadata(self, symbol: str, timeframe: str, exchange: str) -> Dict[str, str]:
-        """
-        Reads STRICTLY the binary header of a Parquet file natively using PyArrow.
-        Does NOT load the internal Dataframe Payload. Zero risk of RAM OOM.
-        """
-        filepath = self._get_path(symbol, timeframe, exchange)
-        if not os.path.exists(filepath):
+    def read_metadata(self, symbol: str, timeframe: str, exchange: str) -> dict[str, str]:
+        """Read only the Parquet schema metadata for one OHLCV dataset."""
+        filepath = self.path_for_ohlcv(symbol, timeframe, exchange)
+        if not filepath.exists():
             return {}
 
-        # Natively reads just the Schema Footer
         parquet_file = pq.ParquetFile(filepath)
         raw_metadata = parquet_file.schema_arrow.metadata
-
         if not raw_metadata:
             return {}
 
-        # Decode binary back to string dictionary map
         decoded_map = {}
         for key, val in raw_metadata.items():
-            # Skip native Pandas schema binary payloads
             if key == b"pandas":
                 continue
-            decoded_map[key.decode('utf-8')] = val.decode('utf-8')
-
+            decoded_map[key.decode("utf-8")] = val.decode("utf-8")
         return decoded_map
 
+    def read_ohlcv_metadata(
+        self,
+        symbol: str,
+        timeframe: str,
+        exchange: str,
+    ) -> OHLCVMetadata | None:
+        """Read typed OHLCV metadata, returning None when the file is missing."""
+        metadata = self.read_metadata(symbol, timeframe, exchange)
+        if not metadata:
+            return None
+        return OHLCVMetadata.from_mapping(
+            metadata,
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+        )
+
     def load_ohlcv(self, symbol: str, timeframe: str, exchange: str) -> pd.DataFrame:
-        """
-        Standard operational read method. Loads the file fully into a Pandas Context.
-        """
-        filepath = self._get_path(symbol, timeframe, exchange)
-        if not os.path.exists(filepath):
+        """Load one local OHLCV dataset and normalize its DataFrame contract."""
+        filepath = self.path_for_ohlcv(symbol, timeframe, exchange)
+        if not filepath.exists():
             raise FileNotFoundError(f"Parquet cache missing for {symbol} @ {timeframe}")
 
-        return pq.read_table(filepath).to_pandas()
+        return normalize_ohlcv_frame(pq.read_table(filepath).to_pandas())
+
+    def _metadata_for_write(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        exchange: str,
+        frame: pd.DataFrame,
+        custom_metadata: Mapping[str, object] | OHLCVMetadata,
+    ) -> dict[str, str]:
+        if isinstance(custom_metadata, OHLCVMetadata):
+            return custom_metadata.to_parquet_metadata()
+
+        custom = {str(key): str(value) for key, value in custom_metadata.items()}
+        base = OHLCVMetadata.from_frame(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            source=custom.get("source", exchange),
+            status=custom.get("status", "VALIDATED"),
+            frame=frame,
+            coverage_start_ms=_int_or_none(custom.get("coverage_start_ms")),
+            coverage_end_ms=_int_or_none(custom.get("coverage_end_ms")),
+            last_closed_candle_ms=_int_or_none(custom.get("last_closed_candle_ms")),
+            quality_status=custom.get("quality_status", "VALIDATED"),
+        ).to_parquet_metadata()
+        return {**base, **custom}
+
+    @staticmethod
+    def _clean_symbol(symbol: str) -> str:
+        return symbol.replace("/", "_").replace(":", "_")
+
+
+def _int_or_none(value: object | None) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)

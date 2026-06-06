@@ -18,9 +18,8 @@ offline verification, and live-trading safety matter more than fast changes.
 - Keep pure math, state mutation, external I/O, runtime orchestration, and
   presentation in separate modules when the behavior is substantial.
 - Avoid pass-through modules. A module should provide leverage or locality.
-- Keep compatibility facades only as short-lived migration aids. Do not leave
-  duplicate canonical import paths in place once callers can use the deeper
-  package directly.
+- Do not keep migration wrapper modules or duplicate canonical import paths.
+  Update callers to import from the owning package directly.
 - Do not add broad rewrites while implementing a policy or behavior slice.
 
 ## Configuration

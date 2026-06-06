@@ -7,9 +7,10 @@ from dataclasses import dataclass
 import pandas as pd
 
 from src.core.logger import logger
-from src.data.fetcher.live_client import fetch_live_klines
+from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
+from src.exchange.config.venue import CcxtExchangeConfig
 
-FetchLiveKlines = Callable[..., Awaitable[pd.DataFrame]]
+FetchRecentOHLCV = Callable[..., Awaitable[pd.DataFrame]]
 Sleep = Callable[[float], Awaitable[None]]
 
 
@@ -45,13 +46,14 @@ async def fetch_recent_candles(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     policy: ReadonlyMarketDataFetchPolicy,
     *,
-    fetch_live_klines_fn: FetchLiveKlines | None = None,
+    fetch_recent_ohlcv_fn: FetchRecentOHLCV | None = None,
     sleep: Sleep | None = None,
 ) -> pd.DataFrame:
     """Fetch recent candles with bounded readonly retries and timeout."""
-    fetch = fetch_live_klines_fn or fetch_live_klines
+    fetch = fetch_recent_ohlcv_fn or _fetch_recent_ohlcv_once
     pause = sleep or asyncio.sleep
 
     for attempt in range(1, policy.max_attempts + 1):
@@ -61,6 +63,7 @@ async def fetch_recent_candles(
                     exchange_id=exchange_id,
                     api_key=api_key,
                     api_secret=api_secret,
+                    exchange_config=exchange_config,
                     symbol=symbol,
                     timeframe=timeframe,
                     limit=bars_needed,
@@ -86,6 +89,29 @@ async def fetch_recent_candles(
             await pause(backoff_seconds)
 
     raise AssertionError("Readonly OHLCV retry loop exhausted without returning or raising")
+
+
+async def _fetch_recent_ohlcv_once(
+    *,
+    exchange_id: str,
+    api_key: str,
+    api_secret: str,
+    exchange_config: CcxtExchangeConfig,
+    symbol: str,
+    timeframe: str,
+    limit: int,
+) -> pd.DataFrame:
+    async with CcxtMarketDataAdapter(
+        exchange_id,
+        api_key,
+        api_secret,
+        exchange_config,
+    ) as adapter:
+        return await adapter.fetch_ohlcv(
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=limit,
+        )
 
 
 def _failure_detail(exc: Exception) -> str:

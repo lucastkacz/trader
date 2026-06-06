@@ -1,0 +1,14 @@
+# CCXT market profile for spot markets.
+# Example native CCXT symbol: BTC/USDT
+ccxt_exchange:
+  name: "spot"
+  enable_rate_limit: true
+  adjust_for_time_difference: true
+  recv_window: 10000
+  market_contract:
+    name: "spot"
+    default_type: "spot"
+    default_sub_type: null
+    default_settle: null
+    fetch_market_types:
+      - "spot"

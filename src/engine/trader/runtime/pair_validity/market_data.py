@@ -4,13 +4,13 @@ from datetime import datetime
 
 import pandas as pd
 
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.runtime.pair_validity.time import as_utc
 
 
 def load_recent_market_data(
     *,
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     asset_x: str,
     asset_y: str,
     timeframe: str,
@@ -55,4 +55,3 @@ def latest_timestamp(market: pd.DataFrame) -> datetime | None:
     if market.empty:
         return None
     return as_utc(market.index.max().to_pydatetime())
-

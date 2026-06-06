@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pandas as pd
 import pytest
 
+from src.exchange.config.venue import load_ccxt_exchange_config
 from src.engine.trader.config import OrderExecutionConfig, load_strategy_config
 from src.engine.trader.execution.market_data import ReadonlyMarketDataFetchPolicy
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
@@ -12,6 +13,14 @@ from src.engine.trader.runtime.risk import PreTradeRiskPolicy
 from src.engine.trader.runtime.risk.kill_switch import activate_risk_kill_switch
 from src.engine.trader.runtime.tick import execute_tick
 from src.engine.trader.state.manager import TradeStateManager
+
+
+def _exchange_config():
+    return load_ccxt_exchange_config("configs/exchange/market_profiles/linear_usdt_swap.yml")
+
+
+async def _execute_tick(*args, **kwargs):
+    return await execute_tick(*args, exchange_config=_exchange_config(), **kwargs)
 
 
 @pytest.fixture
@@ -184,7 +193,7 @@ async def test_queue_blocked_decision_prevents_new_entry(
         lambda **kwargs: _signal("LONG_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[pair],
         state=state,
         notifier=notifier,
@@ -226,7 +235,7 @@ async def test_pre_trade_risk_sizes_entry_to_cluster_exposure(
         lambda **kwargs: _signal("LONG_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[pair],
         state=state,
         notifier=notifier,
@@ -278,7 +287,7 @@ async def test_pre_trade_risk_blocks_portfolio_exposure_without_opening_position
         lambda **kwargs: _signal("LONG_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[_pair("AAA/USDT", "CCC/USDT")],
         state=state,
         notifier=notifier,
@@ -319,7 +328,7 @@ async def test_pre_trade_risk_blocks_leverage_without_recording_leg_targets(
         lambda **kwargs: _signal("LONG_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[_pair("AAA/USDT", "BBB/USDT")],
         state=state,
         notifier=notifier,
@@ -361,7 +370,7 @@ async def test_pre_trade_risk_blocks_order_quantity_below_min_without_opening_po
         ),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[_pair("AAA/USDT", "BBB/USDT")],
         state=state,
         notifier=notifier,
@@ -403,7 +412,7 @@ async def test_pre_trade_risk_blocks_order_notional_below_min_without_leg_target
         lambda **kwargs: _signal("LONG_SPREAD", price_b=1.0),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[_pair("AAA/USDT", "BBB/USDT")],
         state=state,
         notifier=notifier,
@@ -449,7 +458,7 @@ async def test_pre_trade_risk_blocks_invalid_order_precision_without_order_ids(
         ),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[_pair("AAA/USDT", "BBB/USDT")],
         state=state,
         notifier=notifier,
@@ -509,7 +518,7 @@ async def test_pre_trade_precision_blocked_flip_closes_without_replacement_open(
         ),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[pair],
         state=state,
         notifier=notifier,
@@ -568,7 +577,7 @@ async def test_pre_trade_risk_blocks_low_liquidity_entry_without_opening_positio
         lambda **kwargs: _signal("LONG_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[_pair("AAA/USDT", "BBB/USDT")],
         state=state,
         notifier=notifier,
@@ -631,7 +640,7 @@ async def test_pre_trade_liquidity_blocked_flip_closes_without_replacement_open(
         lambda **kwargs: _signal("SHORT_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[pair],
         state=state,
         notifier=notifier,
@@ -681,7 +690,7 @@ async def test_risk_kill_switch_blocks_new_entry_without_opening_position(
         lambda **kwargs: _signal("LONG_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[_pair("AAA/USDT", "BBB/USDT")],
         state=state,
         notifier=notifier,
@@ -738,7 +747,7 @@ async def test_risk_kill_switch_blocks_flip_replacement_but_preserves_close(
         lambda **kwargs: _signal("SHORT_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[pair],
         state=state,
         notifier=notifier,
@@ -802,7 +811,7 @@ async def test_risk_kill_switch_does_not_prevent_existing_position_natural_exit(
         lambda **kwargs: _signal("FLAT", z_score=0.1),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[pair],
         state=state,
         notifier=notifier,
@@ -845,7 +854,7 @@ async def test_global_capital_slot_blocks_second_entry_in_same_tick(
         lambda **kwargs: _signal("LONG_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[low_rank, high_rank],
         state=state,
         notifier=notifier,
@@ -900,7 +909,7 @@ async def test_asset_capital_slot_blocks_new_entry_without_closing_existing_posi
         lambda **kwargs: _signal("LONG_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[_pair("CCC/USDT", "AAA/USDT")],
         state=state,
         notifier=notifier,
@@ -954,7 +963,7 @@ async def test_pair_capital_slot_blocks_flip_replacement_entry(
         lambda **kwargs: _signal("SHORT_SPREAD"),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[pair],
         state=state,
         notifier=notifier,
@@ -1007,7 +1016,7 @@ async def test_queue_block_does_not_prevent_existing_position_natural_exit(
         lambda **kwargs: _signal("FLAT", z_score=0.1),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[pair],
         state=state,
         notifier=notifier,
@@ -1060,7 +1069,7 @@ async def test_queue_rank_controls_future_entry_order(
         fake_route_signal_transition,
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[low_rank, high_rank],
         state=state,
         notifier=notifier,
@@ -1112,7 +1121,7 @@ async def test_tick_reuses_shared_symbol_candles_within_one_tick(
         lambda **kwargs: _signal("FLAT", z_score=0.1),
     )
 
-    await execute_tick(
+    await _execute_tick(
         pairs=[
             _pair("AAA/USDT", "BBB/USDT"),
             _pair("AAA/USDT", "CCC/USDT"),

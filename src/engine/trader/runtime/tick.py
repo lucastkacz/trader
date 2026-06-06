@@ -6,12 +6,13 @@ from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from src.core.logger import logger
+from src.exchange.config.venue import CcxtExchangeConfig
 from src.engine.trader.config import OrderExecutionConfig, StrategyConfig
 from src.engine.trader.execution.market_data import (
     ReadonlyMarketDataFetchPolicy,
     fetch_recent_candles,
 )
-from src.engine.trader.execution.orders import OrderExecutionAdapter
+from src.exchange.execution.orders import OrderExecutionAdapter
 from src.engine.trader.execution.pnl import calculate_per_pair_pnl, calculate_unrealized_pnl
 from src.engine.trader.runtime.pair_queue import PairQueuePolicy
 from src.engine.trader.runtime.pair_queue.execution import (
@@ -54,6 +55,7 @@ async def execute_tick(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     order_execution_cfg: OrderExecutionConfig,
     order_execution_adapter: OrderExecutionAdapter | None,
     market_data_fetch_policy: ReadonlyMarketDataFetchPolicy | None = None,
@@ -81,6 +83,7 @@ async def execute_tick(
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            exchange_config=exchange_config,
             market_data_fetch_policy=market_data_fetch_policy,
             candle_cache=candle_cache,
             pre_trade_risk_policy=pre_trade_risk_policy,
@@ -140,6 +143,7 @@ async def _evaluate_pair_tick(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     market_data_fetch_policy: ReadonlyMarketDataFetchPolicy | None,
     candle_cache: dict[str, tuple[int, Any]],
     pre_trade_risk_policy: PreTradeRiskPolicy | None,
@@ -151,6 +155,7 @@ async def _evaluate_pair_tick(
         exchange_id,
         api_key,
         api_secret,
+        exchange_config,
         market_data_fetch_policy=market_data_fetch_policy,
         candle_cache=candle_cache,
     )
@@ -208,6 +213,7 @@ async def _fetch_pair_candles(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     *,
     market_data_fetch_policy: ReadonlyMarketDataFetchPolicy | None,
     candle_cache: dict[str, tuple[int, Any]],
@@ -221,6 +227,7 @@ async def _fetch_pair_candles(
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            exchange_config=exchange_config,
             policy=market_data_fetch_policy,
             candle_cache=candle_cache,
         )
@@ -231,6 +238,7 @@ async def _fetch_pair_candles(
             exchange_id=exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            exchange_config=exchange_config,
             policy=market_data_fetch_policy,
             candle_cache=candle_cache,
         )
@@ -248,6 +256,7 @@ async def _fetch_symbol_candles(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     policy: ReadonlyMarketDataFetchPolicy | None,
     candle_cache: dict[str, tuple[int, Any]],
 ) -> Any:
@@ -263,6 +272,7 @@ async def _fetch_symbol_candles(
         exchange_id=exchange_id,
         api_key=api_key,
         api_secret=api_secret,
+        exchange_config=exchange_config,
         policy=policy,
     )
     candle_cache[symbol] = (bars_needed, candles)

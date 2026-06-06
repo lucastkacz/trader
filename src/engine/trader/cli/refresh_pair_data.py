@@ -9,8 +9,12 @@ from pathlib import Path
 
 from src.core.config import settings
 from src.core.logger import configure_logger
-from src.data.fetcher.exchange_client import create_exchange, fetch_klines
-from src.data.storage.local_parquet import ParquetStorage
+from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.data.market_data import (
+    create_configured_ccxt_exchange,
+    fetch_klines,
+)
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.config import load_pipeline_config
 from src.engine.trader.runtime.pair_validity import (
     PairDataRefreshPolicy,
@@ -67,10 +71,11 @@ def main(argv: list[str] | None = None) -> int:
 
 async def _async_main(args: argparse.Namespace) -> int:
     pipeline_cfg = load_pipeline_config(args.pipeline)
+    venue_cfg = pipeline_cfg.venue
     execution_cfg = pipeline_cfg.execution
-    if execution_cfg.credential_tier != "readonly":
+    if venue_cfg.credential_tier != "readonly":
         raise ValueError(
-            "Pair-data refresh requires pipeline execution.credential_tier='readonly'"
+            "Pair-data refresh requires pipeline venue.credential_tier='readonly'"
         )
 
     artifact_path = (
@@ -86,17 +91,18 @@ async def _async_main(args: argparse.Namespace) -> int:
         missing_lookback_bars=args.missing_lookback_bars,
         fetch_limit=args.fetch_limit,
     )
-    exchange = create_exchange(
-        execution_cfg.exchange,
+    exchange = create_configured_ccxt_exchange(
+        venue_cfg.exchange_id,
         settings.exchange_readonly_api_key or "",
         settings.exchange_readonly_api_secret or "",
+        load_ccxt_exchange_config(venue_cfg.market_profile_config),
     )
     try:
         report = await refresh_promoted_pair_market_data(
             surviving_pairs_path=artifact_path,
-            storage=ParquetStorage(execution_cfg.market_data_base_dir),
+            storage=LocalOHLCVParquetStore(execution_cfg.market_data_base_dir),
             exchange=exchange,
-            exchange_id=execution_cfg.exchange,
+            exchange_id=venue_cfg.exchange_id,
             timeframe=pipeline_cfg.timeframe,
             policy=policy,
             fetch_klines=fetch_klines,
@@ -140,4 +146,3 @@ def _parse_now(value: str | None) -> datetime | None:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

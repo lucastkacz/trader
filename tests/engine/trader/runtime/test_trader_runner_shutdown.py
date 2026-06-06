@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.execution.account import CCXTReadOnlySnapshotProvider
 from src.engine.trader.config import (
     PipelineConfig,
     load_pipeline_config,
@@ -19,11 +21,14 @@ from src.engine.trader.runtime.monitoring.run_status import (
     record_observer_run_started,
 )
 from src.engine.trader.runtime.trader_runner import run_trader_loop
-from src.engine.trader.reconciliation import CCXTReadOnlySnapshotProvider
 from src.engine.trader.runtime.trader_runner import (
     _build_reconciliation_snapshot_provider,
 )
 from src.engine.trader.state.manager import TradeStateManager
+
+
+def _exchange_config():
+    return load_ccxt_exchange_config("configs/exchange/market_profiles/linear_usdt_swap.yml")
 
 
 def _open_test_position(state: TradeStateManager) -> int:
@@ -96,12 +101,14 @@ def test_observer_start_marker_captures_existing_open_positions(tmp_path):
 
 
 def test_runtime_builds_configured_readonly_reconciliation_snapshot_provider():
-    execution_cfg = load_pipeline_config("configs/pipelines/dev.yml").execution
+    pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
 
     provider = _build_reconciliation_snapshot_provider(
-        execution_cfg,
+        pipeline_cfg.venue,
+        pipeline_cfg.execution,
         api_key="readonly-key",
         api_secret="readonly-secret",
+        exchange_config=_exchange_config(),
     )
 
     assert isinstance(provider, CCXTReadOnlySnapshotProvider)
@@ -114,12 +121,14 @@ def test_runtime_can_explicitly_disable_reconciliation_snapshot_provider():
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
     pipeline_data = pipeline_cfg.model_dump()
     pipeline_data["execution"]["reconciliation"]["snapshot_provider"] = "none"
-    execution_cfg = PipelineConfig.model_validate(pipeline_data).execution
+    disabled_cfg = PipelineConfig.model_validate(pipeline_data)
 
     provider = _build_reconciliation_snapshot_provider(
-        execution_cfg,
+        disabled_cfg.venue,
+        disabled_cfg.execution,
         api_key="readonly-key",
         api_secret="readonly-secret",
+        exchange_config=_exchange_config(),
     )
 
     assert provider is None

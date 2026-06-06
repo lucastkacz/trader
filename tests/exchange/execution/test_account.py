@@ -2,7 +2,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.engine.trader.reconciliation import CCXTReadOnlySnapshotProvider
+from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.execution.account import CCXTReadOnlySnapshotProvider
+
+
+def _exchange_config():
+    return load_ccxt_exchange_config("configs/exchange/market_profiles/linear_usdt_swap.yml")
 
 
 def _provider(exchange: AsyncMock) -> CCXTReadOnlySnapshotProvider:
@@ -10,12 +15,13 @@ def _provider(exchange: AsyncMock) -> CCXTReadOnlySnapshotProvider:
         exchange_id="bybit",
         api_key="readonly-key",
         api_secret="readonly-secret",
+        exchange_config=_exchange_config(),
         exchange_factory=lambda *_: exchange,
     )
 
 
 @pytest.mark.asyncio
-async def test_ccxt_snapshot_provider_normalizes_open_positions_and_ignores_zero_rows():
+async def test_account_snapshot_provider_normalizes_open_positions_and_ignores_zero_rows():
     exchange = AsyncMock()
     exchange.fetch_positions.return_value = [
         {
@@ -39,13 +45,13 @@ async def test_ccxt_snapshot_provider_normalizes_open_positions_and_ignores_zero
 
     assert [snapshot.model_dump() for snapshot in snapshots] == [
         {
-            "symbol": "BTC/USDT",
+            "symbol": "BTC/USDT:USDT",
             "side": "long",
             "qty": 0.6,
             "spread_id": None,
         },
         {
-            "symbol": "ETH/USDT",
+            "symbol": "ETH/USDT:USDT",
             "side": "short",
             "qty": 0.4,
             "spread_id": None,
@@ -56,7 +62,7 @@ async def test_ccxt_snapshot_provider_normalizes_open_positions_and_ignores_zero
 
 
 @pytest.mark.asyncio
-async def test_ccxt_snapshot_provider_closes_exchange_after_snapshot_failure():
+async def test_account_snapshot_provider_closes_exchange_after_snapshot_failure():
     exchange = AsyncMock()
     exchange.fetch_positions.side_effect = RuntimeError("account snapshot unavailable")
 
@@ -67,7 +73,7 @@ async def test_ccxt_snapshot_provider_closes_exchange_after_snapshot_failure():
 
 
 @pytest.mark.asyncio
-async def test_ccxt_snapshot_provider_rejects_open_position_without_side():
+async def test_account_snapshot_provider_rejects_open_position_without_side():
     exchange = AsyncMock()
     exchange.fetch_positions.return_value = [
         {

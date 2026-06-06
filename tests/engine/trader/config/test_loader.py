@@ -26,6 +26,13 @@ def write_yaml(tmp_path, data):
 def test_valid_operator_configs_parse():
     dev_pipeline = load_pipeline_config("configs/pipelines/dev.yml")
     assert dev_pipeline.execution.max_ticks is None
+    assert dev_pipeline.venue.exchange_id == "bybit"
+    assert (
+        dev_pipeline.venue.market_profile_config
+        == "configs/exchange/market_profiles/linear_usdt_swap.yml"
+    )
+    assert dev_pipeline.venue.credential_tier == "readonly"
+    assert dev_pipeline.data.backfill_policy_config == "configs/data/backfill_default.yml"
     assert dev_pipeline.execution.market_data_base_dir == "data/parquet"
     assert dev_pipeline.execution.artifact_base_dir == "data/universes"
     assert dev_pipeline.execution.market_data_fetch.request_timeout_seconds == 15.0
@@ -127,6 +134,48 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
         (
             "configs/pipelines/dev.yml",
             "pipeline",
+            ("venue",),
+            load_pipeline_config,
+            "venue",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("venue", "exchange_id"),
+            load_pipeline_config,
+            "exchange_id",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("venue", "market_profile_config"),
+            load_pipeline_config,
+            "market_profile_config",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("venue", "credential_tier"),
+            load_pipeline_config,
+            "credential_tier",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("data",),
+            load_pipeline_config,
+            "data",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("data", "backfill_policy_config"),
+            load_pipeline_config,
+            "backfill_policy_config",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
             ("execution", "order_execution"),
             load_pipeline_config,
             "order_execution",
@@ -137,13 +186,6 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("execution", "order_execution", "mode"),
             load_pipeline_config,
             "mode",
-        ),
-        (
-            "configs/pipelines/dev.yml",
-            "pipeline",
-            ("execution", "exchange"),
-            load_pipeline_config,
-            "exchange",
         ),
         (
             "configs/pipelines/dev.yml",

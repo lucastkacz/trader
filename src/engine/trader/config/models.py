@@ -138,9 +138,17 @@ class PairQueueConfig(StrictConfigModel):
         }
 
 
-class PipelineExecutionConfig(StrictConfigModel):
-    exchange: str
+class PipelineVenueConfig(StrictConfigModel):
+    exchange_id: str = Field(min_length=1)
+    market_profile_config: str = Field(min_length=1)
     credential_tier: Literal["readonly", "live"]
+
+
+class PipelineDataConfig(StrictConfigModel):
+    backfill_policy_config: str = Field(min_length=1)
+
+
+class PipelineExecutionConfig(StrictConfigModel):
     market_data_base_dir: str = Field(min_length=1)
     artifact_base_dir: str = Field(min_length=1)
     db_path: str
@@ -161,6 +169,8 @@ class PipelineConfig(StrictConfigModel):
     timeframe: str
     historical_days: int
     max_symbols: int | None
+    venue: PipelineVenueConfig
+    data: PipelineDataConfig
     execution: PipelineExecutionConfig
 
 

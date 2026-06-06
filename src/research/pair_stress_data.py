@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from src.core.logger import logger
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.runtime.artifacts import extract_pair_artifact_pairs
 
 
@@ -27,7 +27,7 @@ def load_candidate_pairs(
 
 
 def build_unified_ohlcv(
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     symbol_a: str,
     symbol_b: str,
     timeframe: str,

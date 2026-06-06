@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from src.core.logger import logger
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.config import StrategyConfig, UniverseConfig
 from src.engine.trader.runtime.artifacts import write_candidate_pair_artifact
 from src.screener.discovery_clusters import build_clusters, write_cluster_artifact
@@ -14,7 +14,7 @@ from src.screener.discovery_universe import load_filtered_symbol_pool
 class DiscoveryEngine:
     """Run universe filtering, clustering, and cointegration discovery."""
 
-    def __init__(self, storage: ParquetStorage):
+    def __init__(self, storage: LocalOHLCVParquetStore):
         self.storage = storage
 
     def run(

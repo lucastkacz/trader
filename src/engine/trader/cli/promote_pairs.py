@@ -36,7 +36,7 @@ def promote_pairs_from_pipeline_config(
     )
     promoted_path = promote_candidate_pair_artifact(
         timeframe=pipeline_cfg.timeframe,
-        exchange=pipeline_cfg.execution.exchange,
+        exchange=pipeline_cfg.venue.exchange_id,
         base_dir=pipeline_cfg.execution.artifact_base_dir,
         max_age_seconds=max_age_seconds,
         now=promoted_at,

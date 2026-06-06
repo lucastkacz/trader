@@ -13,10 +13,27 @@ from src.pipeline import master_flow
 async def test_task_mine_data_uses_typed_pipeline_and_universe_config(monkeypatch):
     captured = {}
 
-    async def fake_run(self, **kwargs):
-        captured.update(kwargs)
+    class FakeMarketDataAdapter:
+        def __init__(self, exchange_id, api_key, api_secret, exchange_config):
+            captured["adapter_exchange_id"] = exchange_id
+            captured["adapter_api_key"] = api_key
+            captured["adapter_api_secret"] = api_secret
+            captured["exchange_config"] = exchange_config
 
-    monkeypatch.setattr(master_flow.HistoricalMiner, "run", fake_run)
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc_info):
+            return None
+
+    async def fake_run(self, request):
+        captured["request"] = request
+        captured["market_data"] = self.market_data
+        captured["store"] = self.store
+        captured["policy"] = self.policy
+
+    monkeypatch.setattr(master_flow, "CcxtMarketDataAdapter", FakeMarketDataAdapter)
+    monkeypatch.setattr(master_flow.OHLCVBackfillService, "run", fake_run)
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
     universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
@@ -24,11 +41,15 @@ async def test_task_mine_data_uses_typed_pipeline_and_universe_config(monkeypatc
     result = await master_flow.task_mine_data.fn(pipeline_cfg, universe_cfg)
 
     assert result is True
-    assert captured["exchange_id"] == pipeline_cfg.execution.exchange
-    assert captured["timeframe"] == pipeline_cfg.timeframe
-    assert captured["historical_days"] == pipeline_cfg.historical_days
-    assert captured["min_volume"] == universe_cfg.filters.min_volume_liquidity
-    assert captured["limit_symbols"] == pipeline_cfg.max_symbols
+    request = captured["request"]
+    assert captured["adapter_exchange_id"] == pipeline_cfg.venue.exchange_id
+    assert captured["exchange_config"].name == "linear_usdt_swap"
+    assert request.exchange_id == pipeline_cfg.venue.exchange_id
+    assert request.timeframe == pipeline_cfg.timeframe
+    assert request.min_volume == universe_cfg.filters.min_volume_liquidity
+    assert request.limit_symbols == pipeline_cfg.max_symbols
+    assert request.end_ts - request.start_ts == pipeline_cfg.historical_days * 86_400_000
+    assert captured["policy"].fetch_limit == 1000
 
 
 def test_task_discover_alpha_passes_typed_research_config(monkeypatch):
@@ -51,7 +72,7 @@ def test_task_discover_alpha_passes_typed_research_config(monkeypatch):
 
     assert result is True
     assert captured["timeframe"] == pipeline_cfg.timeframe
-    assert captured["exchange"] == pipeline_cfg.execution.exchange
+    assert captured["exchange"] == pipeline_cfg.venue.exchange_id
     assert captured["universe_cfg"] == universe_cfg
     assert captured["strategy_cfg"] == strategy_cfg
     assert captured["artifact_base_dir"] == pipeline_cfg.execution.artifact_base_dir
@@ -81,7 +102,7 @@ def test_task_vector_stress_passes_typed_research_config_and_artifact_paths(monk
 
     assert result is True
     assert captured["timeframe"] == pipeline_cfg.timeframe
-    assert captured["exchange"] == pipeline_cfg.execution.exchange
+    assert captured["exchange"] == pipeline_cfg.venue.exchange_id
     assert str(captured["input_pairs_path"]).endswith("candidate_surviving_pairs.json")
     assert captured["output_artifact_base_dir"] == pipeline_cfg.execution.artifact_base_dir
     assert captured["backtest_cfg"] == backtest_cfg

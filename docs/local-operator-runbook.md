@@ -1,8 +1,8 @@
 # Local Operator Runbook
 
 This runbook is for local development drills only. Keep `configs/pipelines/dev.yml`
-on `credential_tier: "readonly"` and `order_execution.mode: "state_only"` unless
-you are deliberately changing a tested execution mode.
+on `venue.credential_tier: "readonly"` and `order_execution.mode: "state_only"`
+unless you are deliberately changing a tested execution mode.
 
 Do not use this runbook as real-capital production approval. The production
 readiness gate in `docs/engineering-rules.md` still applies.

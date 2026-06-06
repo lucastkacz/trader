@@ -17,7 +17,7 @@ from src.interfaces.telegram.handlers.runtime import (
     _reply_run_status,
     _reply_status,
 )
-from src.interfaces.telegram.renderers import (
+from src.interfaces.telegram.rendering.menu import (
     build_menu_section_keyboard,
     build_operator_menu_keyboard,
     build_stop_all_confirmation_keyboard,

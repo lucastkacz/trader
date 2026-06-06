@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from src.exchange.config.venue import CcxtExchangeConfig
 from src.core.logger import logger
 from src.engine.trader.execution.liquidation import execute_emergency_liquidation
 from src.engine.trader.execution.market_data import ReadonlyMarketDataFetchPolicy
@@ -17,6 +18,7 @@ async def process_user_commands(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     market_data_fetch_policy: ReadonlyMarketDataFetchPolicy,
 ) -> None:
     """Claim and execute all pending UI commands."""
@@ -37,6 +39,7 @@ async def process_user_commands(
                     exchange_id=exchange_id,
                     api_key=api_key,
                     api_secret=api_secret,
+                    exchange_config=exchange_config,
                     market_data_fetch_policy=market_data_fetch_policy,
                     target=None,
                 )
@@ -49,6 +52,7 @@ async def process_user_commands(
                     exchange_id=exchange_id,
                     api_key=api_key,
                     api_secret=api_secret,
+                    exchange_config=exchange_config,
                     market_data_fetch_policy=market_data_fetch_policy,
                     target=target,
                 )

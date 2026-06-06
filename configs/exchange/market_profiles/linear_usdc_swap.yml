@@ -1,0 +1,14 @@
+# CCXT market profile for linear USDC perpetual swaps.
+# Example native CCXT symbol: BTC/USDC:USDC
+ccxt_exchange:
+  name: "linear_usdc_swap"
+  enable_rate_limit: true
+  adjust_for_time_difference: true
+  recv_window: 10000
+  market_contract:
+    name: "linear_usdc_swap"
+    default_type: "swap"
+    default_sub_type: "linear"
+    default_settle: "USDC"
+    fetch_market_types:
+      - "linear"

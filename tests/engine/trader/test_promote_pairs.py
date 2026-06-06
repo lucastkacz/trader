@@ -47,9 +47,13 @@ pipeline:
   timeframe: "{timeframe}"
   historical_days: 1
   max_symbols: null
-  execution:
-    exchange: "{exchange}"
+  venue:
+    exchange_id: "{exchange}"
+    market_profile_config: "configs/exchange/market_profiles/linear_usdt_swap.yml"
     credential_tier: "readonly"
+  data:
+    backfill_policy_config: "configs/data/backfill_default.yml"
+  execution:
     market_data_base_dir: "{tmp_path / "market_data"}"
     artifact_base_dir: "{artifact_base_dir}"
     db_path: "{tmp_path / "trades.db"}"

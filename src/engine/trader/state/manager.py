@@ -1,4 +1,4 @@
-"""SQLite-backed compatibility facade for trader state."""
+"""SQLite-backed manager for trader state."""
 
 from typing import Optional, List, Dict, Any
 

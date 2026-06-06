@@ -12,7 +12,7 @@ from src.engine.trader.runtime.monitoring.health import (
 from src.engine.trader.runtime.monitoring.run_status import build_run_status_snapshot
 from src.interfaces.telegram import context as telegram_context
 from src.interfaces.telegram.handlers.auth import require_auth
-from src.interfaces.telegram.renderers import render_run_status
+from src.interfaces.telegram.rendering.runtime import render_run_status
 
 
 @require_auth

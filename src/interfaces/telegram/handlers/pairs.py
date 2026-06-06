@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 from src.engine.trader.runtime.artifacts import validate_pair_artifact_file
 from src.interfaces.telegram import context as telegram_context
 from src.interfaces.telegram.handlers.auth import require_auth
-from src.interfaces.telegram.renderers import (
+from src.interfaces.telegram.rendering.pairs import (
     pair_label,
     render_promoted_pairs,
 )

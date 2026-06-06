@@ -1,6 +1,6 @@
 import pandas as pd
 
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.config import load_strategy_config
 from src.research import pair_stress_filter
 from src.research.pair_stress_filter import PairStressFilter
@@ -9,7 +9,7 @@ from src.research.pair_stress_filter import PairStressFilter
 def test_pair_stress_filter_survivor_records_research_baseline_fields(monkeypatch, tmp_path):
     async_unused = object()
     timestamps = pd.date_range("2026-01-01T00:00:00Z", periods=600, freq="1min")
-    storage = ParquetStorage(str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(str(tmp_path / "parquet"))
     storage.save_ohlcv(
         "AAA/USDT",
         "1m",

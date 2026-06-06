@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.runtime.pair_validity.market_data import normalize_ohlcv
 from src.engine.trader.runtime.artifacts import validate_pair_artifact_file
 from src.utils.timeframe_math import get_timeframe_minutes
@@ -60,7 +60,7 @@ class PairDataRefreshReport:
 async def refresh_promoted_pair_market_data(
     *,
     surviving_pairs_path: str | Path,
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     exchange: Any,
     exchange_id: str,
     timeframe: str,
@@ -111,7 +111,7 @@ async def refresh_promoted_pair_market_data(
 
 async def refresh_symbol_market_data(
     *,
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     exchange: Any,
     exchange_id: str,
     symbol: str,
@@ -236,7 +236,7 @@ async def _fetch_window(
 
 
 def _load_existing_ohlcv(
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     symbol: str,
     timeframe: str,
     exchange_id: str,
@@ -304,7 +304,7 @@ def _latest_timestamp_ms(frame: pd.DataFrame) -> int | None:
 
 def _refresh_metadata(
     *,
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     symbol: str,
     timeframe: str,
     exchange_id: str,

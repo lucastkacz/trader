@@ -3,10 +3,8 @@
 from typing import Any
 
 from src.engine.trader.config import OrderExecutionConfig
-from src.engine.trader.execution.orders import (
-    OrderExecutionAdapter,
-    execute_spread_leg_orders,
-)
+from src.engine.trader.execution.orders import execute_spread_leg_orders
+from src.exchange.execution.orders import OrderExecutionAdapter
 from src.engine.trader.runtime.risk import (
     PreTradeLiquiditySnapshot,
     PreTradeRiskDecision,

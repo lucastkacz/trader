@@ -5,13 +5,13 @@ from pathlib import Path
 import pandas as pd
 
 from src.core.logger import logger
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.config import UniverseConfig
 from src.screener.filters.data_maturity import DataMaturityFilter
 
 
 def load_filtered_symbol_pool(
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     timeframe: str,
     exchange: str,
     universe_cfg: UniverseConfig,
@@ -31,7 +31,7 @@ def load_filtered_symbol_pool(
 
 
 def _load_liquid_symbols(
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     files: list[Path],
     timeframe: str,
     exchange: str,

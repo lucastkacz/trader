@@ -4,12 +4,16 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 from src.core.logger import logger
 from src.engine.trader.state.manager import TradeStateManager
+from src.exchange.execution.account import (
+    ExchangePositionSnapshot,
+    ExchangeSnapshotProvider,
+)
 
 
 class ReconciliationDeltaType(StrEnum):
@@ -38,33 +42,6 @@ class ReconciliationPolicy:
             raise ValueError("snapshot_timeout_seconds must be positive")
         if self.stale_order_after_seconds <= 0:
             raise ValueError("stale_order_after_seconds must be positive")
-
-
-class ExchangePositionSnapshot(BaseModel):
-    """One exchange-side position from a read-only account snapshot."""
-
-    model_config = ConfigDict(extra="allow")
-
-    symbol: str
-    side: str
-    qty: float = Field(gt=0)
-    spread_id: int | None = None
-
-    @property
-    def normalized_side(self) -> str:
-        side = self.side.upper()
-        if side in {"BUY", "LONG"}:
-            return "BUY"
-        if side in {"SELL", "SHORT"}:
-            return "SELL"
-        return side
-
-
-class ExchangeSnapshotProvider(Protocol):
-    """Read-only provider for exchange/account positions."""
-
-    async def fetch_open_positions(self) -> list[ExchangePositionSnapshot]:
-        """Fetch open exchange positions without mutating exchange state."""
 
 
 class ReconciliationAuditReport(BaseModel):

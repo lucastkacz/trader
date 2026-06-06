@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.runtime.pair_validity.artifact import (
     load_latest_promoted_at,
     research_window,
@@ -52,7 +52,7 @@ def build_pair_validity_report(
 ) -> PairValidityReport:
     """Compute read-only diagnostics for each pair in a promoted artifact."""
     artifact = validate_pair_artifact_file(surviving_pairs_path)
-    storage = ParquetStorage(base_dir=str(market_data_base_dir))
+    storage = LocalOHLCVParquetStore(base_dir=str(market_data_base_dir))
     reference_time = as_utc(now or datetime.now(timezone.utc))
     promoted_at = load_latest_promoted_at(Path(surviving_pairs_path))
     all_positions = state.get_all_orders()
@@ -120,7 +120,7 @@ def _build_pair_snapshot(
     artifact_promoted_at: datetime | None,
     timeframe: str,
     exchange: str,
-    storage: ParquetStorage,
+    storage: LocalOHLCVParquetStore,
     state: "TradeStateManager",
     all_positions: list[dict[str, Any]],
     config: PairValidityConfig,

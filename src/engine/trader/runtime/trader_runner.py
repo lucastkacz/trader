@@ -6,18 +6,22 @@ from typing import Any
 
 from src.core.config import settings
 from src.core.logger import logger
+from src.exchange.config.venue import CcxtExchangeConfig, load_ccxt_exchange_config
+from src.exchange.execution.account import (
+    CCXTReadOnlySnapshotProvider,
+    ExchangeSnapshotProvider,
+)
+from src.exchange.execution.orders import CCXTOrderExecutionAdapter
 from src.engine.trader.commands.processor import process_user_commands
 from src.engine.trader.config import (
     PipelineConfig,
     PipelineExecutionConfig,
+    PipelineVenueConfig,
     RiskConfig,
     StrategyConfig,
 )
-from src.engine.trader.execution.orders import CCXTOrderExecutionAdapter
 from src.engine.trader.execution.market_data import ReadonlyMarketDataFetchPolicy
-from src.engine.trader.reconciliation import (
-    CCXTReadOnlySnapshotProvider,
-    ExchangeSnapshotProvider,
+from src.engine.trader.reconciliation.service import (
     ReconciliationPolicy,
     run_boot_reconciliation,
 )
@@ -55,16 +59,26 @@ async def run_trader_loop(
     reconciliation_snapshot_provider: ExchangeSnapshotProvider | None = None,
     notifier: TelegramNotifier | None = None,
 ) -> None:
+    venue_cfg = pipeline_cfg.venue
     execution_cfg = pipeline_cfg.execution
-    api_key, api_secret = resolve_credentials(settings, execution_cfg.credential_tier)
-    order_adapter = _build_order_adapter(execution_cfg, api_key, api_secret)
+    api_key, api_secret = resolve_credentials(settings, venue_cfg.credential_tier)
+    exchange_config = load_ccxt_exchange_config(venue_cfg.market_profile_config)
+    order_adapter = _build_order_adapter(
+        venue_cfg,
+        execution_cfg,
+        api_key,
+        api_secret,
+        exchange_config,
+    )
     reconciliation_snapshot_provider = (
         reconciliation_snapshot_provider
         if reconciliation_snapshot_provider is not None
         else _build_reconciliation_snapshot_provider(
+            venue_cfg,
             execution_cfg,
             api_key,
             api_secret,
+            exchange_config,
         )
     )
     _log_startup(pipeline_cfg, risk_cfg)
@@ -78,7 +92,7 @@ async def run_trader_loop(
     pairs = load_tier1_pairs(
         pipeline_cfg.timeframe,
         execution_cfg.min_sharpe,
-        execution_cfg.exchange,
+        venue_cfg.exchange_id,
         execution_cfg.artifact_base_dir,
     )
     if not pairs:
@@ -109,6 +123,7 @@ async def run_trader_loop(
             notifier=notifier,
             api_key=api_key,
             api_secret=api_secret,
+            exchange_config=exchange_config,
             order_adapter=order_adapter,
         )
     except asyncio.CancelledError:
@@ -128,33 +143,43 @@ async def run_trader_loop(
         logger.info("Database connection closed cleanly.")
 
 
-def _build_order_adapter(execution_cfg, api_key: str, api_secret: str):
+def _build_order_adapter(
+    venue_cfg: PipelineVenueConfig,
+    execution_cfg: PipelineExecutionConfig,
+    api_key: str,
+    api_secret: str,
+    exchange_config: CcxtExchangeConfig,
+):
     order_execution_cfg = execution_cfg.order_execution
-    if order_execution_cfg.mode == "live" and execution_cfg.credential_tier != "live":
+    if order_execution_cfg.mode == "live" and venue_cfg.credential_tier != "live":
         raise ValueError("order_execution.mode='live' requires credential_tier='live'")
     if order_execution_cfg.mode == "live" and not (api_key and api_secret):
         raise ValueError("order_execution.mode='live' requires live API credentials")
     if order_execution_cfg.mode != "live":
         return None
     return CCXTOrderExecutionAdapter(
-        exchange_id=execution_cfg.exchange,
+        exchange_id=venue_cfg.exchange_id,
         api_key=api_key,
         api_secret=api_secret,
+        exchange_config=exchange_config,
     )
 
 
 def _build_reconciliation_snapshot_provider(
+    venue_cfg: PipelineVenueConfig,
     execution_cfg: PipelineExecutionConfig,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
 ) -> ExchangeSnapshotProvider | None:
     """Build the configured read-only exchange snapshot adapter."""
     if execution_cfg.reconciliation.snapshot_provider == "none":
         return None
     return CCXTReadOnlySnapshotProvider(
-        exchange_id=execution_cfg.exchange,
+        exchange_id=venue_cfg.exchange_id,
         api_key=api_key,
         api_secret=api_secret,
+        exchange_config=exchange_config,
     )
 
 
@@ -211,6 +236,7 @@ async def _run_ticks(
     notifier: TelegramNotifier,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     order_adapter,
 ) -> None:
     open_pos = state.get_open_positions()
@@ -229,6 +255,7 @@ async def _run_ticks(
             notifier,
             api_key,
             api_secret,
+            exchange_config,
             market_data_fetch_policy,
         )
         pair_queue_enabled = (
@@ -255,9 +282,10 @@ async def _run_ticks(
             notifier,
             pipeline_cfg.timeframe,
             strategy_cfg,
-            exchange_id=pipeline_cfg.execution.exchange,
+            exchange_id=pipeline_cfg.venue.exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            exchange_config=exchange_config,
             market_data_fetch_policy=market_data_fetch_policy,
             order_execution_cfg=pipeline_cfg.execution.order_execution,
             order_execution_adapter=order_adapter,
@@ -320,6 +348,7 @@ async def _sleep_until_next_tick(
     notifier: TelegramNotifier,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     market_data_fetch_policy: ReadonlyMarketDataFetchPolicy,
 ) -> None:
     execution_cfg = pipeline_cfg.execution
@@ -336,9 +365,10 @@ async def _sleep_until_next_tick(
             pairs,
             notifier,
             pipeline_cfg.timeframe,
-            exchange_id=execution_cfg.exchange,
+            exchange_id=pipeline_cfg.venue.exchange_id,
             api_key=api_key,
             api_secret=api_secret,
+            exchange_config=exchange_config,
             market_data_fetch_policy=market_data_fetch_policy,
         )
         now = datetime.now(timezone.utc)

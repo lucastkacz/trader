@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from src.exchange.config.venue import CcxtExchangeConfig
 from src.core.logger import logger
 from src.engine.trader.execution.market_data import (
     ReadonlyMarketDataFetchPolicy,
@@ -19,6 +20,7 @@ async def execute_emergency_liquidation(
     exchange_id: str,
     api_key: str,
     api_secret: str,
+    exchange_config: CcxtExchangeConfig,
     market_data_fetch_policy: ReadonlyMarketDataFetchPolicy,
     target: str | None = None,
 ) -> None:
@@ -55,6 +57,7 @@ async def execute_emergency_liquidation(
                 exchange_id=exchange_id,
                 api_key=api_key,
                 api_secret=api_secret,
+                exchange_config=exchange_config,
                 policy=market_data_fetch_policy,
             )
             df_y = await fetch_recent_candles(
@@ -64,6 +67,7 @@ async def execute_emergency_liquidation(
                 exchange_id=exchange_id,
                 api_key=api_key,
                 api_secret=api_secret,
+                exchange_config=exchange_config,
                 policy=market_data_fetch_policy,
             )
             price_x = df_x["close"].iloc[-1]

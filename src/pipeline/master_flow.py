@@ -1,10 +1,14 @@
 import sys
 import subprocess
+from datetime import datetime, timedelta, timezone
 from prefect import flow, task, get_run_logger
 
 from src.core.config import settings
-from src.data.storage.local_parquet import ParquetStorage
-from src.data.fetcher.historical_miner import HistoricalMiner
+from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
+from src.exchange.config.venue import load_ccxt_exchange_config
+from src.data.sync.config import load_ohlcv_backfill_config
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
+from src.data.sync import OHLCVBackfillRequest, OHLCVBackfillService
 from src.engine.trader.config import (
     BacktestConfig,
     PipelineConfig,
@@ -21,8 +25,8 @@ from src.research.pair_stress_filter import PairStressFilter
 
 @task(name="Ingest CCXT Historicals")
 async def task_mine_data(pipeline_cfg: PipelineConfig, universe_cfg: UniverseConfig):
-    exchange_id = pipeline_cfg.execution.exchange
-    credential_tier = pipeline_cfg.execution.credential_tier
+    exchange_id = pipeline_cfg.venue.exchange_id
+    credential_tier = pipeline_cfg.venue.credential_tier
     if credential_tier == "live":
         api_key = settings.exchange_live_api_key or ""
         api_secret = settings.exchange_live_api_secret or ""
@@ -30,17 +34,37 @@ async def task_mine_data(pipeline_cfg: PipelineConfig, universe_cfg: UniverseCon
         api_key = settings.exchange_readonly_api_key or ""
         api_secret = settings.exchange_readonly_api_secret or ""
 
-    storage = ParquetStorage(base_dir=pipeline_cfg.execution.market_data_base_dir)
-    miner = HistoricalMiner(storage)
-    await miner.run(
-        exchange_id=exchange_id,
-        api_key=api_key,
-        api_secret=api_secret,
-        timeframe=pipeline_cfg.timeframe,
-        historical_days=pipeline_cfg.historical_days,
-        min_volume=universe_cfg.filters.min_volume_liquidity,
-        limit_symbols=pipeline_cfg.max_symbols,
+    storage = LocalOHLCVParquetStore(
+        base_dir=pipeline_cfg.execution.market_data_base_dir
     )
+    exchange_config = load_ccxt_exchange_config(pipeline_cfg.venue.market_profile_config)
+    backfill_policy = load_ohlcv_backfill_config(
+        pipeline_cfg.data.backfill_policy_config
+    ).to_fetch_policy()
+    end_dt = datetime.now(timezone.utc)
+    start_dt = end_dt - timedelta(days=pipeline_cfg.historical_days)
+
+    async with CcxtMarketDataAdapter(
+        exchange_id,
+        api_key,
+        api_secret,
+        exchange_config,
+    ) as market_data:
+        service = OHLCVBackfillService(
+            market_data=market_data,
+            store=storage,
+            policy=backfill_policy,
+        )
+        await service.run(
+            OHLCVBackfillRequest(
+                exchange_id=exchange_id,
+                timeframe=pipeline_cfg.timeframe,
+                start_ts=int(start_dt.timestamp() * 1000),
+                end_ts=int(end_dt.timestamp() * 1000),
+                min_volume=universe_cfg.filters.min_volume_liquidity,
+                limit_symbols=pipeline_cfg.max_symbols,
+            )
+        )
     return True
 
 @task(name="Alpha Cointegration Taxonomy")
@@ -49,11 +73,13 @@ def task_discover_alpha(
     universe_cfg: UniverseConfig,
     strategy_cfg: StrategyConfig,
 ):
-    storage = ParquetStorage(base_dir=pipeline_cfg.execution.market_data_base_dir)
+    storage = LocalOHLCVParquetStore(
+        base_dir=pipeline_cfg.execution.market_data_base_dir
+    )
     engine = DiscoveryEngine(storage)
     engine.run(
         timeframe=pipeline_cfg.timeframe,
-        exchange=pipeline_cfg.execution.exchange,
+        exchange=pipeline_cfg.venue.exchange_id,
         universe_cfg=universe_cfg,
         strategy_cfg=strategy_cfg,
         artifact_base_dir=pipeline_cfg.execution.artifact_base_dir,
@@ -66,11 +92,13 @@ def task_vector_stress(
     backtest_cfg: BacktestConfig,
     strategy_cfg: StrategyConfig,
 ):
-    storage = ParquetStorage(base_dir=pipeline_cfg.execution.market_data_base_dir)
+    storage = LocalOHLCVParquetStore(
+        base_dir=pipeline_cfg.execution.market_data_base_dir
+    )
     stress_filter = PairStressFilter(storage)
     stress_filter.run(
         timeframe=pipeline_cfg.timeframe,
-        exchange=pipeline_cfg.execution.exchange,
+        exchange=pipeline_cfg.venue.exchange_id,
         input_pairs_path=candidate_pair_artifact_path(
             pipeline_cfg.timeframe,
             pipeline_cfg.execution.artifact_base_dir,

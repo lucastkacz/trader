@@ -14,7 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.engine.trader.execution.pnl import calculate_position_pnl
 from src.engine.trader.state.manager import TradeStateManager
-from src.interfaces.telegram.renderers import format_pct, format_z
+from src.interfaces.telegram.rendering.formatting import format_pct, format_z
 
 
 class PlotError(ValueError):

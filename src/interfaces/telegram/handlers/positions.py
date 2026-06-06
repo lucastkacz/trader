@@ -18,11 +18,13 @@ from src.interfaces.telegram.plots import (
     render_position_plot_caption,
     render_position_zscore_plot_png,
 )
-from src.interfaces.telegram.renderers import (
-    build_position_action_keyboard,
-    build_position_select_keyboard,
+from src.interfaces.telegram.rendering.formatting import (
     format_duration,
     holding_duration_minutes,
+)
+from src.interfaces.telegram.rendering.positions import (
+    build_position_action_keyboard,
+    build_position_select_keyboard,
     render_position_action_menu,
     render_position_inspection,
 )

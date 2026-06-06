@@ -227,6 +227,24 @@ operator command, auditor action, or tested risk kill switch says otherwise.
 
 ## Runtime Package Shape
 
+Exchange-facing modules are grouped by external venue capability:
+
+- `src/exchange/config/`: typed venue and market-profile config loaded from
+  YAML, including CCXT construction policy.
+- `src/exchange/data/`: read-only market data adapters for external venues,
+  such as CCXT market discovery and OHLCV fetches.
+- `src/exchange/execution/`: external order/account mutation adapters. These
+  modules may talk to the exchange, but only explicit trader execution modes may
+  call mutating operations.
+
+Internal data modules remain separate from exchange integration:
+
+- `src/data/ohlcv/`: normalized candle contracts, validation, metadata, merge,
+  and retention.
+- `src/data/storage/`: local persisted datasets such as Parquet.
+- `src/data/sync/`: backfill and refresh orchestration over explicit market-data
+  and storage protocols.
+
 Runtime modules are grouped by trading concept:
 
 - `runtime/artifacts/`: eligible-pair artifact contracts, validation,
@@ -242,8 +260,8 @@ Runtime modules are grouped by trading concept:
 - `cli/`: operator command entrypoints for reporting, promoted-pair data
   refresh, and candidate artifact promotion.
 
-Root-level trader compatibility facades are not canonical package paths.
-Callers should import concepts directly from `state.manager`, `signals`,
+Root-level trader modules are canonical only when they own behavior. Callers
+should import concepts directly from `state.manager`, `signals`,
 `runtime.trader_runner`, `reporting`, and `cli` so each module has one obvious
 home.
 
@@ -252,7 +270,9 @@ home.
 Config is split by concern:
 
 ```text
-configs/pipelines/   runtime environment, exchange, DB/data/artifact paths, cadence, execution mode
+configs/pipelines/   runtime environment, venue selection, DB/data/artifact paths, cadence, execution mode
+configs/exchange/    venue market profiles and CCXT construction policy
+configs/data/        market-data sync policies such as OHLCV backfill pacing
 configs/universe/    asset eligibility and filtering
 configs/strategy/    signal thresholds and lookbacks
 configs/backtest/    simulation grid and friction assumptions

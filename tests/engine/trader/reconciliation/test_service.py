@@ -3,12 +3,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.engine.trader.reconciliation import (
-    ExchangePositionSnapshot,
+from src.engine.trader.reconciliation.service import (
     ReadOnlyReconciliationAuditor,
     ReconciliationPolicy,
     run_boot_reconciliation,
     run_read_only_audit,
+)
+from src.exchange.execution.account import (
+    ExchangePositionSnapshot,
 )
 from src.engine.trader.state.manager import TradeStateManager
 

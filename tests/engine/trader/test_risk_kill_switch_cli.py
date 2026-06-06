@@ -147,9 +147,13 @@ pipeline:
   timeframe: "1m"
   historical_days: 1
   max_symbols: null
-  execution:
-    exchange: "bybit"
+  venue:
+    exchange_id: "bybit"
+    market_profile_config: "configs/exchange/market_profiles/linear_usdt_swap.yml"
     credential_tier: "readonly"
+  data:
+    backfill_policy_config: "configs/data/backfill_default.yml"
+  execution:
     market_data_base_dir: "{tmp_path / "market_data"}"
     artifact_base_dir: "{tmp_path / "universes"}"
     db_path: "{db_path}"

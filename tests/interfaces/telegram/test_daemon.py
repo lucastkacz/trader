@@ -11,7 +11,7 @@ from src.engine.trader.state.manager import TradeStateManager
 from src.interfaces.telegram import daemon
 from src.interfaces.telegram import context as telegram_context
 from src.interfaces.telegram import plots
-from src.interfaces.telegram import renderers
+from src.interfaces.telegram.rendering import formatting
 
 
 class FakeUpdate:
@@ -109,9 +109,9 @@ async def test_positions_use_configured_holding_bar_minutes(configured_daemon):
     assert "Duration:" in message
     assert keyboard[0][0].text == "Position #1"
     assert keyboard[0][0].callback_data == "position_menu:1"
-    assert renderers.holding_duration_minutes({"holding_bars": 6}, 1) == 6
-    assert renderers.format_duration(6) == "6m"
-    assert renderers.format_duration(240) == "4h"
+    assert formatting.holding_duration_minutes({"holding_bars": 6}, 1) == 6
+    assert formatting.format_duration(6) == "6m"
+    assert formatting.format_duration(240) == "4h"
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.runtime.artifacts import build_pair_artifact
 from src.engine.trader.runtime.pair_validity import (
     build_pair_validity_report,
@@ -19,7 +19,7 @@ def test_pair_validity_computes_recent_drift_and_artifact_age(tmp_path):
         tmp_path,
         generated_at="2026-05-18T00:00:00+00:00",
     )
-    storage = ParquetStorage(base_dir=str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(base_dir=str(tmp_path / "parquet"))
     frame_x, frame_y = _cointegrated_ohlcv_frames(periods=180)
     storage.save_ohlcv("AAA/USDT", "1m", frame_x, {}, exchange="bybit")
     storage.save_ohlcv("BBB/USDT", "1m", frame_y, {}, exchange="bybit")
@@ -68,7 +68,7 @@ def test_pair_validity_uses_research_baseline_fields_when_present(tmp_path):
             "Spread_Std": 0.04,
         },
     )
-    storage = ParquetStorage(base_dir=str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(base_dir=str(tmp_path / "parquet"))
     frame_x, frame_y = _cointegrated_ohlcv_frames(periods=180)
     storage.save_ohlcv("AAA/USDT", "1m", frame_x, {}, exchange="bybit")
     storage.save_ohlcv("BBB/USDT", "1m", frame_y, {}, exchange="bybit")
@@ -133,7 +133,7 @@ def test_pair_validity_records_missing_market_data_without_mutation(tmp_path):
 
 def test_pair_validity_flags_market_data_older_than_latest_age_limit(tmp_path):
     artifact_path = _write_artifact(tmp_path)
-    storage = ParquetStorage(base_dir=str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(base_dir=str(tmp_path / "parquet"))
     frame_x, frame_y = _cointegrated_ohlcv_frames(periods=180)
     storage.save_ohlcv("AAA/USDT", "1m", frame_x, {}, exchange="bybit")
     storage.save_ohlcv("BBB/USDT", "1m", frame_y, {}, exchange="bybit")
@@ -165,7 +165,7 @@ def test_open_position_half_life_review_reason_does_not_close_position(tmp_path)
         tmp_path,
         pair_overrides={"Half_Life": 10.0},
     )
-    storage = ParquetStorage(base_dir=str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(base_dir=str(tmp_path / "parquet"))
     frame_x, frame_y = _cointegrated_ohlcv_frames(periods=90)
     storage.save_ohlcv("AAA/USDT", "1m", frame_x, {}, exchange="bybit")
     storage.save_ohlcv("BBB/USDT", "1m", frame_y, {}, exchange="bybit")
@@ -219,7 +219,7 @@ def test_pair_validity_flags_market_data_older_than_artifact_and_position(tmp_pa
         tmp_path,
         generated_at="2026-05-18T03:00:00+00:00",
     )
-    storage = ParquetStorage(base_dir=str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(base_dir=str(tmp_path / "parquet"))
     frame_x, frame_y = _cointegrated_ohlcv_frames(periods=90)
     storage.save_ohlcv("AAA/USDT", "1m", frame_x, {}, exchange="bybit")
     storage.save_ohlcv("BBB/USDT", "1m", frame_y, {}, exchange="bybit")

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.logger import logger
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.config import BacktestConfig, StrategyConfig
 from src.engine.trader.runtime.artifacts import write_candidate_pair_artifact
 from src.research.pair_stress_data import build_unified_ohlcv, load_candidate_pairs
@@ -32,7 +32,7 @@ from src.utils.timeframe_math import get_bars_per_year
 class PairStressFilter:
     """Run offline stress filtering over candidate pairs and write a new candidate artifact."""
 
-    def __init__(self, storage: ParquetStorage):
+    def __init__(self, storage: LocalOHLCVParquetStore):
         self.storage = storage
 
     def run(

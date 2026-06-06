@@ -4,7 +4,7 @@ import json
 import pandas as pd
 import pytest
 
-from src.data.storage.local_parquet import ParquetStorage
+from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.runtime.pair_validity.refresh import (
     PairDataRefreshPolicy,
     refresh_promoted_pair_market_data,
@@ -15,7 +15,7 @@ from src.engine.trader.runtime.artifacts import build_pair_artifact
 
 @pytest.mark.asyncio
 async def test_refresh_symbol_refetches_overlap_and_appends_closed_candles(tmp_path):
-    storage = ParquetStorage(str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(str(tmp_path / "parquet"))
     storage.save_ohlcv(
         "AAA/USDT",
         "1m",
@@ -73,7 +73,7 @@ async def test_refresh_promoted_pair_data_fetches_unique_artifact_symbols(tmp_pa
         ),
         encoding="utf-8",
     )
-    storage = ParquetStorage(str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(str(tmp_path / "parquet"))
     seen = []
 
     async def fake_fetch_klines(**kwargs):
@@ -102,7 +102,7 @@ async def test_refresh_promoted_pair_data_fetches_unique_artifact_symbols(tmp_pa
 
 @pytest.mark.asyncio
 async def test_refresh_symbol_continues_after_partial_page_before_closed_candle_end(tmp_path):
-    storage = ParquetStorage(str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(str(tmp_path / "parquet"))
     calls = []
     pages = [
         _ohlcv("2026-05-18T00:00:00Z", periods=3),
@@ -137,7 +137,7 @@ async def test_refresh_symbol_continues_after_partial_page_before_closed_candle_
 
 @pytest.mark.asyncio
 async def test_refresh_symbol_labels_incomplete_window_honestly(tmp_path):
-    storage = ParquetStorage(str(tmp_path / "parquet"))
+    storage = LocalOHLCVParquetStore(str(tmp_path / "parquet"))
     pages = [
         _ohlcv("2026-05-18T00:00:00Z", periods=2),
         pd.DataFrame(),
