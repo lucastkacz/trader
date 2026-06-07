@@ -11,6 +11,7 @@ from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
 from src.exchange.config.venue import load_ccxt_exchange_config
 from src.exchange.data.market_data import (
     create_configured_ccxt_exchange,
+    fetch_funding_rate_history,
     fetch_klines,
     fetch_universe,
 )
@@ -22,6 +23,10 @@ def _exchange_config(path: str = "configs/exchange/market_profiles/linear_usdt_s
 
 def test_create_configured_ccxt_exchange_valid():
     """Valid CCXT exchange ID should return an exchange instance."""
+    _announce(
+        "Creates a configured CCXT exchange client and confirms Bybit linear USDT "
+        "swap options are applied."
+    )
     exchange = create_configured_ccxt_exchange(
         "bybit",
         "test_key",
@@ -40,6 +45,10 @@ def test_create_configured_ccxt_exchange_valid():
 
 def test_create_configured_ccxt_exchange_invalid():
     """Invalid exchange ID should raise ValueError."""
+    _announce(
+        "Attempts to create an unknown CCXT exchange and confirms the factory "
+        "raises a clear ValueError."
+    )
     with pytest.raises(ValueError, match="Unknown CCXT exchange ID"):
         create_configured_ccxt_exchange(
             "nonexistent_exchange_xyz",
@@ -52,6 +61,10 @@ def test_create_configured_ccxt_exchange_invalid():
 @pytest.mark.asyncio
 async def test_fetch_universe_filters_by_volume():
     """Should only return tickers above the volume threshold."""
+    _announce(
+        "Uses mocked tickers to confirm fetch_universe keeps only configured "
+        "linear USDT swap markets above the quote-volume floor."
+    )
     mock_exchange = AsyncMock()
     mock_exchange.id = "bybit"
     mock_exchange.load_markets.return_value = {
@@ -101,6 +114,10 @@ async def test_fetch_universe_filters_by_volume():
 
 @pytest.mark.asyncio
 async def test_fetch_universe_uses_configured_spot_contract():
+    _announce(
+        "Switches the market profile to spot and confirms fetch_universe returns "
+        "the spot symbol instead of the swap symbol."
+    )
     mock_exchange = AsyncMock()
     mock_exchange.id = "bybit"
     mock_exchange.load_markets.return_value = {
@@ -128,6 +145,10 @@ async def test_fetch_universe_uses_configured_spot_contract():
 @pytest.mark.asyncio
 async def test_fetch_klines_network_failure():
     """Network error should be caught and re-raised as RuntimeError."""
+    _announce(
+        "Simulates a CCXT network failure while fetching OHLCV and confirms it is "
+        "wrapped as a RuntimeError."
+    )
     mock_exchange = AsyncMock()
     mock_exchange.id = "bybit"
     mock_exchange.fetch_ohlcv.side_effect = ccxt.NetworkError("502 Bad Gateway")
@@ -143,6 +164,10 @@ async def test_fetch_klines_network_failure():
 
 @pytest.mark.asyncio
 async def test_fetch_klines_preserves_ccxt_symbol():
+    _announce(
+        "Fetches mocked OHLCV and confirms the native CCXT symbol is passed "
+        "through unchanged."
+    )
     mock_exchange = AsyncMock()
     mock_exchange.id = "bybit"
     mock_exchange.fetch_ohlcv.return_value = [
@@ -168,6 +193,10 @@ async def test_fetch_klines_preserves_ccxt_symbol():
 
 @pytest.mark.asyncio
 async def test_fetch_klines_applies_requested_window_after_exchange_fetch():
+    _announce(
+        "Fetches mocked OHLCV and confirms the requested since/end window filters "
+        "the returned candles."
+    )
     mock_exchange = AsyncMock()
     mock_exchange.id = "bybit"
     mock_exchange.fetch_ohlcv.return_value = [
@@ -196,6 +225,10 @@ async def test_fetch_klines_applies_requested_window_after_exchange_fetch():
 
 @pytest.mark.asyncio
 async def test_ccxt_market_data_adapter_uses_injected_exchange_without_owning_close():
+    _announce(
+        "Injects a mocked exchange into CcxtMarketDataAdapter and confirms the "
+        "adapter does not close an exchange it does not own."
+    )
     mock_exchange = AsyncMock()
     mock_exchange.id = "bybit"
     mock_exchange.fetch_ohlcv.return_value = [
@@ -215,3 +248,51 @@ async def test_ccxt_market_data_adapter_uses_injected_exchange_without_owning_cl
     assert df["timestamp"].tolist() == [1600000000000]
     mock_exchange.fetch_ohlcv.assert_awaited_once()
     mock_exchange.close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_fetch_funding_rate_history_success():
+    """Should fetch and normalize funding rate history correctly."""
+    _announce("Fetches mocked historical funding rates and verifies normalization.")
+    mock_exchange = AsyncMock()
+    mock_exchange.id = "bybit"
+    mock_exchange.has = {"fetchFundingRateHistory": True}
+    mock_exchange.fetch_funding_rate_history.return_value = [
+        {"timestamp": 1600000000000, "fundingRate": 0.0001, "datetime": "2020-09-13T12:00:00.000Z"},
+        {"timestamp": 1600000060000, "fundingRate": -0.0002, "datetime": "2020-09-13T12:01:00.000Z"},
+    ]
+
+    df = await fetch_funding_rate_history(
+        exchange=mock_exchange,
+        symbol="BTC/USDT:USDT",
+        since=1600000000000,
+        limit=10,
+    )
+
+    mock_exchange.fetch_funding_rate_history.assert_awaited_once_with(
+        "BTC/USDT:USDT",
+        since=1600000000000,
+        limit=10,
+    )
+    assert len(df) == 2
+    assert df["timestamp"].tolist() == [1600000000000, 1600000060000]
+    assert df["funding_rate"].tolist() == [0.0001, -0.0002]
+
+
+@pytest.mark.asyncio
+async def test_fetch_funding_rate_history_not_supported():
+    """Should raise NotImplementedError when exchange has no fetchFundingRateHistory."""
+    _announce("Verifies fetch_funding_rate_history raises error for unsupported exchanges.")
+    mock_exchange = AsyncMock()
+    mock_exchange.id = "binance"
+    mock_exchange.has = {"fetchFundingRateHistory": False}
+
+    with pytest.raises(NotImplementedError, match="does not support fetching funding rate history"):
+        await fetch_funding_rate_history(
+            exchange=mock_exchange,
+            symbol="BTC/USDT:USDT",
+        )
+
+
+def _announce(message: str) -> None:
+    print(f"\nTEST: {message}")

@@ -8,6 +8,7 @@ import ccxt.async_support as ccxt
 from src.exchange.config.venue import CcxtExchangeConfig
 from src.exchange.data.market_data import (
     create_configured_ccxt_exchange,
+    fetch_funding_rate_history,
     fetch_klines,
     fetch_universe,
 )
@@ -70,6 +71,21 @@ class CcxtMarketDataAdapter:
             limit=limit,
             since=since,
             end_ts=end_ts,
+        )
+
+    async def fetch_funding_rate_history(
+        self,
+        symbol: str,
+        *,
+        since: int | None = None,
+        limit: int | None = None,
+    ) -> pd.DataFrame:
+        """Fetch historical funding rates for one symbol."""
+        return await fetch_funding_rate_history(
+            exchange=self.exchange,
+            symbol=symbol,
+            since=since,
+            limit=limit,
         )
 
     def _ensure_exchange(self) -> ccxt.Exchange:

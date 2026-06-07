@@ -103,11 +103,14 @@ class OHLCVRefreshService:
                 exchange=request.exchange_id,
                 timeframe=request.timeframe,
                 source=request.exchange_id,
-                status=status,
                 frame=retained,
+                coverage_status=status,
                 coverage_start_ms=first_ts_or_none(retained),
                 coverage_end_ms=request.end_ts,
                 last_closed_candle_ms=request.end_ts,
+                market_type=request.market.market_type,
+                market_sub_type=request.market.market_sub_type,
+                settle=request.market.settle,
             )
             self.store.save_ohlcv(
                 symbol,

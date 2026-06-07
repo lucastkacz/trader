@@ -2,6 +2,10 @@ from src.data.sync.config import load_ohlcv_backfill_config
 
 
 def test_default_backfill_config_returns_fetch_policy():
+    print(
+        "\nTEST: Loads configs/data/backfill_default.yml and confirms it becomes "
+        "the runtime OHLCV fetch/retry policy."
+    )
     config = load_ohlcv_backfill_config("configs/data/backfill_default.yml")
 
     policy = config.to_fetch_policy()

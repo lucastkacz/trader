@@ -8,12 +8,13 @@ from src.data.ohlcv.frames import (
     normalize_ohlcv_frame,
     validate_ohlcv_frame,
 )
-from src.data.ohlcv.metadata import OHLCVMetadata
+from src.data.ohlcv.metadata import OHLCVMarketMetadata, OHLCVMetadata
 from src.data.ohlcv.retention import OHLCVRetentionPolicy, apply_ohlcv_retention
 
 __all__ = [
     "OHLCV_COLUMNS",
     "OHLCVFrameError",
+    "OHLCVMarketMetadata",
     "OHLCVMetadata",
     "OHLCVRetentionPolicy",
     "apply_ohlcv_retention",

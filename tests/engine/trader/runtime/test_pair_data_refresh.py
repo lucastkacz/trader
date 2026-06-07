@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
+from src.data.ohlcv import OHLCVMarketMetadata
 from src.engine.trader.runtime.pair_validity.refresh import (
     PairDataRefreshPolicy,
     refresh_promoted_pair_market_data,
@@ -20,7 +21,10 @@ async def test_refresh_symbol_refetches_overlap_and_appends_closed_candles(tmp_p
         "AAA/USDT",
         "1m",
         _ohlcv("2026-05-18T00:00:00Z", periods=10),
-        {"status": "COMPLETE", "first_ts": str(_ms("2026-05-18T00:00:00Z"))},
+        {
+            "coverage_status": "COMPLETE",
+            "first_ts": str(_ms("2026-05-18T00:00:00Z")),
+        },
         exchange="bybit",
     )
     calls = []
@@ -43,6 +47,11 @@ async def test_refresh_symbol_refetches_overlap_and_appends_closed_candles(tmp_p
             fetch_limit=1000,
         ),
         fetch_klines=fake_fetch_klines,
+        market=OHLCVMarketMetadata(
+            market_type="swap",
+            market_sub_type="linear",
+            settle="USDT",
+        ),
         end_ms=_ms("2026-05-18T00:14:00Z"),
     )
 
@@ -54,6 +63,13 @@ async def test_refresh_symbol_refetches_overlap_and_appends_closed_candles(tmp_p
     assert len(refreshed) == 15
     assert int(refreshed["timestamp"].max()) == _ms("2026-05-18T00:14:00Z")
     assert len(calls) == 1
+    metadata = storage.read_ohlcv_metadata("AAA/USDT", "1m", exchange="bybit")
+    assert metadata is not None
+    assert metadata.coverage_status == "COMPLETE"
+    assert metadata.quality_status == "VALIDATED"
+    assert metadata.market_type == "swap"
+    assert metadata.market_sub_type == "linear"
+    assert metadata.settle == "USDT"
 
 
 @pytest.mark.asyncio
@@ -164,6 +180,7 @@ async def test_refresh_symbol_labels_incomplete_window_honestly(tmp_path):
     metadata = storage.read_metadata("AAA/USDT", "1m", exchange="bybit")
     assert result.status == "INCOMPLETE"
     assert result.notes == ["local_data_older_than_closed_candle_end"]
+    assert metadata["coverage_status"] == "INCOMPLETE"
     assert metadata["refresh_status"] == "INCOMPLETE"
 
 

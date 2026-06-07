@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from src.data.ohlcv import OHLCVMarketMetadata
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.runtime.pair_validity.market_data import normalize_ohlcv
 from src.engine.trader.runtime.artifacts import validate_pair_artifact_file
@@ -66,6 +67,7 @@ async def refresh_promoted_pair_market_data(
     timeframe: str,
     policy: PairDataRefreshPolicy,
     fetch_klines: FetchKlines,
+    market: OHLCVMarketMetadata | None = None,
     now: datetime | None = None,
 ) -> PairDataRefreshReport:
     """Fetch and append recent OHLCV for all symbols in the promoted artifact."""
@@ -94,6 +96,7 @@ async def refresh_promoted_pair_market_data(
                 timeframe=timeframe,
                 policy=policy,
                 fetch_klines=fetch_klines,
+                market=market,
                 end_ms=end_ms,
             )
         )
@@ -119,6 +122,7 @@ async def refresh_symbol_market_data(
     policy: PairDataRefreshPolicy,
     fetch_klines: FetchKlines,
     end_ms: int,
+    market: OHLCVMarketMetadata | None = None,
 ) -> SymbolRefreshResult:
     """Append recent OHLCV for a single symbol without mutating exchange state."""
     existing = _load_existing_ohlcv(storage, symbol, timeframe, exchange_id)
@@ -183,6 +187,8 @@ async def refresh_symbol_market_data(
         refreshed_until_ms=int(merged["timestamp"].max()),
         refresh_status=refresh_status,
         policy=policy,
+        market=market,
+        end_ms=end_ms,
     )
     storage.save_ohlcv(symbol, timeframe, merged, metadata, exchange=exchange_id)
     return _result(
@@ -313,19 +319,32 @@ def _refresh_metadata(
     refreshed_until_ms: int,
     refresh_status: str,
     policy: PairDataRefreshPolicy,
+    market: OHLCVMarketMetadata | None,
+    end_ms: int,
 ) -> dict[str, str]:
     existing = storage.read_metadata(symbol, timeframe, exchange=exchange_id)
+    coverage_status = "INCOMPLETE" if refresh_status == "INCOMPLETE" else "COMPLETE"
     metadata = {
         **existing,
         "source": exchange_id,
         "timeframe": timeframe,
-        "status": existing.get("status") or "REFRESHED",
+        "coverage_status": coverage_status,
         "refresh_status": refresh_status,
         "total_candles": str(rows),
+        "coverage_start_ms": str(first_ms),
+        "coverage_end_ms": str(end_ms),
+        "last_closed_candle_ms": str(end_ms),
         "last_ts": str(refreshed_until_ms),
         "last_refresh_at": _utc_now().isoformat(),
         "refresh_overlap_bars": str(policy.overlap_bars),
     }
+    if market is not None:
+        if market.market_type is not None:
+            metadata["market_type"] = market.market_type
+        if market.market_sub_type is not None:
+            metadata["market_sub_type"] = market.market_sub_type
+        if market.settle is not None:
+            metadata["settle"] = market.settle
     if "first_ts" not in metadata:
         metadata["first_ts"] = str(first_ms)
     return metadata

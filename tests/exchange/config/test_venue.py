@@ -45,6 +45,10 @@ def test_shipped_ccxt_market_profiles_parse(
     default_sub_type,
     default_settle,
 ):
+    print(
+        "\nTEST: Loads one shipped exchange market profile and confirms its CCXT "
+        f"contract fields are correct. Profile: {path}"
+    )
     config = load_ccxt_exchange_config(path)
 
     assert config.name == name

@@ -12,6 +12,10 @@ from src.data.ohlcv import (
 
 
 def test_normalize_ohlcv_frame_sorts_deduplicates_and_casts():
+    _announce(
+        "Normalizes a messy OHLCV frame by sorting timestamps, removing duplicate "
+        "candles, and casting numeric values."
+    )
     frame = pd.DataFrame(
         {
             "timestamp": [1600000060000, 1600000000000, 1600000060000],
@@ -31,6 +35,10 @@ def test_normalize_ohlcv_frame_sorts_deduplicates_and_casts():
 
 
 def test_normalize_ohlcv_frame_requires_contract_columns():
+    _announce(
+        "Checks that OHLCV normalization rejects frames that are missing required "
+        "columns like open, high, low, volume."
+    )
     frame = pd.DataFrame({"timestamp": [1600000000000], "close": [10.0]})
 
     with pytest.raises(OHLCVFrameError, match="missing required columns"):
@@ -38,6 +46,9 @@ def test_normalize_ohlcv_frame_requires_contract_columns():
 
 
 def test_validate_ohlcv_frame_rejects_duplicate_timestamps():
+    _announce(
+        "Checks that canonical OHLCV validation rejects duplicate candle timestamps."
+    )
     frame = pd.DataFrame(
         {
             "timestamp": [1600000000000, 1600000000000],
@@ -54,6 +65,10 @@ def test_validate_ohlcv_frame_rejects_duplicate_timestamps():
 
 
 def test_validate_ohlcv_frame_rejects_unsorted_timestamps():
+    _announce(
+        "Checks that canonical OHLCV validation rejects candles that are not sorted "
+        "oldest to newest."
+    )
     frame = pd.DataFrame(
         {
             "timestamp": [1600000060000, 1600000000000],
@@ -70,6 +85,10 @@ def test_validate_ohlcv_frame_rejects_unsorted_timestamps():
 
 
 def test_merge_ohlcv_frames_keeps_latest_duplicate_timestamp():
+    _announce(
+        "Merges existing and incoming OHLCV frames and confirms the incoming candle "
+        "wins when timestamps overlap."
+    )
     existing = pd.DataFrame(
         {
             "timestamp": [1600000000000],
@@ -98,6 +117,10 @@ def test_merge_ohlcv_frames_keeps_latest_duplicate_timestamp():
 
 
 def test_apply_ohlcv_retention_by_max_bars_and_age():
+    _announce(
+        "Applies OHLCV retention rules and confirms old candles are trimmed by age "
+        "and max-bar count."
+    )
     frame = pd.DataFrame(
         {
             "timestamp": [1600000000000, 1600086400000, 1600172800000],
@@ -116,3 +139,7 @@ def test_apply_ohlcv_retention_by_max_bars_and_age():
     )
 
     assert retained["timestamp"].tolist() == [1600172800000]
+
+
+def _announce(message: str) -> None:
+    print(f"\nTEST: {message}")

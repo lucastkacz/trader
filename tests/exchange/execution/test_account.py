@@ -22,6 +22,10 @@ def _provider(exchange: AsyncMock) -> CCXTReadOnlySnapshotProvider:
 
 @pytest.mark.asyncio
 async def test_account_snapshot_provider_normalizes_open_positions_and_ignores_zero_rows():
+    _announce(
+        "Fetches mocked open positions and confirms the account snapshot provider "
+        "normalizes non-zero rows while ignoring zero-sized positions."
+    )
     exchange = AsyncMock()
     exchange.fetch_positions.return_value = [
         {
@@ -63,6 +67,10 @@ async def test_account_snapshot_provider_normalizes_open_positions_and_ignores_z
 
 @pytest.mark.asyncio
 async def test_account_snapshot_provider_closes_exchange_after_snapshot_failure():
+    _announce(
+        "Simulates an account snapshot failure and confirms the provider still "
+        "closes the exchange client."
+    )
     exchange = AsyncMock()
     exchange.fetch_positions.side_effect = RuntimeError("account snapshot unavailable")
 
@@ -74,6 +82,10 @@ async def test_account_snapshot_provider_closes_exchange_after_snapshot_failure(
 
 @pytest.mark.asyncio
 async def test_account_snapshot_provider_rejects_open_position_without_side():
+    _announce(
+        "Returns a non-zero open position without side and confirms the provider "
+        "rejects malformed exchange data."
+    )
     exchange = AsyncMock()
     exchange.fetch_positions.return_value = [
         {
@@ -87,3 +99,7 @@ async def test_account_snapshot_provider_rejects_open_position_without_side():
         await _provider(exchange).fetch_open_positions()
 
     exchange.close.assert_awaited_once_with()
+
+
+def _announce(message: str) -> None:
+    print(f"\nTEST: {message}")

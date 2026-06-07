@@ -6,6 +6,8 @@ from typing import Mapping
 
 from src.data.ohlcv import OHLCVMetadata, normalize_ohlcv_frame
 
+CANONICAL_METADATA_KEYS = set(OHLCVMetadata.model_fields) | {"status"}
+
 
 class LocalOHLCVParquetStore:
     """Local Parquet-backed store for canonical OHLCV datasets."""
@@ -120,14 +122,21 @@ class LocalOHLCVParquetStore:
             exchange=exchange,
             timeframe=timeframe,
             source=custom.get("source", exchange),
-            status=custom.get("status", "VALIDATED"),
             frame=frame,
+            coverage_status=custom.get("coverage_status") or custom.get("status"),
             coverage_start_ms=_int_or_none(custom.get("coverage_start_ms")),
             coverage_end_ms=_int_or_none(custom.get("coverage_end_ms")),
             last_closed_candle_ms=_int_or_none(custom.get("last_closed_candle_ms")),
-            quality_status=custom.get("quality_status", "VALIDATED"),
+            market_type=_str_or_none(custom.get("market_type")),
+            market_sub_type=_str_or_none(custom.get("market_sub_type")),
+            settle=_str_or_none(custom.get("settle")),
         ).to_parquet_metadata()
-        return {**base, **custom}
+        custom_payload = {
+            key: value
+            for key, value in custom.items()
+            if key not in CANONICAL_METADATA_KEYS
+        }
+        return {**base, **custom_payload}
 
     @staticmethod
     def _clean_symbol(symbol: str) -> str:
@@ -138,3 +147,9 @@ def _int_or_none(value: object | None) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
+
+
+def _str_or_none(value: object | None) -> str | None:
+    if value is None or value == "":
+        return None
+    return str(value)

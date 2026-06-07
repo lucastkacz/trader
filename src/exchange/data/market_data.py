@@ -133,3 +133,62 @@ async def fetch_klines(
             f"[{exchange.id}] FATAL: {e}"
         )
         raise
+
+
+async def fetch_funding_rate_history(
+    exchange: ccxt.Exchange,
+    symbol: str,
+    since: Optional[int] = None,
+    limit: Optional[int] = None,
+) -> pd.DataFrame:
+    """
+    Downloads historical funding rates from any CCXT-supported exchange.
+
+    Parameters
+    ----------
+    exchange : ccxt.Exchange - an initialized exchange instance
+    symbol : str - native CCXT market symbol (e.g., "BTC/USDT:USDT")
+    since : int, optional - start timestamp in milliseconds
+    limit : int, optional - max historical records to fetch
+    """
+    ctx = LogContext(pair=symbol)
+    logger.bind(**ctx.model_dump(exclude_none=True)).debug(
+        f"[{exchange.id}] Fetching funding rate history for {symbol}"
+    )
+
+    try:
+        # Check if the exchange supports fetchFundingRateHistory
+        if not exchange.has.get("fetchFundingRateHistory", False):
+            raise NotImplementedError(
+                f"Exchange {exchange.id} does not support fetching funding rate history."
+            )
+
+        raw = await exchange.fetch_funding_rate_history(
+            symbol, since=since, limit=limit
+        )
+
+        records = []
+        for item in raw:
+            ts = item.get("timestamp")
+            rate = item.get("fundingRate")
+            if ts is not None and rate is not None:
+                records.append({
+                    "timestamp": int(ts),
+                    "funding_rate": float(rate)
+                })
+
+        df = pd.DataFrame(records, columns=["timestamp", "funding_rate"])
+        df = df.dropna().sort_values("timestamp").reset_index(drop=True)
+        return df
+
+    except ccxt.NetworkError as ne:
+        logger.bind(**ctx.model_dump(exclude_none=True)).error(
+            f"[{exchange.id}] Network error while fetching funding: {ne}"
+        )
+        raise RuntimeError(f"NetworkError ({exchange.id}): {ne}")
+    except Exception as e:
+        logger.bind(**ctx.model_dump(exclude_none=True)).critical(
+            f"[{exchange.id}] FATAL while fetching funding: {e}"
+        )
+        raise
+

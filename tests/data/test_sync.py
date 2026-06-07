@@ -7,6 +7,7 @@ from src.data.sync import (
     OHLCVBackfillRequest,
     OHLCVBackfillService,
     OHLCVFetchPolicy,
+    OHLCVMarketMetadata,
     OHLCVRefreshRequest,
     OHLCVRefreshService,
 )
@@ -85,8 +86,20 @@ def _policy() -> OHLCVFetchPolicy:
     )
 
 
+def _market() -> OHLCVMarketMetadata:
+    return OHLCVMarketMetadata(
+        market_type="swap",
+        market_sub_type="linear",
+        settle="USDT",
+    )
+
+
 @pytest.mark.asyncio
 async def test_ohlcv_backfill_service_fetches_paginates_and_persists(tmp_path):
+    _announce(
+        "Runs OHLCVBackfillService with fake market data and verifies pagination, "
+        "Parquet persistence, and COMPLETE metadata."
+    )
     rows = {
         "BTC/USDT:USDT": [
             [1600000000000, 10.0, 11.0, 9.0, 10.5, 100.0],
@@ -109,6 +122,7 @@ async def test_ohlcv_backfill_service_fetches_paginates_and_persists(tmp_path):
             start_ts=1600000000000,
             end_ts=1600000120000,
             min_volume=1_000_000,
+            market=_market(),
         )
     )
 
@@ -121,12 +135,22 @@ async def test_ohlcv_backfill_service_fetches_paginates_and_persists(tmp_path):
         1600000120000,
     ]
     assert metadata is not None
-    assert metadata.status == "COMPLETE"
+    assert metadata.coverage_status == "COMPLETE"
+    assert metadata.quality_status == "VALIDATED"
+    assert metadata.expected_candles == 3
+    assert metadata.missing_candles == 0
+    assert metadata.market_type == "swap"
+    assert metadata.market_sub_type == "linear"
+    assert metadata.settle == "USDT"
     assert metadata.total_candles == 3
 
 
 @pytest.mark.asyncio
 async def test_ohlcv_refresh_service_fetches_missing_tail_and_applies_retention(tmp_path):
+    _announce(
+        "Starts from an existing Parquet sample, refreshes the missing tail candle, "
+        "and confirms retention keeps only the newest bars."
+    )
     rows = {
         "ETH/USDT:USDT": [
             [1600000000000, 10.0, 11.0, 9.0, 10.5, 100.0],
@@ -142,7 +166,7 @@ async def test_ohlcv_refresh_service_fetches_missing_tail_and_applies_retention(
             rows["ETH/USDT:USDT"][:2],
             columns=["timestamp", "open", "high", "low", "close", "volume"],
         ),
-        {"status": "COMPLETE", "source": "bybit"},
+        {"coverage_status": "COMPLETE", "source": "bybit"},
         exchange="bybit",
     )
     service = OHLCVRefreshService(
@@ -161,6 +185,7 @@ async def test_ohlcv_refresh_service_fetches_missing_tail_and_applies_retention(
             overlap_bars=1,
             missing_lookback_bars=3,
             retention_policy=OHLCVRetentionPolicy(max_bars=2),
+            market=_market(),
         )
     )
 
@@ -169,11 +194,17 @@ async def test_ohlcv_refresh_service_fetches_missing_tail_and_applies_retention(
     assert result.results[0].status == "COMPLETE"
     assert loaded["timestamp"].tolist() == [1600000060000, 1600000120000]
     assert metadata is not None
+    assert metadata.coverage_status == "COMPLETE"
+    assert metadata.quality_status == "VALIDATED"
     assert metadata.total_candles == 2
 
 
 @pytest.mark.asyncio
 async def test_ohlcv_refresh_service_records_symbol_failure_and_continues(tmp_path):
+    _announce(
+        "Refreshes two symbols while one fake symbol fails, then confirms the good "
+        "symbol is saved and the failure is reported."
+    )
     rows = {
         "GOOD/USDT:USDT": [
             [1600000000000, 10.0, 11.0, 9.0, 10.5, 100.0],
@@ -199,6 +230,7 @@ async def test_ohlcv_refresh_service_records_symbol_failure_and_continues(tmp_pa
             end_ts=1600000060000,
             overlap_bars=0,
             missing_lookback_bars=2,
+            market=_market(),
         )
     )
 
@@ -211,3 +243,7 @@ async def test_ohlcv_refresh_service_records_symbol_failure_and_continues(tmp_pa
     assert result.success_count == 1
     assert result.failure_count == 1
     assert loaded["timestamp"].tolist() == [1600000000000, 1600000060000]
+
+
+def _announce(message: str) -> None:
+    print(f"\nTEST: {message}")

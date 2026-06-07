@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import pandas as pd
 
-from src.data.ohlcv import OHLCVMetadata, OHLCVRetentionPolicy
+from src.data.ohlcv import OHLCVMarketMetadata, OHLCVMetadata, OHLCVRetentionPolicy
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -87,6 +87,7 @@ class OHLCVBackfillRequest:
     symbols: Sequence[str] | None = None
     limit_symbols: int | None = None
     retention_policy: OHLCVRetentionPolicy | None = None
+    market: OHLCVMarketMetadata = field(default_factory=OHLCVMarketMetadata)
 
     def __post_init__(self) -> None:
         if self.start_ts >= self.end_ts:
@@ -108,6 +109,7 @@ class OHLCVRefreshRequest:
     overlap_bars: int
     missing_lookback_bars: int
     retention_policy: OHLCVRetentionPolicy | None = None
+    market: OHLCVMarketMetadata = field(default_factory=OHLCVMarketMetadata)
 
     def __post_init__(self) -> None:
         if not self.symbols:

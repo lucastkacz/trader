@@ -8,7 +8,11 @@ from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
 from src.exchange.config.venue import load_ccxt_exchange_config
 from src.data.sync.config import load_ohlcv_backfill_config
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
-from src.data.sync import OHLCVBackfillRequest, OHLCVBackfillService
+from src.data.sync import (
+    OHLCVBackfillRequest,
+    OHLCVBackfillService,
+    OHLCVMarketMetadata,
+)
 from src.engine.trader.config import (
     BacktestConfig,
     PipelineConfig,
@@ -63,6 +67,11 @@ async def task_mine_data(pipeline_cfg: PipelineConfig, universe_cfg: UniverseCon
                 end_ts=int(end_dt.timestamp() * 1000),
                 min_volume=universe_cfg.filters.min_volume_liquidity,
                 limit_symbols=pipeline_cfg.max_symbols,
+                market=OHLCVMarketMetadata(
+                    market_type=exchange_config.market_contract.default_type,
+                    market_sub_type=exchange_config.market_contract.default_sub_type,
+                    settle=exchange_config.market_contract.default_settle,
+                ),
             )
         )
     return True

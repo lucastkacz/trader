@@ -18,6 +18,7 @@ from src.exchange.config.venue import load_ccxt_exchange_config
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.data.sync import (
     OHLCVFetchPolicy,
+    OHLCVMarketMetadata,
     OHLCVRefreshRequest,
     OHLCVRefreshService,
 )
@@ -26,6 +27,10 @@ from src.data.sync import (
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_live_ohlcv_probe_writes_small_1m_parquet_sample():
+    print(
+        "\nTEST: Live probe that refreshes a tiny BTC/ETH/XRP 1m OHLCV sample and "
+        "writes local Parquet files for inspection."
+    )
     output_dir = Path(
         os.environ.get("OHLCV_LIVE_PROBE_DIR", "data/test/ohlcv_live_probe")
     )
@@ -57,6 +62,11 @@ async def test_live_ohlcv_probe_writes_small_1m_parquet_sample():
                 end_ts=end_ts,
                 overlap_bars=1,
                 missing_lookback_bars=5,
+                market=OHLCVMarketMetadata(
+                    market_type=exchange_config.market_contract.default_type,
+                    market_sub_type=exchange_config.market_contract.default_sub_type,
+                    settle=exchange_config.market_contract.default_settle,
+                ),
             )
         )
 
@@ -69,6 +79,9 @@ async def test_live_ohlcv_probe_writes_small_1m_parquet_sample():
         assert metadata is not None
         assert metadata.timeframe == timeframe
         assert metadata.exchange == exchange_id
+        assert metadata.market_type == "swap"
+        assert metadata.market_sub_type == "linear"
+        assert metadata.settle == "USDT"
 
 
 def _closed_1m_candle_end_ms() -> int:

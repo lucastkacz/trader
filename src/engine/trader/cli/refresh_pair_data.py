@@ -9,6 +9,7 @@ from pathlib import Path
 
 from src.core.config import settings
 from src.core.logger import configure_logger
+from src.data.ohlcv import OHLCVMarketMetadata
 from src.exchange.config.venue import load_ccxt_exchange_config
 from src.exchange.data.market_data import (
     create_configured_ccxt_exchange,
@@ -91,11 +92,12 @@ async def _async_main(args: argparse.Namespace) -> int:
         missing_lookback_bars=args.missing_lookback_bars,
         fetch_limit=args.fetch_limit,
     )
+    exchange_config = load_ccxt_exchange_config(venue_cfg.market_profile_config)
     exchange = create_configured_ccxt_exchange(
         venue_cfg.exchange_id,
         settings.exchange_readonly_api_key or "",
         settings.exchange_readonly_api_secret or "",
-        load_ccxt_exchange_config(venue_cfg.market_profile_config),
+        exchange_config,
     )
     try:
         report = await refresh_promoted_pair_market_data(
@@ -106,6 +108,11 @@ async def _async_main(args: argparse.Namespace) -> int:
             timeframe=pipeline_cfg.timeframe,
             policy=policy,
             fetch_klines=fetch_klines,
+            market=OHLCVMarketMetadata(
+                market_type=exchange_config.market_contract.default_type,
+                market_sub_type=exchange_config.market_contract.default_sub_type,
+                settle=exchange_config.market_contract.default_settle,
+            ),
             now=_parse_now(args.now),
         )
     finally:
