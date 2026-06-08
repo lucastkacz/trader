@@ -1,8 +1,9 @@
 # Local Operator Runbook
 
-This runbook is for local development drills only. Keep `configs/pipelines/dev.yml`
-on `venue.credential_tier: "readonly"` and `order_execution.mode: "state_only"`
-unless you are deliberately changing a tested execution mode.
+This runbook is for local development drills only. Keep
+`configs/exchange/venues/dev.yml` on `credential_tier: "readonly"` and
+`configs/pipelines/dev.yml` on `order_execution.mode: "state_only"` unless you
+are deliberately changing a tested execution mode.
 
 Do not use this runbook as real-capital production approval. The production
 readiness gate in `docs/engineering-rules.md` still applies.
@@ -55,6 +56,8 @@ selection:
 ```bash
 .venv/bin/python main.py execute \
   --pipeline configs/pipelines/dev.yml \
+  --venue configs/exchange/venues/dev.yml \
+  --market-profile configs/exchange/market_profiles/linear_usdt_swap.yml \
   --strategy configs/strategy/dev.yml \
   --risk configs/risk/alpha_v1.yml \
   --max-ticks 30 \
@@ -197,6 +200,8 @@ event before starting an observer.
 ```bash
 .venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
   --pipeline configs/pipelines/dev.yml \
+  --venue configs/exchange/venues/dev.yml \
+  --market-profile configs/exchange/market_profiles/linear_usdt_swap.yml \
   --overlap-bars 5 \
   --missing-lookback-bars 1500 \
   --fetch-limit 1000
@@ -250,6 +255,7 @@ For a cold local rebuild, run research and promotion before this section:
 
 .venv/bin/python main.py promote-pairs \
   --pipeline configs/pipelines/dev.yml \
+  --venue configs/exchange/venues/dev.yml \
   --operator local-fresh-start
 ```
 

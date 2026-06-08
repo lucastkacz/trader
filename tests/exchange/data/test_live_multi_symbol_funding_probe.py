@@ -7,7 +7,6 @@ import pandas as pd
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
 from src.exchange.config.venue import load_ccxt_exchange_config
 from src.data.ohlcv.metadata import OHLCVMetadata
-from src.data.storage.local_funding import FundingMetadata
 
 def _exchange_config():
     return load_ccxt_exchange_config("configs/exchange/market_profiles/linear_usdt_swap.yml")

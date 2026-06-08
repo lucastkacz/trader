@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 from prefect import flow, task, get_run_logger
 
 from src.core.config import settings
+from src.exchange.config.venue import CcxtExchangeConfig, ExchangeVenueConfig
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
-from src.exchange.config.venue import load_ccxt_exchange_config
 from src.data.sync.config import load_ohlcv_backfill_config
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.data.sync import (
@@ -20,7 +20,7 @@ from src.engine.trader.config import (
     StrategyConfig,
     UniverseConfig,
 )
-from src.screener.discovery_engine import DiscoveryEngine
+from src.universe.discovery import DiscoveryEngine
 from src.engine.trader.runtime.artifacts import candidate_pair_artifact_path
 from src.engine.trader.runtime.trader_runner import run_trader_loop
 from src.research.pair_stress_filter import PairStressFilter
@@ -28,9 +28,14 @@ from src.research.pair_stress_filter import PairStressFilter
 # --- RESEARCH TASKS ---
 
 @task(name="Ingest CCXT Historicals")
-async def task_mine_data(pipeline_cfg: PipelineConfig, universe_cfg: UniverseConfig):
-    exchange_id = pipeline_cfg.venue.exchange_id
-    credential_tier = pipeline_cfg.venue.credential_tier
+async def task_mine_data(
+    pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
+    exchange_config: CcxtExchangeConfig,
+    universe_cfg: UniverseConfig,
+):
+    exchange_id = venue_cfg.exchange_id
+    credential_tier = venue_cfg.credential_tier
     if credential_tier == "live":
         api_key = settings.exchange_live_api_key or ""
         api_secret = settings.exchange_live_api_secret or ""
@@ -41,7 +46,6 @@ async def task_mine_data(pipeline_cfg: PipelineConfig, universe_cfg: UniverseCon
     storage = LocalOHLCVParquetStore(
         base_dir=pipeline_cfg.execution.market_data_base_dir
     )
-    exchange_config = load_ccxt_exchange_config(pipeline_cfg.venue.market_profile_config)
     backfill_policy = load_ohlcv_backfill_config(
         pipeline_cfg.data.backfill_policy_config
     ).to_fetch_policy()
@@ -79,6 +83,7 @@ async def task_mine_data(pipeline_cfg: PipelineConfig, universe_cfg: UniverseCon
 @task(name="Alpha Cointegration Taxonomy")
 def task_discover_alpha(
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
     universe_cfg: UniverseConfig,
     strategy_cfg: StrategyConfig,
 ):
@@ -88,7 +93,7 @@ def task_discover_alpha(
     engine = DiscoveryEngine(storage)
     engine.run(
         timeframe=pipeline_cfg.timeframe,
-        exchange=pipeline_cfg.venue.exchange_id,
+        exchange=venue_cfg.exchange_id,
         universe_cfg=universe_cfg,
         strategy_cfg=strategy_cfg,
         artifact_base_dir=pipeline_cfg.execution.artifact_base_dir,
@@ -98,6 +103,7 @@ def task_discover_alpha(
 @task(name="Pair Stress Filter")
 def task_vector_stress(
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
     backtest_cfg: BacktestConfig,
     strategy_cfg: StrategyConfig,
 ):
@@ -107,7 +113,7 @@ def task_vector_stress(
     stress_filter = PairStressFilter(storage)
     stress_filter.run(
         timeframe=pipeline_cfg.timeframe,
-        exchange=pipeline_cfg.venue.exchange_id,
+        exchange=venue_cfg.exchange_id,
         input_pairs_path=candidate_pair_artifact_path(
             pipeline_cfg.timeframe,
             pipeline_cfg.execution.artifact_base_dir,
@@ -133,11 +139,15 @@ def task_execute_telegram(telegram_path: str):
 @task(name="Launch Live Trader")
 async def task_execute_trader(
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
+    exchange_config: CcxtExchangeConfig,
     strategy_cfg: StrategyConfig,
     risk_cfg: RiskConfig,
 ):
     await run_trader_loop(
         pipeline_cfg=pipeline_cfg,
+        venue_cfg=venue_cfg,
+        exchange_config=exchange_config,
         strategy_cfg=strategy_cfg,
         risk_cfg=risk_cfg,
     )
@@ -148,6 +158,8 @@ async def task_execute_trader(
 @flow(name="Research Orchestrator Pipeline", retries=0)
 async def research_flow(
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
+    exchange_config: CcxtExchangeConfig,
     universe_cfg: UniverseConfig,
     backtest_cfg: BacktestConfig,
     strategy_cfg: StrategyConfig,
@@ -161,14 +173,16 @@ async def research_flow(
     if skip_fetch:
         logger.warning("DIRTY RUN ENABLED: Skipping historical API Fetch...")
     else:
-        await task_mine_data(pipeline_cfg, universe_cfg)
+        await task_mine_data(pipeline_cfg, venue_cfg, exchange_config, universe_cfg)
         
-    task_discover_alpha(pipeline_cfg, universe_cfg, strategy_cfg)
-    task_vector_stress(pipeline_cfg, backtest_cfg, strategy_cfg)
+    task_discover_alpha(pipeline_cfg, venue_cfg, universe_cfg, strategy_cfg)
+    task_vector_stress(pipeline_cfg, venue_cfg, backtest_cfg, strategy_cfg)
 
 @flow(name="Live Execution Orchestrator", retries=0)
 async def execute_flow(
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
+    exchange_config: CcxtExchangeConfig,
     strategy_cfg: StrategyConfig,
     risk_cfg: RiskConfig,
     telegram_path: str | None = None,
@@ -181,4 +195,10 @@ async def execute_flow(
     if telegram_path:
         task_execute_telegram(telegram_path=telegram_path)
     
-    await task_execute_trader(pipeline_cfg, strategy_cfg, risk_cfg)
+    await task_execute_trader(
+        pipeline_cfg,
+        venue_cfg,
+        exchange_config,
+        strategy_cfg,
+        risk_cfg,
+    )

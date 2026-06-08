@@ -12,10 +12,15 @@ import pandas as pd
 import pytest
 
 from src.engine.trader.config import load_pipeline_config
-from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.config.venue import (
+    load_ccxt_exchange_config,
+    load_exchange_venue_config,
+)
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
 
 PIPELINE_CONFIG = "configs/pipelines/dev.yml"
+VENUE_CONFIG = "configs/exchange/venues/dev.yml"
+MARKET_PROFILE_CONFIG = "configs/exchange/market_profiles/linear_usdt_swap.yml"
 DEFAULT_SYMBOLS = ("BTC/USDT:USDT", "ETH/USDT:USDT", "XRP/USDT:USDT")
 
 
@@ -28,15 +33,17 @@ async def test_dev_config_fetches_selected_live_ohlcv_rows() -> None:
         "BTC/ETH/XRP OHLCV rows, and prints the candles."
     )
     pipeline_cfg = load_pipeline_config(PIPELINE_CONFIG)
-    exchange_cfg = load_ccxt_exchange_config(pipeline_cfg.venue.market_profile_config)
+    venue_cfg = load_exchange_venue_config(VENUE_CONFIG)
+    exchange_cfg = load_ccxt_exchange_config(MARKET_PROFILE_CONFIG)
     symbols = _symbols_from_env("LIVE_OHLCV_SYMBOLS", DEFAULT_SYMBOLS)
     limit = int(os.environ.get("LIVE_OHLCV_LIMIT", "5"))
 
     _print_header("LIVE SELECTED OHLCV PROBE")
     _print_kv("pipeline config", PIPELINE_CONFIG)
+    _print_kv("venue config", VENUE_CONFIG)
+    _print_kv("market profile config", MARKET_PROFILE_CONFIG)
     _print_kv("pipeline name", pipeline_cfg.name)
-    _print_kv("exchange id", pipeline_cfg.venue.exchange_id)
-    _print_kv("market profile config", pipeline_cfg.venue.market_profile_config)
+    _print_kv("exchange id", venue_cfg.exchange_id)
     _print_kv("timeframe", pipeline_cfg.timeframe)
     _print_kv("limit per symbol", limit)
     _print_kv("symbols", ", ".join(symbols))
@@ -50,7 +57,7 @@ async def test_dev_config_fetches_selected_live_ohlcv_rows() -> None:
     )
 
     async with CcxtMarketDataAdapter(
-        pipeline_cfg.venue.exchange_id,
+        venue_cfg.exchange_id,
         "",
         "",
         exchange_cfg,

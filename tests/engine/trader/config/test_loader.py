@@ -15,6 +15,7 @@ from src.engine.trader.config import (
     load_telegram_config,
     load_universe_config,
 )
+from src.exchange.config.venue import load_exchange_venue_config
 
 
 def write_yaml(tmp_path, data):
@@ -26,12 +27,6 @@ def write_yaml(tmp_path, data):
 def test_valid_operator_configs_parse():
     dev_pipeline = load_pipeline_config("configs/pipelines/dev.yml")
     assert dev_pipeline.execution.max_ticks is None
-    assert dev_pipeline.venue.exchange_id == "bybit"
-    assert (
-        dev_pipeline.venue.market_profile_config
-        == "configs/exchange/market_profiles/linear_usdt_swap.yml"
-    )
-    assert dev_pipeline.venue.credential_tier == "readonly"
     assert dev_pipeline.data.backfill_policy_config == "configs/data/backfill_default.yml"
     assert dev_pipeline.execution.market_data_base_dir == "data/parquet"
     assert dev_pipeline.execution.artifact_base_dir == "data/universes"
@@ -45,8 +40,8 @@ def test_valid_operator_configs_parse():
     assert load_pipeline_config("configs/pipelines/uat.yml").execution.max_ticks is None
     assert load_pipeline_config("configs/pipelines/prod.yml").execution.max_ticks is None
 
-    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
-    assert universe_cfg.filters.min_volume_liquidity == 20_000_000
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
+    assert universe_cfg.filters.min_volume_liquidity == 5_000
     assert universe_cfg.cointegration.ewma_span_bars == 48
     assert load_strategy_config("configs/strategy/dev.yml").execution.volatility_lookback_bars == 60
     assert load_strategy_config("configs/strategy/uat.yml").name == "UAT Institutional Mean Reversion V1"
@@ -54,7 +49,15 @@ def test_valid_operator_configs_parse():
     assert load_backtest_config("configs/backtest/stress_test.yml").friction.taker_fee == 0.0006
     run_profile = load_run_profile_config("configs/runs/dev_1m_research.yml")
     assert run_profile.pipeline == "configs/pipelines/dev.yml"
+    assert run_profile.venue == "configs/exchange/venues/dev.yml"
+    assert (
+        run_profile.market_profile
+        == "configs/exchange/market_profiles/linear_usdt_swap.yml"
+    )
     assert run_profile.skip_fetch is False
+    venue_cfg = load_exchange_venue_config(run_profile.venue)
+    assert venue_cfg.exchange_id == "bybit"
+    assert venue_cfg.credential_tier == "readonly"
     assert load_risk_config("configs/risk/alpha_v1.yml").max_leverage == 10.0
     assert load_risk_config("configs/risk/alpha_v1.yml").max_cluster_exposure == 0.10
     assert load_risk_config("configs/risk/alpha_v1.yml").max_portfolio_exposure == 0.30
@@ -84,6 +87,16 @@ def test_all_shipped_pipeline_configs_keep_order_execution_state_only():
     parsed = [load_pipeline_config(path) for path in pipeline_paths]
 
     assert {cfg.execution.order_execution.mode for cfg in parsed} == {"state_only"}
+
+
+def test_all_shipped_exchange_venue_configs_parse():
+    venue_paths = sorted(Path("configs/exchange/venues").glob("*.yml"))
+    assert [path.name for path in venue_paths] == ["dev.yml", "prod.yml", "uat.yml"]
+
+    parsed = [load_exchange_venue_config(path) for path in venue_paths]
+
+    assert {cfg.exchange_id for cfg in parsed} == {"bybit"}
+    assert {cfg.credential_tier for cfg in parsed} == {"readonly", "live"}
 
 
 def test_all_shipped_strategy_configs_parse():
@@ -132,31 +145,17 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
     ("source_path", "top_key", "field_path", "loader", "match"),
     [
         (
-            "configs/pipelines/dev.yml",
-            "pipeline",
-            ("venue",),
-            load_pipeline_config,
+            "configs/exchange/venues/dev.yml",
             "venue",
-        ),
-        (
-            "configs/pipelines/dev.yml",
-            "pipeline",
-            ("venue", "exchange_id"),
-            load_pipeline_config,
+            ("exchange_id",),
+            load_exchange_venue_config,
             "exchange_id",
         ),
         (
-            "configs/pipelines/dev.yml",
-            "pipeline",
-            ("venue", "market_profile_config"),
-            load_pipeline_config,
-            "market_profile_config",
-        ),
-        (
-            "configs/pipelines/dev.yml",
-            "pipeline",
-            ("venue", "credential_tier"),
-            load_pipeline_config,
+            "configs/exchange/venues/dev.yml",
+            "venue",
+            ("credential_tier",),
+            load_exchange_venue_config,
             "credential_tier",
         ),
         (
@@ -258,14 +257,14 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             "artifact_base_dir",
         ),
         (
-            "configs/universe/alpha_v1.yml",
+            "configs/universe/dev.yml",
             "universe",
             ("filters", "min_volume_liquidity"),
             load_universe_config,
             "min_volume_liquidity",
         ),
         (
-            "configs/universe/alpha_v1.yml",
+            "configs/universe/dev.yml",
             "universe",
             ("cointegration", "ewma_span_bars"),
             load_universe_config,
@@ -291,6 +290,20 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("pipeline",),
             load_run_profile_config,
             "pipeline",
+        ),
+        (
+            "configs/runs/dev_1m_research.yml",
+            "run",
+            ("venue",),
+            load_run_profile_config,
+            "venue",
+        ),
+        (
+            "configs/runs/dev_1m_research.yml",
+            "run",
+            ("market_profile",),
+            load_run_profile_config,
+            "market_profile",
         ),
         (
             "configs/runs/dev_1m_research.yml",

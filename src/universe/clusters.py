@@ -8,8 +8,8 @@ import pandas as pd
 
 from src.core.logger import logger
 from src.engine.trader.config import UniverseConfig
-from src.screener.clustering.graph_louvain import LouvainTaxonomist
-from src.screener.clustering.returns_matrix import MatrixBuilder
+from src.universe.clustering.graph_louvain import LouvainTaxonomist
+from src.universe.clustering.returns_matrix import MatrixBuilder
 
 
 def build_clusters(

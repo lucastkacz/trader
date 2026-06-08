@@ -5,6 +5,7 @@ import pytest
 
 from src.engine.trader.cli import promote_pairs
 from src.engine.trader.config import load_pipeline_config
+from src.exchange.config.venue import ExchangeVenueConfig
 from src.engine.trader.runtime import artifacts as pairs
 
 
@@ -38,7 +39,26 @@ def _write_artifact(path, artifact):
     path.write_text(json.dumps(artifact), encoding="utf-8")
 
 
-def _write_pipeline_config(tmp_path, artifact_base_dir, timeframe="1m", exchange="bybit"):
+def _venue_cfg(exchange="bybit"):
+    return ExchangeVenueConfig.model_validate(
+        {"exchange_id": exchange, "credential_tier": "readonly"}
+    )
+
+
+def _write_venue_config(tmp_path, exchange="bybit"):
+    path = tmp_path / "venue.yml"
+    path.write_text(
+        f"""
+venue:
+  exchange_id: "{exchange}"
+  credential_tier: "readonly"
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_pipeline_config(tmp_path, artifact_base_dir, timeframe="1m"):
     path = tmp_path / "pipeline.yml"
     path.write_text(
         f"""
@@ -47,10 +67,6 @@ pipeline:
   timeframe: "{timeframe}"
   historical_days: 1
   max_symbols: null
-  venue:
-    exchange_id: "{exchange}"
-    market_profile_config: "configs/exchange/market_profiles/linear_usdt_swap.yml"
-    credential_tier: "readonly"
   data:
     backfill_policy_config: "configs/data/backfill_default.yml"
   execution:
@@ -111,8 +127,8 @@ pipeline:
     return path
 
 
-def _load_pipeline(tmp_path, artifact_base_dir, timeframe="1m", exchange="bybit"):
-    path = _write_pipeline_config(tmp_path, artifact_base_dir, timeframe, exchange)
+def _load_pipeline(tmp_path, artifact_base_dir, timeframe="1m"):
+    path = _write_pipeline_config(tmp_path, artifact_base_dir, timeframe)
     return load_pipeline_config(path)
 
 
@@ -122,6 +138,7 @@ def test_promote_pairs_cli_promotes_candidate_and_creates_audit_record(
 ):
     base_dir = tmp_path / "universes"
     pipeline_path = _write_pipeline_config(tmp_path, base_dir)
+    venue_path = _write_venue_config(tmp_path)
     candidate_path = pairs.candidate_pair_artifact_path("1m", base_dir)
     audit_path = tmp_path / "audit" / "promotion.jsonl"
     _write_artifact(candidate_path, _artifact([_valid_pair()]))
@@ -130,6 +147,8 @@ def test_promote_pairs_cli_promotes_candidate_and_creates_audit_record(
         [
             "--pipeline",
             str(pipeline_path),
+            "--venue",
+            str(venue_path),
             "--audit-path",
             str(audit_path),
             "--operator",
@@ -185,6 +204,7 @@ def test_promote_pairs_command_rejects_invalid_candidates_without_changing_promo
 ):
     base_dir = tmp_path / "universes"
     pipeline_cfg = _load_pipeline(tmp_path, base_dir)
+    venue_cfg = _venue_cfg()
     candidate_path = pairs.candidate_pair_artifact_path("1m", base_dir)
     promoted_path = pairs.promoted_pair_artifact_path("1m", base_dir)
     audit_path = tmp_path / "audit.jsonl"
@@ -198,6 +218,7 @@ def test_promote_pairs_command_rejects_invalid_candidates_without_changing_promo
     with pytest.raises(ValueError, match=match):
         promote_pairs.promote_pairs_from_pipeline_config(
             pipeline_cfg=pipeline_cfg,
+            venue_cfg=venue_cfg,
             max_age_seconds=60,
             audit_path=audit_path,
             now=datetime(2026, 1, 1, 0, 2, tzinfo=timezone.utc),
@@ -211,6 +232,7 @@ def test_promote_pairs_command_rejects_invalid_candidates_without_changing_promo
 def test_promote_pairs_command_records_traceable_candidate_metadata(tmp_path):
     base_dir = tmp_path / "universes"
     pipeline_cfg = _load_pipeline(tmp_path, base_dir)
+    venue_cfg = _venue_cfg()
     candidate_path = pairs.candidate_pair_artifact_path("1m", base_dir)
     audit_path = tmp_path / "promotion_audit.jsonl"
     _write_artifact(
@@ -223,6 +245,7 @@ def test_promote_pairs_command_records_traceable_candidate_metadata(tmp_path):
 
     result = promote_pairs.promote_pairs_from_pipeline_config(
         pipeline_cfg=pipeline_cfg,
+        venue_cfg=venue_cfg,
         max_age_seconds=3600,
         audit_path=audit_path,
         operator="operator-2",

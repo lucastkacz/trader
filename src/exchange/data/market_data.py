@@ -1,5 +1,6 @@
 """Unified CCXT adapter for fetching market data from configured markets."""
 
+from dataclasses import dataclass
 from typing import Optional
 
 import ccxt.async_support as ccxt
@@ -8,6 +9,17 @@ import pandas as pd
 from src.core.logger import LogContext, logger
 from src.exchange.config.venue import CcxtExchangeConfig
 from src.data.ohlcv import normalize_ohlcv_frame
+
+
+@dataclass(frozen=True)
+class MarketTicker:
+    """Ticker facts for one configured exchange market."""
+
+    symbol: str
+    quote_volume: float
+    market_type: str | None = None
+    market_sub_type: str | None = None
+    settle: str | None = None
 
 
 def create_configured_ccxt_exchange(
@@ -39,45 +51,62 @@ def create_configured_ccxt_exchange(
     )
 
 
-async def fetch_universe(
+async def fetch_market_tickers(
     exchange: ccxt.Exchange,
-    min_volume: float,
     exchange_config: CcxtExchangeConfig,
-) -> list[str]:
+) -> list[MarketTicker]:
     """
-    Fetch configured-market tickers and filter by 24h quote volume.
-    Returns native CCXT market symbols unchanged.
+    Fetch ticker facts for markets matching the configured contract profile.
 
     Parameters
     ----------
     exchange : ccxt.Exchange — an initialized exchange instance
-    min_volume : float — minimum 24h quote volume threshold (no default!)
     exchange_config : CcxtExchangeConfig — market contract profile from YAML
     """
     try:
         markets = await exchange.load_markets()
         tickers = await exchange.fetch_tickers()
-        valid_pairs = []
+        market_tickers = []
 
         for symbol, data in tickers.items():
             market = markets.get(symbol)
             if market is None or not exchange_config.market_contract.matches_market(market):
                 continue
 
-            quote_volume = float(data.get("quoteVolume", 0) or 0)
-            if quote_volume > min_volume:
-                valid_pairs.append(symbol)
+            market_tickers.append(
+                MarketTicker(
+                    symbol=symbol,
+                    quote_volume=float(data.get("quoteVolume", 0) or 0),
+                    market_type=_str_or_none(market.get("type")),
+                    market_sub_type=_market_sub_type(market),
+                    settle=_str_or_none(market.get("settle")),
+                )
+            )
 
         ctx = LogContext(trade_id="UNIVERSE_SCAN")
         logger.bind(**ctx.model_dump(exclude_none=True)).info(
-            f"Filtered Universe: {len(valid_pairs)} assets above ${min_volume:,.0f} volume "
-            f"on {exchange.id} [{exchange_config.market_contract.name}]."
+            f"Fetched {len(market_tickers)} configured-market tickers "
+            f"from {exchange.id} [{exchange_config.market_contract.name}]."
         )
-        return valid_pairs
+        return market_tickers
 
     except Exception as e:
-        logger.error(f"Failed pulling universe from {exchange.id}: {e}")
-        raise RuntimeError(f"Universe Error ({exchange.id}): {e}")
+        logger.error(f"Failed pulling market tickers from {exchange.id}: {e}")
+        raise RuntimeError(f"Market Ticker Error ({exchange.id}): {e}")
+
+
+def _market_sub_type(market: dict) -> str | None:
+    if market.get("linear") is True:
+        return "linear"
+    if market.get("inverse") is True:
+        return "inverse"
+    return _str_or_none(market.get("subType"))
+
+
+def _str_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 async def fetch_klines(
@@ -167,19 +196,7 @@ async def fetch_funding_rate_history(
             symbol, since=since, limit=limit
         )
 
-        records = []
-        for item in raw:
-            ts = item.get("timestamp")
-            rate = item.get("fundingRate")
-            if ts is not None and rate is not None:
-                records.append({
-                    "timestamp": int(ts),
-                    "funding_rate": float(rate)
-                })
-
-        df = pd.DataFrame(records, columns=["timestamp", "funding_rate"])
-        df = df.dropna().sort_values("timestamp").reset_index(drop=True)
-        return df
+        return _normalize_funding_rate_history(raw, since=since)
 
     except ccxt.NetworkError as ne:
         logger.bind(**ctx.model_dump(exclude_none=True)).error(
@@ -192,3 +209,39 @@ async def fetch_funding_rate_history(
         )
         raise
 
+
+def _normalize_funding_rate_history(
+    raw: list[dict],
+    *,
+    since: Optional[int],
+) -> pd.DataFrame:
+    """Return canonical funding-rate rows from raw CCXT payloads."""
+    if not raw:
+        return _empty_funding_rate_frame()
+
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": item.get("timestamp"),
+                "funding_rate": item.get("fundingRate"),
+            }
+            for item in raw
+        ],
+        columns=["timestamp", "funding_rate"],
+    )
+    frame["timestamp"] = pd.to_numeric(frame["timestamp"], errors="coerce")
+    frame["funding_rate"] = pd.to_numeric(frame["funding_rate"], errors="coerce")
+    frame = frame.dropna(subset=["timestamp", "funding_rate"])
+    if since is not None:
+        frame = frame[frame["timestamp"] >= since]
+    if frame.empty:
+        return _empty_funding_rate_frame()
+
+    frame = frame.astype({"timestamp": "int64", "funding_rate": "float64"})
+    frame = frame.drop_duplicates(subset=["timestamp"], keep="last")
+    return frame.sort_values("timestamp").reset_index(drop=True)
+
+
+def _empty_funding_rate_frame() -> pd.DataFrame:
+    frame = pd.DataFrame(columns=["timestamp", "funding_rate"])
+    return frame.astype({"timestamp": "int64", "funding_rate": "float64"})

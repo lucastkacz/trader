@@ -10,6 +10,10 @@ from src.engine.trader.config import (
     load_universe_config,
     PipelineConfig,
 )
+from src.exchange.config.venue import (
+    load_ccxt_exchange_config,
+    load_exchange_venue_config,
+)
 from src.engine.trader.cli.promote_pairs import (
     add_promote_pairs_parser,
     promote_pairs_from_args,
@@ -28,6 +32,8 @@ async def main():
     # --- RESEARCH COMMAND ---
     research_parser = subparsers.add_parser("research", help="Run Historical Data Mining and Vector Stress Testing")
     research_parser.add_argument("--pipeline", type=str, required=True, help="Path to pipeline YAML config")
+    research_parser.add_argument("--venue", type=str, required=True, help="Path to exchange venue YAML config")
+    research_parser.add_argument("--market-profile", type=str, required=True, help="Path to CCXT market profile YAML config")
     research_parser.add_argument("--universe", type=str, required=True, help="Path to universe YAML config")
     research_parser.add_argument("--backtest", type=str, required=True, help="Path to backtest YAML config")
     research_parser.add_argument("--strategy", type=str, required=True, help="Path to strategy YAML config")
@@ -40,6 +46,8 @@ async def main():
     # --- EXECUTE COMMAND ---
     execute_parser = subparsers.add_parser("execute", help="Launch the Live Trading Execution Engine")
     execute_parser.add_argument("--pipeline", type=str, required=True, help="Path to pipeline YAML config")
+    execute_parser.add_argument("--venue", type=str, required=True, help="Path to exchange venue YAML config")
+    execute_parser.add_argument("--market-profile", type=str, required=True, help="Path to CCXT market profile YAML config")
     execute_parser.add_argument("--strategy", type=str, required=True, help="Path to strategy YAML config")
     execute_parser.add_argument("--risk", type=str, required=True, help="Path to risk YAML config")
     execute_parser.add_argument("--telegram", type=str, default=None, help="Path to telegram YAML config")
@@ -56,12 +64,16 @@ async def main():
 
     if args.command == "research":
         pipeline_cfg = load_pipeline_config(args.pipeline)
+        venue_cfg = load_exchange_venue_config(args.venue)
+        exchange_config = load_ccxt_exchange_config(args.market_profile)
         universe_cfg = load_universe_config(args.universe)
         backtest_cfg = load_backtest_config(args.backtest)
         strategy_cfg = load_strategy_config(args.strategy)
         
         await research_flow(
             pipeline_cfg=pipeline_cfg, 
+            venue_cfg=venue_cfg,
+            exchange_config=exchange_config,
             universe_cfg=universe_cfg, 
             backtest_cfg=backtest_cfg,
             strategy_cfg=strategy_cfg,
@@ -71,12 +83,16 @@ async def main():
     elif args.command == "run":
         run_profile = load_run_profile_config(args.config)
         pipeline_cfg = load_pipeline_config(run_profile.pipeline)
+        venue_cfg = load_exchange_venue_config(run_profile.venue)
+        exchange_config = load_ccxt_exchange_config(run_profile.market_profile)
         universe_cfg = load_universe_config(run_profile.universe)
         backtest_cfg = load_backtest_config(run_profile.backtest)
         strategy_cfg = load_strategy_config(run_profile.strategy)
 
         await research_flow(
             pipeline_cfg=pipeline_cfg,
+            venue_cfg=venue_cfg,
+            exchange_config=exchange_config,
             universe_cfg=universe_cfg,
             backtest_cfg=backtest_cfg,
             strategy_cfg=strategy_cfg,
@@ -85,6 +101,8 @@ async def main():
 
     elif args.command == "execute":
         pipeline_cfg = load_pipeline_config(args.pipeline)
+        venue_cfg = load_exchange_venue_config(args.venue)
+        exchange_config = load_ccxt_exchange_config(args.market_profile)
         strategy_cfg = load_strategy_config(args.strategy)
         risk_cfg = load_risk_config(args.risk)
         pipeline_cfg = apply_execution_overrides(
@@ -95,6 +113,8 @@ async def main():
         
         await execute_flow(
             pipeline_cfg=pipeline_cfg,
+            venue_cfg=venue_cfg,
+            exchange_config=exchange_config,
             strategy_cfg=strategy_cfg,
             risk_cfg=risk_cfg,
             telegram_path=args.telegram

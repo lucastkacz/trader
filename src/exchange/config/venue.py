@@ -1,10 +1,10 @@
-"""Typed YAML config for exchange venue market profiles."""
+"""Typed YAML config for exchange venues and market profiles."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +13,13 @@ class StrictExchangeConfigModel(BaseModel):
     """Base model that rejects unknown exchange config keys."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+class ExchangeVenueConfig(StrictExchangeConfigModel):
+    """Exchange identity and credential tier for an operator run."""
+
+    exchange_id: str = Field(min_length=1)
+    credential_tier: Literal["readonly", "live"]
 
 
 class CcxtMarketContractConfig(StrictExchangeConfigModel):
@@ -74,6 +81,11 @@ class CcxtExchangeConfig(StrictExchangeConfigModel):
 def load_ccxt_exchange_config(path: str | Path) -> CcxtExchangeConfig:
     """Load a typed CCXT exchange config from YAML."""
     return _load_config(path, "ccxt_exchange", CcxtExchangeConfig)
+
+
+def load_exchange_venue_config(path: str | Path) -> ExchangeVenueConfig:
+    """Load typed exchange identity and credential-tier config from YAML."""
+    return _load_config(path, "venue", ExchangeVenueConfig)
 
 
 def _load_config(

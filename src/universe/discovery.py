@@ -6,9 +6,9 @@ from src.core.logger import logger
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.config import StrategyConfig, UniverseConfig
 from src.engine.trader.runtime.artifacts import write_candidate_pair_artifact
-from src.screener.discovery_clusters import build_clusters, write_cluster_artifact
-from src.screener.discovery_pairs import discover_cointegrated_pairs
-from src.screener.discovery_universe import load_filtered_symbol_pool
+from src.universe.clusters import build_clusters, write_cluster_artifact
+from src.universe.pairs import discover_cointegrated_pairs
+from src.universe.symbol_pool import load_filtered_symbol_pool
 
 
 class DiscoveryEngine:

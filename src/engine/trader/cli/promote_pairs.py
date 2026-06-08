@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.exchange.config.venue import ExchangeVenueConfig, load_exchange_venue_config
 from src.engine.trader.config import PipelineConfig, load_pipeline_config
 from src.engine.trader.runtime.artifacts import (
     DEFAULT_PAIR_ARTIFACT_MAX_AGE_SECONDS,
@@ -23,6 +24,7 @@ class PromotionCommandResult:
 
 def promote_pairs_from_pipeline_config(
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
     max_age_seconds: int = DEFAULT_PAIR_ARTIFACT_MAX_AGE_SECONDS,
     audit_path: str | Path | None = None,
     operator: str | None = None,
@@ -36,7 +38,7 @@ def promote_pairs_from_pipeline_config(
     )
     promoted_path = promote_candidate_pair_artifact(
         timeframe=pipeline_cfg.timeframe,
-        exchange=pipeline_cfg.venue.exchange_id,
+        exchange=venue_cfg.exchange_id,
         base_dir=pipeline_cfg.execution.artifact_base_dir,
         max_age_seconds=max_age_seconds,
         now=promoted_at,
@@ -78,6 +80,7 @@ def add_promote_pairs_parser(
 
 def add_promote_pairs_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pipeline", type=str, required=True, help="Path to pipeline YAML config")
+    parser.add_argument("--venue", type=str, required=True, help="Path to exchange venue YAML config")
     parser.add_argument(
         "--max-age-seconds",
         type=int,
@@ -100,8 +103,10 @@ def add_promote_pairs_arguments(parser: argparse.ArgumentParser) -> None:
 
 def promote_pairs_from_args(args: argparse.Namespace) -> PromotionCommandResult:
     pipeline_cfg = load_pipeline_config(args.pipeline)
+    venue_cfg = load_exchange_venue_config(args.venue)
     return promote_pairs_from_pipeline_config(
         pipeline_cfg=pipeline_cfg,
+        venue_cfg=venue_cfg,
         max_age_seconds=args.max_age_seconds,
         audit_path=args.audit_path,
         operator=args.operator,

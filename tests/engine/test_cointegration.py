@@ -35,7 +35,7 @@ def test_bidirectional_adf_and_halflife():
     cointegrated_y = 0.8 * random_walk_x + np.random.normal(0, 0.5, n) + 50
     df_cointegrated = pd.DataFrame({"X": random_walk_x, "Y": cointegrated_y})
     
-    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
     engine = CointegrationEngine(
         p_value_threshold=universe_cfg.cointegration.p_value_threshold,
         max_half_life_bars=30.0,
@@ -65,7 +65,7 @@ def test_cointegration_returns_canonical_x_on_y_hedge_ratio():
     log_y = np.cumsum(np.random.normal(0, 0.01, n)) + 4.0
     log_x = 1.7 * log_y + np.random.normal(0, 0.001, n)
 
-    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
     result = CointegrationEngine(
         p_value_threshold=universe_cfg.cointegration.p_value_threshold,
         max_half_life_bars=1000.0,
@@ -85,7 +85,7 @@ def test_cointegration_logs_raw_prices_once():
     log_y = np.cumsum(np.random.normal(0, 0.003, n)) + 5.0
     log_x = 0.6 * log_y + np.random.normal(0, 0.0005, n)
 
-    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
     result = CointegrationEngine(
         p_value_threshold=universe_cfg.cointegration.p_value_threshold,
         max_half_life_bars=1000.0,

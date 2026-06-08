@@ -7,10 +7,11 @@ import ccxt.async_support as ccxt
 
 from src.exchange.config.venue import CcxtExchangeConfig
 from src.exchange.data.market_data import (
+    MarketTicker,
     create_configured_ccxt_exchange,
     fetch_funding_rate_history,
     fetch_klines,
-    fetch_universe,
+    fetch_market_tickers,
 )
 
 
@@ -50,9 +51,9 @@ class CcxtMarketDataAdapter:
             await self._exchange.close()
             self._exchange = None
 
-    async def fetch_universe(self, min_volume: float) -> list[str]:
-        """Fetch configured-market symbols above a quote-volume floor."""
-        return await fetch_universe(self.exchange, min_volume, self.exchange_config)
+    async def fetch_market_tickers(self) -> list[MarketTicker]:
+        """Fetch ticker facts for configured markets."""
+        return await fetch_market_tickers(self.exchange, self.exchange_config)
 
     async def fetch_ohlcv(
         self,

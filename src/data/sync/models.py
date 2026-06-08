@@ -9,6 +9,7 @@ from typing import Protocol
 import pandas as pd
 
 from src.data.ohlcv import OHLCVMarketMetadata, OHLCVMetadata, OHLCVRetentionPolicy
+from src.exchange.data.market_data import MarketTicker
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -36,8 +37,8 @@ class OHLCVStore(Protocol):
 class MarketDataAdapter(Protocol):
     """Read-only market-data seam used by OHLCV sync services."""
 
-    async def fetch_universe(self, min_volume: float) -> list[str]:
-        """Fetch tradable symbols above a quote-volume floor."""
+    async def fetch_market_tickers(self) -> list[MarketTicker]:
+        """Fetch ticker facts for configured markets."""
 
     async def fetch_ohlcv(
         self,

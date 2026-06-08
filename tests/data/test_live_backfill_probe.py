@@ -24,12 +24,17 @@ from src.data.sync import (
 )
 from src.data.sync.config import load_ohlcv_backfill_config
 from src.engine.trader.config import load_pipeline_config, load_universe_config
-from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.config.venue import (
+    load_ccxt_exchange_config,
+    load_exchange_venue_config,
+)
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
 from src.utils.timeframe_math import get_timeframe_minutes
 
 PIPELINE_CONFIG = "configs/pipelines/dev.yml"
-UNIVERSE_CONFIG = "configs/universe/alpha_v1.yml"
+VENUE_CONFIG = "configs/exchange/venues/dev.yml"
+MARKET_PROFILE_CONFIG = "configs/exchange/market_profiles/linear_usdt_swap.yml"
+UNIVERSE_CONFIG = "configs/universe/dev.yml"
 DEFAULT_SYMBOLS = ("BTC/USDT:USDT", "ETH/USDT:USDT", "XRP/USDT:USDT")
 
 
@@ -42,8 +47,9 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
         "backfill, writes Parquet, and prints result metadata."
     )
     pipeline_cfg = load_pipeline_config(PIPELINE_CONFIG)
+    venue_cfg = load_exchange_venue_config(VENUE_CONFIG)
     universe_cfg = load_universe_config(UNIVERSE_CONFIG)
-    exchange_cfg = load_ccxt_exchange_config(pipeline_cfg.venue.market_profile_config)
+    exchange_cfg = load_ccxt_exchange_config(MARKET_PROFILE_CONFIG)
     configured_policy = load_ohlcv_backfill_config(
         pipeline_cfg.data.backfill_policy_config
     ).to_fetch_policy()
@@ -65,9 +71,10 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
 
     _print_header("LIVE BACKFILL PROBE")
     _print_kv("pipeline config", PIPELINE_CONFIG)
+    _print_kv("venue config", VENUE_CONFIG)
+    _print_kv("market profile config", MARKET_PROFILE_CONFIG)
     _print_kv("pipeline name", pipeline_cfg.name)
-    _print_kv("exchange id", pipeline_cfg.venue.exchange_id)
-    _print_kv("market profile config", pipeline_cfg.venue.market_profile_config)
+    _print_kv("exchange id", venue_cfg.exchange_id)
     _print_kv("backfill policy config", pipeline_cfg.data.backfill_policy_config)
     _print_kv("universe config", UNIVERSE_CONFIG)
     _print_kv("universe volume floor", f"${universe_cfg.filters.min_volume_liquidity:,.0f}")
@@ -84,7 +91,7 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
 
     store = LocalOHLCVParquetStore(str(output_dir))
     request = OHLCVBackfillRequest(
-        exchange_id=pipeline_cfg.venue.exchange_id,
+        exchange_id=venue_cfg.exchange_id,
         timeframe=pipeline_cfg.timeframe,
         start_ts=start_ts,
         end_ts=end_ts,
@@ -98,7 +105,7 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
     )
 
     async with CcxtMarketDataAdapter(
-        pipeline_cfg.venue.exchange_id,
+        venue_cfg.exchange_id,
         "",
         "",
         exchange_cfg,
@@ -131,12 +138,12 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
         path = store.path_for_ohlcv(
             item.symbol,
             pipeline_cfg.timeframe,
-            pipeline_cfg.venue.exchange_id,
+            venue_cfg.exchange_id,
         )
         metadata = store.read_ohlcv_metadata(
             item.symbol,
             pipeline_cfg.timeframe,
-            pipeline_cfg.venue.exchange_id,
+            venue_cfg.exchange_id,
         )
         print(f"\n{path}")
         if metadata is None:
@@ -153,7 +160,7 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
         path = store.path_for_ohlcv(
             item.symbol,
             pipeline_cfg.timeframe,
-            pipeline_cfg.venue.exchange_id,
+            venue_cfg.exchange_id,
         )
         assert path.exists(), item.symbol
 

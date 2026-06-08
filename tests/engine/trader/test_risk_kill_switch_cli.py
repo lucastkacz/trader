@@ -147,10 +147,6 @@ pipeline:
   timeframe: "1m"
   historical_days: 1
   max_symbols: null
-  venue:
-    exchange_id: "bybit"
-    market_profile_config: "configs/exchange/market_profiles/linear_usdt_swap.yml"
-    credential_tier: "readonly"
   data:
     backfill_policy_config: "configs/data/backfill_default.yml"
   execution:

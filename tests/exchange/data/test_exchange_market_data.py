@@ -8,39 +8,58 @@ import ccxt.async_support as ccxt
 from unittest.mock import AsyncMock
 
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
-from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.config.venue import (
+    load_ccxt_exchange_config,
+    load_exchange_venue_config,
+)
 from src.exchange.data.market_data import (
     create_configured_ccxt_exchange,
     fetch_funding_rate_history,
     fetch_klines,
-    fetch_universe,
+    fetch_market_tickers,
 )
 
+DEV_VENUE_CONFIG = "configs/exchange/venues/dev.yml"
+DEV_MARKET_PROFILE_CONFIG = "configs/exchange/market_profiles/linear_usdt_swap.yml"
+SPOT_MARKET_PROFILE_CONFIG = "configs/exchange/market_profiles/spot.yml"
 
-def _exchange_config(path: str = "configs/exchange/market_profiles/linear_usdt_swap.yml"):
+
+def _dev_venue_config():
+    return load_exchange_venue_config(DEV_VENUE_CONFIG)
+
+
+def _exchange_config(path: str | None = None):
+    if path is None:
+        path = DEV_MARKET_PROFILE_CONFIG
     return load_ccxt_exchange_config(path)
 
 
 def test_create_configured_ccxt_exchange_valid():
     """Valid CCXT exchange ID should return an exchange instance."""
     _announce(
-        "Creates a configured CCXT exchange client and confirms Bybit linear USDT "
-        "swap options are applied."
+        "Creates a configured CCXT exchange client from the dev pipeline market "
+        "profile and confirms CCXT options match typed config."
     )
+    venue_config = _dev_venue_config()
+    exchange_config = _exchange_config()
     exchange = create_configured_ccxt_exchange(
-        "bybit",
+        venue_config.exchange_id,
         "test_key",
         "test_secret",
-        _exchange_config(),
+        exchange_config,
     )
+    contract = exchange_config.market_contract
     assert exchange is not None
     assert exchange.apiKey == "test_key"
-    assert exchange.options["defaultType"] == "swap"
-    assert exchange.options["defaultSubType"] == "linear"
-    assert exchange.options["defaultSettle"] == "USDT"
-    assert exchange.options["adjustForTimeDifference"] is True
-    assert exchange.options["recvWindow"] == 10_000
-    assert exchange.options["fetchMarkets"]["types"] == ["linear"]
+    assert exchange.options.get("defaultType") == contract.default_type
+    assert exchange.options.get("defaultSubType") == contract.default_sub_type
+    assert exchange.options.get("defaultSettle") == contract.default_settle
+    assert (
+        exchange.options["adjustForTimeDifference"]
+        is exchange_config.adjust_for_time_difference
+    )
+    assert exchange.options["recvWindow"] == exchange_config.recv_window
+    assert exchange.options["fetchMarkets"]["types"] == contract.fetch_market_types
 
 
 def test_create_configured_ccxt_exchange_invalid():
@@ -59,67 +78,70 @@ def test_create_configured_ccxt_exchange_invalid():
 
 
 @pytest.mark.asyncio
-async def test_fetch_universe_filters_by_volume():
-    """Should only return tickers above the volume threshold."""
+async def test_fetch_market_tickers_filters_by_configured_market_profile():
+    """Exchange ticker fetch should return facts for configured markets only."""
     _announce(
-        "Uses mocked tickers to confirm fetch_universe keeps only configured "
-        "linear USDT swap markets above the quote-volume floor."
+        "Uses mocked tickers to confirm fetch_market_tickers keeps configured "
+        "dev-profile markets and leaves volume filtering to universe policy."
     )
+    exchange_config = _exchange_config()
     mock_exchange = AsyncMock()
-    mock_exchange.id = "bybit"
+    mock_exchange.id = _dev_venue_config().exchange_id
     mock_exchange.load_markets.return_value = {
-        "BTC/USDT:USDT": {
-            "type": "swap",
-            "linear": True,
-            "settle": "USDT",
-        },
-        "ETH/USDT:USDT": {
-            "type": "swap",
-            "linear": True,
-            "settle": "USDT",
-        },
-        "DEAD/USDT:USDT": {
-            "type": "swap",
-            "linear": True,
-            "settle": "USDT",
-        },
-        "BTC/USDC:USDC": {
-            "type": "swap",
-            "linear": True,
-            "settle": "USDC",
-        },
+        "BTC/USDT:USDT": _matching_market(exchange_config),
+        "ETH/USDT:USDT": _matching_market(exchange_config),
+        "DEAD/USDT:USDT": _matching_market(exchange_config),
+        "BTC/USDC:USDC": _wrong_settle_market(exchange_config),
         "BTC/USDT": {"type": "spot", "spot": True},
     }
     mock_exchange.fetch_tickers.return_value = {
-        "BTC/USDT:USDT": {"symbol": "BTC/USDT:USDT", "quoteVolume": 500_000_000},
-        "ETH/USDT:USDT": {"symbol": "ETH/USDT:USDT", "quoteVolume": 250_000_000},
-        "DEAD/USDT:USDT": {"symbol": "DEAD/USDT:USDT", "quoteVolume": 500},
-        "BTC/USDC:USDC": {"symbol": "BTC/USDC:USDC", "quoteVolume": 500_000_000},
-        "BTC/USDT": {"symbol": "BTC/USDT", "quoteVolume": 500_000_000},
+        "BTC/USDT:USDT": {
+            "symbol": "BTC/USDT:USDT",
+            "quoteVolume": 200_000_000,
+        },
+        "ETH/USDT:USDT": {
+            "symbol": "ETH/USDT:USDT",
+            "quoteVolume": 100_000_000,
+        },
+        "DEAD/USDT:USDT": {
+            "symbol": "DEAD/USDT:USDT",
+            "quoteVolume": 500,
+        },
+        "BTC/USDC:USDC": {
+            "symbol": "BTC/USDC:USDC",
+            "quoteVolume": 300_000_000,
+        },
+        "BTC/USDT": {"symbol": "BTC/USDT", "quoteVolume": 400_000_000},
     }
 
-    universe = await fetch_universe(
+    tickers = await fetch_market_tickers(
         mock_exchange,
-        min_volume=1_000_000,
-        exchange_config=_exchange_config(),
+        exchange_config=exchange_config,
     )
 
-    assert len(universe) == 2
-    assert "BTC/USDT:USDT" in universe
-    assert "ETH/USDT:USDT" in universe
-    assert "DEAD/USDT:USDT" not in universe
-    assert "BTC/USDC:USDC" not in universe
-    assert "BTC/USDT" not in universe
+    assert [ticker.symbol for ticker in tickers] == [
+        "BTC/USDT:USDT",
+        "ETH/USDT:USDT",
+        "DEAD/USDT:USDT",
+    ]
+    assert [ticker.quote_volume for ticker in tickers] == [
+        200_000_000,
+        100_000_000,
+        500,
+    ]
+    assert all(ticker.market_type == "swap" for ticker in tickers)
+    assert all(ticker.market_sub_type == "linear" for ticker in tickers)
+    assert all(ticker.settle == "USDT" for ticker in tickers)
 
 
 @pytest.mark.asyncio
-async def test_fetch_universe_uses_configured_spot_contract():
+async def test_fetch_market_tickers_uses_configured_spot_contract():
     _announce(
-        "Switches the market profile to spot and confirms fetch_universe returns "
-        "the spot symbol instead of the swap symbol."
+        "Switches the market profile to spot and confirms fetch_market_tickers "
+        "returns the spot symbol instead of the swap symbol."
     )
     mock_exchange = AsyncMock()
-    mock_exchange.id = "bybit"
+    mock_exchange.id = _dev_venue_config().exchange_id
     mock_exchange.load_markets.return_value = {
         "BTC/USDT:USDT": {
             "type": "swap",
@@ -129,17 +151,19 @@ async def test_fetch_universe_uses_configured_spot_contract():
         "BTC/USDT": {"type": "spot", "spot": True},
     }
     mock_exchange.fetch_tickers.return_value = {
-        "BTC/USDT:USDT": {"symbol": "BTC/USDT:USDT", "quoteVolume": 500_000_000},
+        "BTC/USDT:USDT": {
+            "symbol": "BTC/USDT:USDT",
+            "quoteVolume": 500_000_000,
+        },
         "BTC/USDT": {"symbol": "BTC/USDT", "quoteVolume": 500_000_000},
     }
 
-    universe = await fetch_universe(
+    tickers = await fetch_market_tickers(
         mock_exchange,
-        min_volume=1_000_000,
-        exchange_config=_exchange_config("configs/exchange/market_profiles/spot.yml"),
+        exchange_config=_exchange_config(SPOT_MARKET_PROFILE_CONFIG),
     )
 
-    assert universe == ["BTC/USDT"]
+    assert [ticker.symbol for ticker in tickers] == ["BTC/USDT"]
 
 
 @pytest.mark.asyncio
@@ -280,6 +304,64 @@ async def test_fetch_funding_rate_history_success():
 
 
 @pytest.mark.asyncio
+async def test_fetch_funding_rate_history_normalizes_messy_provider_rows():
+    """Funding history normalization should tolerate common CCXT payload noise."""
+    _announce(
+        "Feeds out-of-order funding rows with stale, duplicate, and malformed "
+        "provider payloads and verifies canonical typed output."
+    )
+    mock_exchange = AsyncMock()
+    mock_exchange.id = "bybit"
+    mock_exchange.has = {"fetchFundingRateHistory": True}
+    mock_exchange.fetch_funding_rate_history.return_value = [
+        {"timestamp": 1599999940000, "fundingRate": 0.5},
+        {"timestamp": 1600000060000, "fundingRate": "0.0002"},
+        {"timestamp": None, "fundingRate": 0.0003},
+        {"timestamp": 1600000000000, "fundingRate": "bad"},
+        {"timestamp": 1600000060000, "fundingRate": -0.0002},
+        {"timestamp": 1600000120000, "fundingRate": None},
+    ]
+
+    df = await fetch_funding_rate_history(
+        exchange=mock_exchange,
+        symbol="BTC/USDT:USDT",
+        since=1600000000000,
+        limit=10,
+    )
+
+    assert df["timestamp"].tolist() == [1600000060000]
+    assert df["funding_rate"].tolist() == [-0.0002]
+    assert str(df["timestamp"].dtype) == "int64"
+    assert str(df["funding_rate"].dtype) == "float64"
+
+
+@pytest.mark.asyncio
+async def test_fetch_funding_rate_history_returns_typed_empty_frame():
+    """Empty or filtered funding responses should preserve the canonical columns."""
+    _announce(
+        "Checks that funding history returns a typed empty DataFrame when all "
+        "provider rows are older than the requested since timestamp."
+    )
+    mock_exchange = AsyncMock()
+    mock_exchange.id = "bybit"
+    mock_exchange.has = {"fetchFundingRateHistory": True}
+    mock_exchange.fetch_funding_rate_history.return_value = [
+        {"timestamp": 1599999940000, "fundingRate": 0.0001},
+    ]
+
+    df = await fetch_funding_rate_history(
+        exchange=mock_exchange,
+        symbol="BTC/USDT:USDT",
+        since=1600000000000,
+    )
+
+    assert df.empty
+    assert list(df.columns) == ["timestamp", "funding_rate"]
+    assert str(df["timestamp"].dtype) == "int64"
+    assert str(df["funding_rate"].dtype) == "float64"
+
+
+@pytest.mark.asyncio
 async def test_fetch_funding_rate_history_not_supported():
     """Should raise NotImplementedError when exchange has no fetchFundingRateHistory."""
     _announce("Verifies fetch_funding_rate_history raises error for unsupported exchanges.")
@@ -292,6 +374,45 @@ async def test_fetch_funding_rate_history_not_supported():
             exchange=mock_exchange,
             symbol="BTC/USDT:USDT",
         )
+
+
+@pytest.mark.asyncio
+async def test_fetch_funding_rate_history_wraps_network_errors():
+    """Network failures should keep exchange context in the raised error."""
+    _announce("Verifies funding history network failures are wrapped for operators.")
+    mock_exchange = AsyncMock()
+    mock_exchange.id = "bybit"
+    mock_exchange.has = {"fetchFundingRateHistory": True}
+    mock_exchange.fetch_funding_rate_history.side_effect = ccxt.NetworkError(
+        "temporary outage"
+    )
+
+    with pytest.raises(RuntimeError, match="NetworkError \\(bybit\\): temporary outage"):
+        await fetch_funding_rate_history(
+            exchange=mock_exchange,
+            symbol="BTC/USDT:USDT",
+        )
+
+
+def _matching_market(exchange_config):
+    contract = exchange_config.market_contract
+    market = {}
+    if contract.default_type is not None:
+        market["type"] = contract.default_type
+        market[contract.default_type] = True
+    if contract.default_sub_type is not None:
+        market["subType"] = contract.default_sub_type
+        market[contract.default_sub_type] = True
+    if contract.default_settle is not None:
+        market["settle"] = contract.default_settle
+    return market
+
+
+def _wrong_settle_market(exchange_config):
+    market = _matching_market(exchange_config)
+    configured_settle = exchange_config.market_contract.default_settle
+    market["settle"] = "USDC" if configured_settle != "USDC" else "USDT"
+    return market
 
 
 def _announce(message: str) -> None:

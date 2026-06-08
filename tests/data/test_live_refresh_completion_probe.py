@@ -26,11 +26,16 @@ from src.data.sync import (
     OHLCVRefreshService,
 )
 from src.engine.trader.config import load_pipeline_config
-from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.config.venue import (
+    load_ccxt_exchange_config,
+    load_exchange_venue_config,
+)
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
 from src.utils.timeframe_math import get_timeframe_minutes
 
 PIPELINE_CONFIG = "configs/pipelines/dev.yml"
+VENUE_CONFIG = "configs/exchange/venues/dev.yml"
+MARKET_PROFILE_CONFIG = "configs/exchange/market_profiles/linear_usdt_swap.yml"
 DEFAULT_SYMBOL = "BTC/USDT:USDT"
 DEFAULT_TIMEFRAME = "1m"
 DEFAULT_MISSING_LOOKBACK_BARS = 5
@@ -45,8 +50,9 @@ async def test_live_refresh_completes_bitcoin_after_waiting_for_new_1m_candles()
         "and confirms only the missing tail was appended."
     )
     pipeline_cfg = load_pipeline_config(PIPELINE_CONFIG)
-    exchange_cfg = load_ccxt_exchange_config(pipeline_cfg.venue.market_profile_config)
-    exchange_id = pipeline_cfg.venue.exchange_id
+    venue_cfg = load_exchange_venue_config(VENUE_CONFIG)
+    exchange_cfg = load_ccxt_exchange_config(MARKET_PROFILE_CONFIG)
+    exchange_id = venue_cfg.exchange_id
     symbol = os.environ.get("OHLCV_LIVE_COMPLETION_SYMBOL", DEFAULT_SYMBOL)
     timeframe = os.environ.get("OHLCV_LIVE_COMPLETION_TIMEFRAME", DEFAULT_TIMEFRAME)
     wait_seconds = int(os.environ.get("OHLCV_LIVE_COMPLETION_WAIT_SECONDS", "180"))
@@ -55,9 +61,10 @@ async def test_live_refresh_completes_bitcoin_after_waiting_for_new_1m_candles()
 
     _print_header("LIVE REFRESH COMPLETION PROBE")
     _print_kv("pipeline config", PIPELINE_CONFIG)
+    _print_kv("venue config", VENUE_CONFIG)
+    _print_kv("market profile config", MARKET_PROFILE_CONFIG)
     _print_kv("pipeline name", pipeline_cfg.name)
     _print_kv("exchange id", exchange_id)
-    _print_kv("market profile config", pipeline_cfg.venue.market_profile_config)
     _print_kv("symbol", symbol)
     _print_kv("timeframe", timeframe)
     _print_kv("wait seconds", wait_seconds)

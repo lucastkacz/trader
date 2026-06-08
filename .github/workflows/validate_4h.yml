@@ -6,7 +6,8 @@
 #
 # NOTE: This is a long-running workflow (8+ hours for 2 ticks).
 # It runs directly in GitHub Actions. If you prefer to run
-# locally, update configs/pipelines/ci_4h.yml and run main.py execute.
+# locally, update configs/pipelines/ci_4h.yml and run main.py execute with the
+# intended venue and market profile.
 # ─────────────────────────────────────────────────────────────
 name: Local 4H Validation
 
@@ -68,14 +69,14 @@ jobs:
           PY
 
       - name: Build CI 4H universe
-        run: python main.py research --pipeline ci_4h_runtime.yml --universe configs/universe/alpha_v1.yml --backtest configs/backtest/stress_test.yml --strategy configs/strategy/uat.yml
+        run: python main.py research --pipeline ci_4h_runtime.yml --venue configs/exchange/venues/uat.yml --market-profile configs/exchange/market_profiles/linear_usdt_swap.yml --universe configs/universe/dev.yml --backtest configs/backtest/stress_test.yml --strategy configs/strategy/uat.yml
         env:
           PYTHONPATH: .
           EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
           EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
       - name: Run 4H validation (${{ github.event.inputs.ticks }} ticks)
-        run: python main.py execute --pipeline ci_4h_runtime.yml --strategy configs/strategy/uat.yml --risk configs/risk/alpha_v1.yml
+        run: python main.py execute --pipeline ci_4h_runtime.yml --venue configs/exchange/venues/uat.yml --market-profile configs/exchange/market_profiles/linear_usdt_swap.yml --strategy configs/strategy/uat.yml --risk configs/risk/alpha_v1.yml
         env:
           PYTHONPATH: .
           EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}

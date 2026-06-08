@@ -5,8 +5,8 @@ import pytest
 from src.engine.trader.config import load_universe_config
 
 try:
-    from src.screener.clustering.returns_matrix import MatrixBuilder
-    from src.screener.clustering.graph_louvain import LouvainTaxonomist
+    from src.universe.clustering.returns_matrix import MatrixBuilder
+    from src.universe.clustering.graph_louvain import LouvainTaxonomist
 except ImportError:
     pass
 
@@ -43,7 +43,7 @@ def test_winsorization_and_clustering():
         "C/USDT": df_assetC
     }
     
-    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
     
     # 3. Build Matrix
     builder = MatrixBuilder(

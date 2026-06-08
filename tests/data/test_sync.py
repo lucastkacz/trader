@@ -11,16 +11,20 @@ from src.data.sync import (
     OHLCVRefreshRequest,
     OHLCVRefreshService,
 )
+from src.exchange.data.market_data import MarketTicker
 
 
 class FakeMarketDataAdapter:
     def __init__(self, rows_by_symbol: dict[str, list[list[float]]]):
         self.rows_by_symbol = rows_by_symbol
-        self.universe_calls = 0
+        self.market_ticker_calls = 0
 
-    async def fetch_universe(self, min_volume: float) -> list[str]:
-        self.universe_calls += 1
-        return list(self.rows_by_symbol)
+    async def fetch_market_tickers(self) -> list[MarketTicker]:
+        self.market_ticker_calls += 1
+        return [
+            MarketTicker(symbol=symbol, quote_volume=1_000_001.0)
+            for symbol in self.rows_by_symbol
+        ]
 
     async def fetch_ohlcv(
         self,

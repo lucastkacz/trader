@@ -51,14 +51,14 @@ jobs:
         run: mkdir -p data/ci data/reports logs
 
       - name: Build CI 1M universe
-        run: python main.py research --pipeline configs/pipelines/ci_1m.yml --universe configs/universe/alpha_v1.yml --backtest configs/backtest/stress_test.yml --strategy configs/strategy/dev.yml
+        run: python main.py research --pipeline configs/pipelines/ci_1m.yml --venue configs/exchange/venues/dev.yml --market-profile configs/exchange/market_profiles/linear_usdt_swap.yml --universe configs/universe/dev.yml --backtest configs/backtest/stress_test.yml --strategy configs/strategy/dev.yml
         env:
           PYTHONPATH: .
           EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}
           EXCHANGE_READONLY_API_SECRET: ${{ secrets.EXCHANGE_READONLY_API_SECRET }}
 
       - name: Run CI 1M integration (5 ticks)
-        run: python main.py execute --pipeline configs/pipelines/ci_1m.yml --strategy configs/strategy/dev.yml --risk configs/risk/alpha_v1.yml
+        run: python main.py execute --pipeline configs/pipelines/ci_1m.yml --venue configs/exchange/venues/dev.yml --market-profile configs/exchange/market_profiles/linear_usdt_swap.yml --strategy configs/strategy/dev.yml --risk configs/risk/alpha_v1.yml
         env:
           PYTHONPATH: .
           EXCHANGE_READONLY_API_KEY: ${{ secrets.EXCHANGE_READONLY_API_KEY }}

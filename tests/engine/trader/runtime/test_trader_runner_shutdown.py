@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.config.venue import (
+    load_ccxt_exchange_config,
+    load_exchange_venue_config,
+)
 from src.exchange.execution.account import CCXTReadOnlySnapshotProvider
 from src.engine.trader.config import (
     PipelineConfig,
@@ -29,6 +32,10 @@ from src.engine.trader.state.manager import TradeStateManager
 
 def _exchange_config():
     return load_ccxt_exchange_config("configs/exchange/market_profiles/linear_usdt_swap.yml")
+
+
+def _venue_cfg():
+    return load_exchange_venue_config("configs/exchange/venues/dev.yml")
 
 
 def _open_test_position(state: TradeStateManager) -> int:
@@ -102,9 +109,10 @@ def test_observer_start_marker_captures_existing_open_positions(tmp_path):
 
 def test_runtime_builds_configured_readonly_reconciliation_snapshot_provider():
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
+    venue_cfg = _venue_cfg()
 
     provider = _build_reconciliation_snapshot_provider(
-        pipeline_cfg.venue,
+        venue_cfg,
         pipeline_cfg.execution,
         api_key="readonly-key",
         api_secret="readonly-secret",
@@ -122,9 +130,10 @@ def test_runtime_can_explicitly_disable_reconciliation_snapshot_provider():
     pipeline_data = pipeline_cfg.model_dump()
     pipeline_data["execution"]["reconciliation"]["snapshot_provider"] = "none"
     disabled_cfg = PipelineConfig.model_validate(pipeline_data)
+    venue_cfg = _venue_cfg()
 
     provider = _build_reconciliation_snapshot_provider(
-        disabled_cfg.venue,
+        venue_cfg,
         disabled_cfg.execution,
         api_key="readonly-key",
         api_secret="readonly-secret",
@@ -280,6 +289,8 @@ async def test_cancelled_trader_run_records_interrupted_with_open_positions(
     tmp_path,
 ):
     pipeline_cfg = _pipeline_with_db(tmp_path)
+    venue_cfg = _venue_cfg()
+    exchange_config = _exchange_config()
     strategy_cfg = load_strategy_config("configs/strategy/dev.yml")
     risk_cfg = load_risk_config("configs/risk/alpha_v1.yml")
 
@@ -327,6 +338,8 @@ async def test_cancelled_trader_run_records_interrupted_with_open_positions(
     with pytest.raises(asyncio.CancelledError):
         await run_trader_loop(
             pipeline_cfg=pipeline_cfg,
+            venue_cfg=venue_cfg,
+            exchange_config=exchange_config,
             strategy_cfg=strategy_cfg,
             risk_cfg=risk_cfg,
             notifier=notifier,

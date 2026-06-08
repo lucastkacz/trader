@@ -29,6 +29,7 @@ from src.data.sync.models import (
     OHLCVSyncResult,
     Sleep,
 )
+from src.universe.filters.market_tickers import select_symbols_by_quote_volume
 
 
 class OHLCVBackfillService:
@@ -49,9 +50,14 @@ class OHLCVBackfillService:
 
     async def run(self, request: OHLCVBackfillRequest) -> OHLCVSyncResult:
         """Backfill all requested or universe-discovered symbols."""
-        symbols = list(
-            request.symbols or await self.market_data.fetch_universe(request.min_volume)
-        )
+        if request.symbols is not None:
+            symbols = list(request.symbols)
+        else:
+            tickers = await self.market_data.fetch_market_tickers()
+            symbols = select_symbols_by_quote_volume(
+                tickers,
+                min_quote_volume=request.min_volume,
+            )
         if request.limit_symbols is not None:
             symbols = symbols[: request.limit_symbols]
 

@@ -2,6 +2,7 @@ import pytest
 
 from src.exchange.config.venue import (
     load_ccxt_exchange_config,
+    load_exchange_venue_config,
 )
 
 
@@ -55,3 +56,18 @@ def test_shipped_ccxt_market_profiles_parse(
     assert config.market_contract.default_type == default_type
     assert config.market_contract.default_sub_type == default_sub_type
     assert config.market_contract.default_settle == default_settle
+
+
+@pytest.mark.parametrize(
+    ("path", "credential_tier"),
+    [
+        ("configs/exchange/venues/dev.yml", "readonly"),
+        ("configs/exchange/venues/uat.yml", "readonly"),
+        ("configs/exchange/venues/prod.yml", "live"),
+    ],
+)
+def test_shipped_exchange_venues_parse(path, credential_tier):
+    config = load_exchange_venue_config(path)
+
+    assert config.exchange_id == "bybit"
+    assert config.credential_tier == credential_tier

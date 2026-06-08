@@ -6,7 +6,7 @@ from typing import Any
 
 from src.core.config import settings
 from src.core.logger import logger
-from src.exchange.config.venue import CcxtExchangeConfig, load_ccxt_exchange_config
+from src.exchange.config.venue import CcxtExchangeConfig, ExchangeVenueConfig
 from src.exchange.execution.account import (
     CCXTReadOnlySnapshotProvider,
     ExchangeSnapshotProvider,
@@ -16,7 +16,6 @@ from src.engine.trader.commands.processor import process_user_commands
 from src.engine.trader.config import (
     PipelineConfig,
     PipelineExecutionConfig,
-    PipelineVenueConfig,
     RiskConfig,
     StrategyConfig,
 )
@@ -54,15 +53,15 @@ def resolve_credentials(settings: Any, credential_tier: str) -> tuple[str, str]:
 
 async def run_trader_loop(
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
+    exchange_config: CcxtExchangeConfig,
     strategy_cfg: StrategyConfig,
     risk_cfg: RiskConfig,
     reconciliation_snapshot_provider: ExchangeSnapshotProvider | None = None,
     notifier: TelegramNotifier | None = None,
 ) -> None:
-    venue_cfg = pipeline_cfg.venue
     execution_cfg = pipeline_cfg.execution
     api_key, api_secret = resolve_credentials(settings, venue_cfg.credential_tier)
-    exchange_config = load_ccxt_exchange_config(venue_cfg.market_profile_config)
     order_adapter = _build_order_adapter(
         venue_cfg,
         execution_cfg,
@@ -118,6 +117,7 @@ async def run_trader_loop(
             state=state,
             pairs=pairs,
             pipeline_cfg=pipeline_cfg,
+            venue_cfg=venue_cfg,
             strategy_cfg=strategy_cfg,
             risk_cfg=risk_cfg,
             notifier=notifier,
@@ -144,7 +144,7 @@ async def run_trader_loop(
 
 
 def _build_order_adapter(
-    venue_cfg: PipelineVenueConfig,
+    venue_cfg: ExchangeVenueConfig,
     execution_cfg: PipelineExecutionConfig,
     api_key: str,
     api_secret: str,
@@ -166,7 +166,7 @@ def _build_order_adapter(
 
 
 def _build_reconciliation_snapshot_provider(
-    venue_cfg: PipelineVenueConfig,
+    venue_cfg: ExchangeVenueConfig,
     execution_cfg: PipelineExecutionConfig,
     api_key: str,
     api_secret: str,
@@ -231,6 +231,7 @@ async def _run_ticks(
     state: TradeStateManager,
     pairs: list[dict[str, Any]],
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
     strategy_cfg: StrategyConfig,
     risk_cfg: RiskConfig,
     notifier: TelegramNotifier,
@@ -252,6 +253,7 @@ async def _run_ticks(
             state,
             pairs,
             pipeline_cfg,
+            venue_cfg,
             notifier,
             api_key,
             api_secret,
@@ -282,7 +284,7 @@ async def _run_ticks(
             notifier,
             pipeline_cfg.timeframe,
             strategy_cfg,
-            exchange_id=pipeline_cfg.venue.exchange_id,
+            exchange_id=venue_cfg.exchange_id,
             api_key=api_key,
             api_secret=api_secret,
             exchange_config=exchange_config,
@@ -345,6 +347,7 @@ async def _sleep_until_next_tick(
     state: TradeStateManager,
     pairs: list[dict[str, Any]],
     pipeline_cfg: PipelineConfig,
+    venue_cfg: ExchangeVenueConfig,
     notifier: TelegramNotifier,
     api_key: str,
     api_secret: str,
@@ -365,7 +368,7 @@ async def _sleep_until_next_tick(
             pairs,
             notifier,
             pipeline_cfg.timeframe,
-            exchange_id=pipeline_cfg.venue.exchange_id,
+            exchange_id=venue_cfg.exchange_id,
             api_key=api_key,
             api_secret=api_secret,
             exchange_config=exchange_config,

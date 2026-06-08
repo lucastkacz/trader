@@ -10,7 +10,10 @@ from pathlib import Path
 from src.core.config import settings
 from src.core.logger import configure_logger
 from src.data.ohlcv import OHLCVMarketMetadata
-from src.exchange.config.venue import load_ccxt_exchange_config
+from src.exchange.config.venue import (
+    load_ccxt_exchange_config,
+    load_exchange_venue_config,
+)
 from src.exchange.data.market_data import (
     create_configured_ccxt_exchange,
     fetch_klines,
@@ -32,6 +35,19 @@ def main(argv: list[str] | None = None) -> int:
         "--pipeline",
         required=True,
         help="Path to typed pipeline YAML, e.g. configs/pipelines/dev.yml",
+    )
+    parser.add_argument(
+        "--venue",
+        required=True,
+        help="Path to exchange venue YAML, e.g. configs/exchange/venues/dev.yml",
+    )
+    parser.add_argument(
+        "--market-profile",
+        required=True,
+        help=(
+            "Path to CCXT market profile YAML, e.g. "
+            "configs/exchange/market_profiles/linear_usdt_swap.yml"
+        ),
     )
     parser.add_argument(
         "--artifact-path",
@@ -72,11 +88,11 @@ def main(argv: list[str] | None = None) -> int:
 
 async def _async_main(args: argparse.Namespace) -> int:
     pipeline_cfg = load_pipeline_config(args.pipeline)
-    venue_cfg = pipeline_cfg.venue
+    venue_cfg = load_exchange_venue_config(args.venue)
     execution_cfg = pipeline_cfg.execution
     if venue_cfg.credential_tier != "readonly":
         raise ValueError(
-            "Pair-data refresh requires pipeline venue.credential_tier='readonly'"
+            "Pair-data refresh requires venue.credential_tier='readonly'"
         )
 
     artifact_path = (
@@ -92,7 +108,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         missing_lookback_bars=args.missing_lookback_bars,
         fetch_limit=args.fetch_limit,
     )
-    exchange_config = load_ccxt_exchange_config(venue_cfg.market_profile_config)
+    exchange_config = load_ccxt_exchange_config(args.market_profile)
     exchange = create_configured_ccxt_exchange(
         venue_cfg.exchange_id,
         settings.exchange_readonly_api_key or "",

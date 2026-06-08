@@ -24,6 +24,8 @@ async def test_run_profile_command_loads_referenced_typed_configs(monkeypatch):
     await main.main()
 
     assert captured["pipeline_cfg"].name == "DEV 1M Sandbox"
+    assert captured["venue_cfg"].exchange_id == "bybit"
+    assert captured["exchange_config"].name == "linear_usdt_swap"
     assert captured["universe_cfg"].name == "DEV 1M Lenient Workflow Universe"
     assert captured["backtest_cfg"].name == "DEV 1M Lenient Workflow Stress Engine"
     assert captured["strategy_cfg"].name == "DEV Lenient Workflow Mean Reversion V1"
@@ -46,6 +48,10 @@ async def test_execute_command_applies_bounded_runtime_overrides(monkeypatch):
             "execute",
             "--pipeline",
             "configs/pipelines/dev.yml",
+            "--venue",
+            "configs/exchange/venues/dev.yml",
+            "--market-profile",
+            "configs/exchange/market_profiles/linear_usdt_swap.yml",
             "--strategy",
             "configs/strategy/dev.yml",
             "--risk",
@@ -63,6 +69,8 @@ async def test_execute_command_applies_bounded_runtime_overrides(monkeypatch):
     assert pipeline_cfg.execution.max_ticks == 2
     assert pipeline_cfg.execution.heartbeat_seconds == 1
     assert pipeline_cfg.execution.order_execution.mode == "state_only"
+    assert captured["venue_cfg"].exchange_id == "bybit"
+    assert captured["exchange_config"].name == "linear_usdt_swap"
     assert captured["telegram_path"] is None
 
 

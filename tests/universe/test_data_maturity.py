@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 try:
-    from src.screener.filters.data_maturity import DataMaturityFilter
+    from src.universe.filters.data_maturity import DataMaturityFilter
 except ImportError:
     pass
 

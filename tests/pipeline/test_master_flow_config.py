@@ -6,7 +6,21 @@ from src.engine.trader.config import (
     load_strategy_config,
     load_universe_config,
 )
+from src.exchange.config.venue import (
+    load_ccxt_exchange_config,
+    load_exchange_venue_config,
+)
 from src.pipeline import master_flow
+
+
+def _venue_cfg():
+    return load_exchange_venue_config("configs/exchange/venues/dev.yml")
+
+
+def _exchange_config():
+    return load_ccxt_exchange_config(
+        "configs/exchange/market_profiles/linear_usdt_swap.yml"
+    )
 
 
 @pytest.mark.asyncio
@@ -36,15 +50,22 @@ async def test_task_mine_data_uses_typed_pipeline_and_universe_config(monkeypatc
     monkeypatch.setattr(master_flow.OHLCVBackfillService, "run", fake_run)
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
-    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    venue_cfg = _venue_cfg()
+    exchange_config = _exchange_config()
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
 
-    result = await master_flow.task_mine_data.fn(pipeline_cfg, universe_cfg)
+    result = await master_flow.task_mine_data.fn(
+        pipeline_cfg,
+        venue_cfg,
+        exchange_config,
+        universe_cfg,
+    )
 
     assert result is True
     request = captured["request"]
-    assert captured["adapter_exchange_id"] == pipeline_cfg.venue.exchange_id
+    assert captured["adapter_exchange_id"] == venue_cfg.exchange_id
     assert captured["exchange_config"].name == "linear_usdt_swap"
-    assert request.exchange_id == pipeline_cfg.venue.exchange_id
+    assert request.exchange_id == venue_cfg.exchange_id
     assert request.timeframe == pipeline_cfg.timeframe
     assert request.min_volume == universe_cfg.filters.min_volume_liquidity
     assert request.limit_symbols == pipeline_cfg.max_symbols
@@ -65,14 +86,20 @@ def test_task_discover_alpha_passes_typed_research_config(monkeypatch):
     monkeypatch.setattr(master_flow.DiscoveryEngine, "run", fake_run)
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
-    universe_cfg = load_universe_config("configs/universe/alpha_v1.yml")
+    venue_cfg = _venue_cfg()
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
     strategy_cfg = load_strategy_config("configs/strategy/dev.yml")
 
-    result = master_flow.task_discover_alpha.fn(pipeline_cfg, universe_cfg, strategy_cfg)
+    result = master_flow.task_discover_alpha.fn(
+        pipeline_cfg,
+        venue_cfg,
+        universe_cfg,
+        strategy_cfg,
+    )
 
     assert result is True
     assert captured["timeframe"] == pipeline_cfg.timeframe
-    assert captured["exchange"] == pipeline_cfg.venue.exchange_id
+    assert captured["exchange"] == venue_cfg.exchange_id
     assert captured["universe_cfg"] == universe_cfg
     assert captured["strategy_cfg"] == strategy_cfg
     assert captured["artifact_base_dir"] == pipeline_cfg.execution.artifact_base_dir
@@ -87,6 +114,7 @@ def test_task_vector_stress_passes_typed_research_config_and_artifact_paths(monk
     monkeypatch.setattr(master_flow.PairStressFilter, "run", fake_run)
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
+    venue_cfg = _venue_cfg()
     strategy_cfg = load_strategy_config("configs/strategy/dev.yml")
     backtest_cfg = master_flow.BacktestConfig.model_validate({
         "name": "test",
@@ -98,11 +126,16 @@ def test_task_vector_stress_passes_typed_research_config_and_artifact_paths(monk
         },
     })
 
-    result = master_flow.task_vector_stress.fn(pipeline_cfg, backtest_cfg, strategy_cfg)
+    result = master_flow.task_vector_stress.fn(
+        pipeline_cfg,
+        venue_cfg,
+        backtest_cfg,
+        strategy_cfg,
+    )
 
     assert result is True
     assert captured["timeframe"] == pipeline_cfg.timeframe
-    assert captured["exchange"] == pipeline_cfg.venue.exchange_id
+    assert captured["exchange"] == venue_cfg.exchange_id
     assert str(captured["input_pairs_path"]).endswith("candidate_surviving_pairs.json")
     assert captured["output_artifact_base_dir"] == pipeline_cfg.execution.artifact_base_dir
     assert captured["backtest_cfg"] == backtest_cfg
@@ -117,6 +150,8 @@ def test_execute_flow_allows_telegram_to_be_absent():
     parameters = master_flow.execute_flow.validate_parameters(
         {
             "pipeline_cfg": pipeline_cfg,
+            "venue_cfg": _venue_cfg(),
+            "exchange_config": _exchange_config(),
             "strategy_cfg": strategy_cfg,
             "risk_cfg": risk_cfg,
             "telegram_path": None,
@@ -136,12 +171,22 @@ async def test_task_execute_trader_passes_typed_risk_config(monkeypatch):
     monkeypatch.setattr(master_flow, "run_trader_loop", fake_run_trader_loop)
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
+    venue_cfg = _venue_cfg()
+    exchange_config = _exchange_config()
     strategy_cfg = load_strategy_config("configs/strategy/dev.yml")
     risk_cfg = load_risk_config("configs/risk/alpha_v1.yml")
 
-    result = await master_flow.task_execute_trader.fn(pipeline_cfg, strategy_cfg, risk_cfg)
+    result = await master_flow.task_execute_trader.fn(
+        pipeline_cfg,
+        venue_cfg,
+        exchange_config,
+        strategy_cfg,
+        risk_cfg,
+    )
 
     assert result is True
     assert captured["pipeline_cfg"] == pipeline_cfg
+    assert captured["venue_cfg"] == venue_cfg
+    assert captured["exchange_config"] == exchange_config
     assert captured["strategy_cfg"] == strategy_cfg
     assert captured["risk_cfg"] == risk_cfg

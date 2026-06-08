@@ -138,12 +138,6 @@ class PairQueueConfig(StrictConfigModel):
         }
 
 
-class PipelineVenueConfig(StrictConfigModel):
-    exchange_id: str = Field(min_length=1)
-    market_profile_config: str = Field(min_length=1)
-    credential_tier: Literal["readonly", "live"]
-
-
 class PipelineDataConfig(StrictConfigModel):
     backfill_policy_config: str = Field(min_length=1)
 
@@ -169,7 +163,6 @@ class PipelineConfig(StrictConfigModel):
     timeframe: str
     historical_days: int
     max_symbols: int | None
-    venue: PipelineVenueConfig
     data: PipelineDataConfig
     execution: PipelineExecutionConfig
 
@@ -232,6 +225,8 @@ class BacktestConfig(StrictConfigModel):
 
 class RunProfileConfig(StrictConfigModel):
     pipeline: str = Field(min_length=1)
+    venue: str = Field(min_length=1)
+    market_profile: str = Field(min_length=1)
     universe: str = Field(min_length=1)
     backtest: str = Field(min_length=1)
     strategy: str = Field(min_length=1)
