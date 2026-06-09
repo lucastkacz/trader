@@ -162,17 +162,56 @@ class PipelineConfig(StrictConfigModel):
     name: str
     timeframe: str
     historical_days: int
-    max_symbols: int | None
     data: PipelineDataConfig
     execution: PipelineExecutionConfig
 
 
+class UniverseTickerLiquidityConfig(StrictConfigModel):
+    enabled: bool
+    min_24h_quote_volume: float = Field(ge=0)
+
+
+class UniverseOHLCVLiquidityConfig(StrictConfigModel):
+    enabled: bool
+    timeframe: str = Field(min_length=1)
+    lookback_bars: int = Field(gt=0)
+    metric: Literal[
+        "mean_quote_volume",
+        "median_quote_volume",
+        "percentile_quote_volume",
+    ]
+    min_value: float = Field(ge=0)
+    percentile: float | None = Field(default=None, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_metric_parameters(self) -> "UniverseOHLCVLiquidityConfig":
+        if self.metric == "percentile_quote_volume" and self.percentile is None:
+            raise ValueError("percentile is required for percentile_quote_volume")
+        if self.metric != "percentile_quote_volume" and self.percentile is not None:
+            raise ValueError("percentile is only valid for percentile_quote_volume")
+        return self
+
+
+class UniverseMegaCapFilterConfig(StrictConfigModel):
+    exclude_top_n: int = Field(ge=0)
+    timeframe: str = Field(min_length=1)
+    lookback_bars: int = Field(gt=0)
+    metric: Literal[
+        "mean_quote_volume",
+        "median_quote_volume",
+    ]
+
+
+class UniverseDataMaturityConfig(StrictConfigModel):
+    min_bars: int = Field(gt=0)
+
+
 class UniverseFiltersConfig(StrictConfigModel):
-    exclude_top_n_mega_caps: int
-    volume_lookback_bars: int
-    min_volume_liquidity: float
-    max_volume_liquidity: float
-    min_data_maturity_bars: int
+    ticker_liquidity: UniverseTickerLiquidityConfig
+    prefilter_liquidity: UniverseOHLCVLiquidityConfig
+    stored_data_liquidity: UniverseOHLCVLiquidityConfig
+    mega_caps: UniverseMegaCapFilterConfig
+    data_maturity: UniverseDataMaturityConfig
 
 
 class UniverseClusteringConfig(StrictConfigModel):

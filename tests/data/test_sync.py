@@ -125,7 +125,7 @@ async def test_ohlcv_backfill_service_fetches_paginates_and_persists(tmp_path):
             timeframe="1m",
             start_ts=1600000000000,
             end_ts=1600000120000,
-            min_volume=1_000_000,
+            symbols=["BTC/USDT:USDT"],
             market=_market(),
         )
     )

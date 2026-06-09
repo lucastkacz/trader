@@ -12,7 +12,7 @@ from src.data.ohlcv import OHLCVMarketMetadata
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.runtime.pair_validity.market_data import normalize_ohlcv
 from src.engine.trader.runtime.artifacts import validate_pair_artifact_file
-from src.utils.timeframe_math import get_timeframe_minutes
+from src.utils.timeframe_math import get_timeframe_minutes, last_closed_candle_open_ms
 
 FetchKlines = Callable[..., Awaitable[pd.DataFrame]]
 
@@ -293,9 +293,8 @@ def _refresh_since_ms(
 
 
 def _closed_candle_end_ms(now: datetime, timeframe: str) -> int:
-    bar_ms = _bar_ms(timeframe)
     now_ms = int(_as_utc(now).timestamp() * 1000)
-    return max(0, (now_ms // bar_ms) * bar_ms - bar_ms)
+    return max(0, last_closed_candle_open_ms(timeframe, now_ms=now_ms))
 
 
 def _bar_ms(timeframe: str) -> int:

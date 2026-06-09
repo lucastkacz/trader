@@ -29,7 +29,7 @@ from src.exchange.config.venue import (
     load_exchange_venue_config,
 )
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
-from src.utils.timeframe_math import get_timeframe_minutes
+from src.utils.timeframe_math import get_timeframe_minutes, last_closed_candle_open_ms
 
 PIPELINE_CONFIG = "configs/pipelines/dev.yml"
 VENUE_CONFIG = "configs/exchange/venues/dev.yml"
@@ -77,7 +77,10 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
     _print_kv("exchange id", venue_cfg.exchange_id)
     _print_kv("backfill policy config", pipeline_cfg.data.backfill_policy_config)
     _print_kv("universe config", UNIVERSE_CONFIG)
-    _print_kv("universe volume floor", f"${universe_cfg.filters.min_volume_liquidity:,.0f}")
+    _print_kv(
+        "ticker 24h volume floor",
+        f"${universe_cfg.filters.ticker_liquidity.min_24h_quote_volume:,.0f}",
+    )
     _print_kv("timeframe", pipeline_cfg.timeframe)
     _print_kv("symbols", ", ".join(symbols))
     _print_kv("requested bars", requested_bars)
@@ -95,7 +98,6 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
         timeframe=pipeline_cfg.timeframe,
         start_ts=start_ts,
         end_ts=end_ts,
-        min_volume=universe_cfg.filters.min_volume_liquidity,
         symbols=symbols,
         market=OHLCVMarketMetadata(
             market_type=exchange_cfg.market_contract.default_type,
@@ -167,8 +169,7 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
 
 def _closed_candle_end_ms(timeframe: str) -> int:
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    bar_ms = int(get_timeframe_minutes(timeframe) * 60_000)
-    return (now_ms // bar_ms) * bar_ms - bar_ms
+    return last_closed_candle_open_ms(timeframe, now_ms=now_ms)
 
 
 def _format_ts(ms: int | None) -> str:

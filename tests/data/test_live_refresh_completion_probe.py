@@ -31,7 +31,7 @@ from src.exchange.config.venue import (
     load_exchange_venue_config,
 )
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
-from src.utils.timeframe_math import get_timeframe_minutes
+from src.utils.timeframe_math import last_closed_candle_open_ms
 
 PIPELINE_CONFIG = "configs/pipelines/dev.yml"
 VENUE_CONFIG = "configs/exchange/venues/dev.yml"
@@ -172,8 +172,7 @@ def _output_dir() -> Path:
 
 def _closed_candle_end_ms(timeframe: str) -> int:
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    bar_ms = int(get_timeframe_minutes(timeframe) * 60_000)
-    return (now_ms // bar_ms) * bar_ms - bar_ms
+    return last_closed_candle_open_ms(timeframe, now_ms=now_ms)
 
 
 def _display_tail(frame: pd.DataFrame, *, rows: int = 5) -> pd.DataFrame:

@@ -34,7 +34,7 @@ async def test_dev_config_fetches_live_universe_from_volume_filter() -> None:
     venue_cfg = load_exchange_venue_config(VENUE_CONFIG)
     universe_cfg = load_universe_config(UNIVERSE_CONFIG)
     exchange_cfg = load_ccxt_exchange_config(MARKET_PROFILE_CONFIG)
-    min_volume = universe_cfg.filters.min_volume_liquidity
+    min_volume = universe_cfg.filters.ticker_liquidity.min_24h_quote_volume
 
     _print_header("LIVE UNIVERSE PROBE")
     _print_kv("pipeline config", PIPELINE_CONFIG)

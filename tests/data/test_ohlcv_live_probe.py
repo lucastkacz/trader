@@ -22,6 +22,7 @@ from src.data.sync import (
     OHLCVRefreshRequest,
     OHLCVRefreshService,
 )
+from src.utils.timeframe_math import last_closed_candle_open_ms
 
 
 @pytest.mark.live
@@ -86,5 +87,4 @@ async def test_live_ohlcv_probe_writes_small_1m_parquet_sample():
 
 def _closed_1m_candle_end_ms() -> int:
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    one_minute_ms = 60_000
-    return (now_ms // one_minute_ms) * one_minute_ms - one_minute_ms
+    return last_closed_candle_open_ms("1m", now_ms=now_ms)

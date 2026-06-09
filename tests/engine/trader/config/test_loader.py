@@ -27,7 +27,7 @@ def write_yaml(tmp_path, data):
 def test_valid_operator_configs_parse():
     dev_pipeline = load_pipeline_config("configs/pipelines/dev.yml")
     assert dev_pipeline.execution.max_ticks is None
-    assert dev_pipeline.data.backfill_policy_config == "configs/data/backfill_default.yml"
+    assert dev_pipeline.data.backfill_policy_config == "configs/data/ohlcv_backfill/default.yml"
     assert dev_pipeline.execution.market_data_base_dir == "data/parquet"
     assert dev_pipeline.execution.artifact_base_dir == "data/universes"
     assert dev_pipeline.execution.market_data_fetch.request_timeout_seconds == 15.0
@@ -41,7 +41,15 @@ def test_valid_operator_configs_parse():
     assert load_pipeline_config("configs/pipelines/prod.yml").execution.max_ticks is None
 
     universe_cfg = load_universe_config("configs/universe/dev.yml")
-    assert universe_cfg.filters.min_volume_liquidity == 5_000
+    assert universe_cfg.filters.ticker_liquidity.min_24h_quote_volume == 5_000_000
+    assert universe_cfg.filters.prefilter_liquidity.timeframe == "1d"
+    assert universe_cfg.filters.prefilter_liquidity.metric == "median_quote_volume"
+    assert universe_cfg.filters.stored_data_liquidity.lookback_bars == 1_440
+    assert universe_cfg.filters.mega_caps.exclude_top_n == 1
+    assert universe_cfg.filters.mega_caps.timeframe == "1m"
+    assert universe_cfg.filters.mega_caps.lookback_bars == 1_440
+    assert universe_cfg.filters.mega_caps.metric == "mean_quote_volume"
+    assert universe_cfg.filters.data_maturity.min_bars == 900
     assert universe_cfg.cointegration.ewma_span_bars == 48
     assert load_strategy_config("configs/strategy/dev.yml").execution.volatility_lookback_bars == 60
     assert load_strategy_config("configs/strategy/uat.yml").name == "UAT Institutional Mean Reversion V1"
@@ -259,9 +267,30 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
         (
             "configs/universe/dev.yml",
             "universe",
-            ("filters", "min_volume_liquidity"),
+            ("filters", "ticker_liquidity", "min_24h_quote_volume"),
             load_universe_config,
-            "min_volume_liquidity",
+            "min_24h_quote_volume",
+        ),
+        (
+            "configs/universe/dev.yml",
+            "universe",
+            ("filters", "prefilter_liquidity", "metric"),
+            load_universe_config,
+            "metric",
+        ),
+        (
+            "configs/universe/dev.yml",
+            "universe",
+            ("filters", "stored_data_liquidity", "lookback_bars"),
+            load_universe_config,
+            "lookback_bars",
+        ),
+        (
+            "configs/universe/dev.yml",
+            "universe",
+            ("filters", "data_maturity", "min_bars"),
+            load_universe_config,
+            "min_bars",
         ),
         (
             "configs/universe/dev.yml",

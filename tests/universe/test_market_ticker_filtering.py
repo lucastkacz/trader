@@ -7,7 +7,7 @@ from src.universe.filters.market_tickers import select_symbols_by_quote_volume
 
 def test_select_symbols_by_quote_volume_uses_configured_floor():
     universe_cfg = load_universe_config("configs/universe/dev.yml")
-    min_volume = universe_cfg.filters.min_volume_liquidity
+    min_volume = universe_cfg.filters.ticker_liquidity.min_24h_quote_volume
     tickers = [
         MarketTicker(symbol="BTC/USDT:USDT", quote_volume=min_volume * 2),
         MarketTicker(symbol="ETH/USDT:USDT", quote_volume=min_volume + 1),

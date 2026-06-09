@@ -1,6 +1,6 @@
 import sys
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from prefect import flow, task, get_run_logger
 
 from src.core.config import settings
@@ -24,6 +24,8 @@ from src.universe.discovery import DiscoveryEngine
 from src.engine.trader.runtime.artifacts import candidate_pair_artifact_path
 from src.engine.trader.runtime.trader_runner import run_trader_loop
 from src.research.pair_stress_filter import PairStressFilter
+from src.universe.selection import select_symbols_for_backfill
+from src.utils.timeframe_math import last_closed_candle_open_ms
 
 # --- RESEARCH TASKS ---
 
@@ -49,8 +51,13 @@ async def task_mine_data(
     backfill_policy = load_ohlcv_backfill_config(
         pipeline_cfg.data.backfill_policy_config
     ).to_fetch_policy()
-    end_dt = datetime.now(timezone.utc)
-    start_dt = end_dt - timedelta(days=pipeline_cfg.historical_days)
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    end_ts = last_closed_candle_open_ms(pipeline_cfg.timeframe, now_ms=now_ms)
+    prefilter_end_ts = last_closed_candle_open_ms(
+        universe_cfg.filters.prefilter_liquidity.timeframe,
+        now_ms=now_ms,
+    )
+    start_ts = end_ts - pipeline_cfg.historical_days * 86_400_000
 
     async with CcxtMarketDataAdapter(
         exchange_id,
@@ -63,14 +70,21 @@ async def task_mine_data(
             store=storage,
             policy=backfill_policy,
         )
+        selection = await select_symbols_for_backfill(
+            market_data=market_data,
+            universe_cfg=universe_cfg,
+            prefilter_end_ts=prefilter_end_ts,
+            prefilter_pause_seconds=backfill_policy.request_pause_seconds,
+        )
+        if not selection.symbols:
+            raise ValueError("Universe selection returned no symbols for OHLCV backfill")
         await service.run(
             OHLCVBackfillRequest(
                 exchange_id=exchange_id,
                 timeframe=pipeline_cfg.timeframe,
-                start_ts=int(start_dt.timestamp() * 1000),
-                end_ts=int(end_dt.timestamp() * 1000),
-                min_volume=universe_cfg.filters.min_volume_liquidity,
-                limit_symbols=pipeline_cfg.max_symbols,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                symbols=selection.symbols,
                 market=OHLCVMarketMetadata(
                     market_type=exchange_config.market_contract.default_type,
                     market_sub_type=exchange_config.market_contract.default_sub_type,

@@ -2,9 +2,8 @@ pipeline:
   name: "PROD 4H Live Trading"
   timeframe: "4h"
   historical_days: 365
-  max_symbols: 100
   data:
-    backfill_policy_config: "configs/data/backfill_default.yml"
+    backfill_policy_config: "configs/data/ohlcv_backfill/default.yml"
   execution:
     market_data_base_dir: "data/parquet"
     artifact_base_dir: "data/universes"

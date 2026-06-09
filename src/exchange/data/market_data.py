@@ -128,7 +128,8 @@ async def fetch_klines(
     timeframe : str - candle interval (e.g., "1m", "4h")
     limit : int - max candles per request
     since : int, optional - start timestamp in milliseconds
-    end_ts : int, optional - freeze-frame cutoff timestamp in milliseconds
+    end_ts : int, optional - inclusive freeze-frame candle-open cutoff in milliseconds.
+        Live callers should pass the last fully closed candle open.
     """
     ctx = LogContext(pair=symbol)
     logger.bind(**ctx.model_dump(exclude_none=True)).debug(

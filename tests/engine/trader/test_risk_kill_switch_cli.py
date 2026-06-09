@@ -146,9 +146,8 @@ pipeline:
   name: test-pipeline
   timeframe: "1m"
   historical_days: 1
-  max_symbols: null
   data:
-    backfill_policy_config: "configs/data/backfill_default.yml"
+    backfill_policy_config: "configs/data/ohlcv_backfill/default.yml"
   execution:
     market_data_base_dir: "{tmp_path / "market_data"}"
     artifact_base_dir: "{tmp_path / "universes"}"

@@ -78,30 +78,34 @@ class OHLCVFetchPolicy:
 
 @dataclass(frozen=True)
 class OHLCVBackfillRequest:
-    """Operator request for historical OHLCV ingestion."""
+    """Operator request for historical OHLCV ingestion.
+
+    ``start_ts`` and ``end_ts`` are inclusive candle-open timestamps. Live callers
+    should freeze ``end_ts`` to the last fully closed candle before fetching.
+    """
 
     exchange_id: str
     timeframe: str
     start_ts: int
     end_ts: int
-    min_volume: float
-    symbols: Sequence[str] | None = None
-    limit_symbols: int | None = None
+    symbols: Sequence[str]
     retention_policy: OHLCVRetentionPolicy | None = None
     market: OHLCVMarketMetadata = field(default_factory=OHLCVMarketMetadata)
 
     def __post_init__(self) -> None:
         if self.start_ts >= self.end_ts:
             raise ValueError("start_ts must be earlier than end_ts")
-        if self.min_volume < 0:
-            raise ValueError("min_volume must be non-negative")
-        if self.limit_symbols is not None and self.limit_symbols <= 0:
-            raise ValueError("limit_symbols must be positive when provided")
+        if not self.symbols:
+            raise ValueError("symbols must be non-empty")
 
 
 @dataclass(frozen=True)
 class OHLCVRefreshRequest:
-    """Operator request for incremental OHLCV refresh."""
+    """Operator request for incremental OHLCV refresh.
+
+    ``end_ts`` is an inclusive candle-open timestamp. Live callers should freeze
+    it to the last fully closed candle before fetching.
+    """
 
     exchange_id: str
     timeframe: str

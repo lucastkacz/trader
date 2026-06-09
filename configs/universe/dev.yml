@@ -1,11 +1,28 @@
 universe:
   name: "DEV 1M Lenient Workflow Universe"
   filters:
-    exclude_top_n_mega_caps: 1
-    volume_lookback_bars: 1440
-    min_volume_liquidity: 5000
-    max_volume_liquidity: 5000000
-    min_data_maturity_bars: 900
+    ticker_liquidity:
+      enabled: true
+      min_24h_quote_volume: 5000000
+    prefilter_liquidity:
+      enabled: true
+      timeframe: "1d"
+      lookback_bars: 30
+      metric: "median_quote_volume"
+      min_value: 5000000
+    stored_data_liquidity:
+      enabled: true
+      timeframe: "1m"
+      lookback_bars: 1440
+      metric: "mean_quote_volume"
+      min_value: 3500
+    mega_caps:
+      exclude_top_n: 1
+      timeframe: "1m"
+      lookback_bars: 1440
+      metric: "mean_quote_volume"
+    data_maturity:
+      min_bars: 900
   clustering:
     returns_clip_percentile: 0.01
     louvain_correlation_threshold: 0.3

@@ -9,6 +9,11 @@ from src.data.ohlcv import (
     normalize_ohlcv_frame,
     validate_ohlcv_frame,
 )
+from src.utils.timeframe_math import (
+    floor_timestamp_to_timeframe,
+    get_timeframe_ms,
+    last_closed_candle_open_ms,
+)
 
 
 def test_normalize_ohlcv_frame_sorts_deduplicates_and_casts():
@@ -139,6 +144,19 @@ def test_apply_ohlcv_retention_by_max_bars_and_age():
     )
 
     assert retained["timestamp"].tolist() == [1600172800000]
+
+
+def test_last_closed_candle_open_uses_previous_boundary_for_mid_candle_time():
+    _announce(
+        "Freezes live OHLCV requests at the previous closed candle boundary when "
+        "the job starts mid-candle."
+    )
+    now_ms = 1781038098268
+
+    assert get_timeframe_ms("1m") == 60_000
+    assert floor_timestamp_to_timeframe(now_ms, "1m") == 1781038080000
+    assert last_closed_candle_open_ms("1m", now_ms=now_ms) == 1781038020000
+    assert last_closed_candle_open_ms("1m", now_ms=1781038080000) == 1781038020000
 
 
 def _announce(message: str) -> None:

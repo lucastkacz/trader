@@ -8,8 +8,8 @@ from src.core.logger import logger
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.engine.trader.config import UniverseConfig
 from src.universe.filters.data_maturity import DataMaturityFilter
-from src.universe.filters.mega_caps import exclude_top_by_dollar_volume
-from src.universe.filters.ohlcv_liquidity import select_by_average_dollar_volume
+from src.universe.filters.mega_caps import exclude_top_by_quote_volume_metric
+from src.universe.filters.ohlcv_liquidity import select_by_quote_volume_metric
 
 
 def load_filtered_symbol_pool(
@@ -28,19 +28,39 @@ def load_filtered_symbol_pool(
 
     filters_cfg = universe_cfg.filters
     frames = _load_symbol_frames(storage, files, timeframe, exchange)
-    liquidity = select_by_average_dollar_volume(
-        frames,
-        lookback_bars=filters_cfg.volume_lookback_bars,
-        min_dollar_volume=filters_cfg.min_volume_liquidity,
-        max_dollar_volume=filters_cfg.max_volume_liquidity,
-    )
-    pool = exclude_top_by_dollar_volume(
-        liquidity.pool,
-        liquidity.dollar_volumes,
-        exclude_top_n=filters_cfg.exclude_top_n_mega_caps,
-    )
+    liquidity_cfg = filters_cfg.stored_data_liquidity
+    if liquidity_cfg.enabled:
+        _require_matching_timeframe(
+            configured_timeframe=liquidity_cfg.timeframe,
+            loaded_timeframe=timeframe,
+            filter_name="stored_data_liquidity",
+        )
+        liquidity = select_by_quote_volume_metric(
+            frames,
+            lookback_bars=liquidity_cfg.lookback_bars,
+            metric=liquidity_cfg.metric,
+            min_value=liquidity_cfg.min_value,
+            percentile=liquidity_cfg.percentile,
+        )
+        pool = liquidity.pool
+    else:
+        pool = frames
+
+    mega_cfg = filters_cfg.mega_caps
+    if mega_cfg.exclude_top_n > 0:
+        _require_matching_timeframe(
+            configured_timeframe=mega_cfg.timeframe,
+            loaded_timeframe=timeframe,
+            filter_name="mega_caps",
+        )
+        pool = exclude_top_by_quote_volume_metric(
+            pool,
+            lookback_bars=mega_cfg.lookback_bars,
+            metric=mega_cfg.metric,
+            exclude_top_n=mega_cfg.exclude_top_n,
+        )
     logger.info(f"Loaded {len(pool)} assets into RAM memory safely.")
-    return _select_mature_pool(pool, filters_cfg.min_data_maturity_bars)
+    return _select_mature_pool(pool, filters_cfg.data_maturity.min_bars)
 
 
 def _load_symbol_frames(
@@ -71,3 +91,16 @@ def _select_mature_pool(
     sieve = DataMaturityFilter(min_bars=min_bars)
     surviving_symbols = sieve.filter(pool)
     return {symbol: pool[symbol] for symbol in surviving_symbols}
+
+
+def _require_matching_timeframe(
+    *,
+    configured_timeframe: str,
+    loaded_timeframe: str,
+    filter_name: str,
+) -> None:
+    if configured_timeframe != loaded_timeframe:
+        raise ValueError(
+            f"{filter_name}.timeframe={configured_timeframe!r} must match loaded "
+            f"parquet timeframe {loaded_timeframe!r}"
+        )

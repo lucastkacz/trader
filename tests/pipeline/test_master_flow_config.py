@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from src.engine.trader.config import (
@@ -11,6 +13,7 @@ from src.exchange.config.venue import (
     load_exchange_venue_config,
 )
 from src.pipeline import master_flow
+from src.utils.timeframe_math import get_timeframe_ms
 
 
 def _venue_cfg():
@@ -46,8 +49,17 @@ async def test_task_mine_data_uses_typed_pipeline_and_universe_config(monkeypatc
         captured["store"] = self.store
         captured["policy"] = self.policy
 
+    async def fake_select_symbols_for_backfill(**kwargs):
+        captured["selection_kwargs"] = kwargs
+        return SimpleNamespace(symbols=["BTC/USDT:USDT", "ETH/USDT:USDT"])
+
     monkeypatch.setattr(master_flow, "CcxtMarketDataAdapter", FakeMarketDataAdapter)
     monkeypatch.setattr(master_flow.OHLCVBackfillService, "run", fake_run)
+    monkeypatch.setattr(
+        master_flow,
+        "select_symbols_for_backfill",
+        fake_select_symbols_for_backfill,
+    )
 
     pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml")
     venue_cfg = _venue_cfg()
@@ -67,9 +79,13 @@ async def test_task_mine_data_uses_typed_pipeline_and_universe_config(monkeypatc
     assert captured["exchange_config"].name == "linear_usdt_swap"
     assert request.exchange_id == venue_cfg.exchange_id
     assert request.timeframe == pipeline_cfg.timeframe
-    assert request.min_volume == universe_cfg.filters.min_volume_liquidity
-    assert request.limit_symbols == pipeline_cfg.max_symbols
+    assert request.symbols == ["BTC/USDT:USDT", "ETH/USDT:USDT"]
     assert request.end_ts - request.start_ts == pipeline_cfg.historical_days * 86_400_000
+    assert request.end_ts % get_timeframe_ms(pipeline_cfg.timeframe) == 0
+    prefilter_end_ts = captured["selection_kwargs"]["prefilter_end_ts"]
+    prefilter_timeframe = universe_cfg.filters.prefilter_liquidity.timeframe
+    assert prefilter_end_ts % get_timeframe_ms(prefilter_timeframe) == 0
+    assert captured["selection_kwargs"]["universe_cfg"] == universe_cfg
     assert captured["policy"].fetch_limit == 1000
 
 
