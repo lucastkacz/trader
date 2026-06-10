@@ -79,7 +79,7 @@ async def test_dev_config_runs_small_live_backfill_and_writes_parquet() -> None:
     _print_kv("universe config", UNIVERSE_CONFIG)
     _print_kv(
         "ticker 24h volume floor",
-        f"${universe_cfg.filters.ticker_liquidity.min_24h_quote_volume:,.0f}",
+        f"${universe_cfg.filters.pre_download.ticker_liquidity.min_24h_quote_volume:,.0f}",
     )
     _print_kv("timeframe", pipeline_cfg.timeframe)
     _print_kv("symbols", ", ".join(symbols))

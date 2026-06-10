@@ -1,28 +1,33 @@
 universe:
   name: "DEV 1M Lenient Workflow Universe"
   filters:
-    ticker_liquidity:
-      enabled: true
-      min_24h_quote_volume: 5000000
-    prefilter_liquidity:
-      enabled: true
-      timeframe: "1d"
-      lookback_bars: 30
-      metric: "median_quote_volume"
-      min_value: 5000000
-    stored_data_liquidity:
-      enabled: true
-      timeframe: "1m"
-      lookback_bars: 1440
-      metric: "mean_quote_volume"
-      min_value: 3500
-    mega_caps:
-      exclude_top_n: 1
-      timeframe: "1m"
-      lookback_bars: 1440
-      metric: "mean_quote_volume"
-    data_maturity:
-      min_bars: 900
+    pre_download:
+      ticker_liquidity:
+        enabled: true
+        min_24h_quote_volume: 5000000
+      daily_liquidity:
+        enabled: true
+        timeframe: "1d"
+        lookback_bars: 30
+        metric: "median_quote_volume"
+        min_value: 5000000
+      intraday_liquidity:
+        enabled: true
+        timeframe: "1m"
+        lookback_bars: 1440
+        metric: "mean_quote_volume"
+        min_value: 3500
+      mega_caps:
+        exclude_top_n: 5
+        timeframe: "1m"
+        lookback_bars: 1440
+        metric: "mean_quote_volume"
+    post_download:
+      data_quality:
+        require_coverage_status: "COMPLETE"
+        require_quality_status: "VALIDATED"
+        max_missing_candles: 0
+        max_gap_count: 0
   clustering:
     returns_clip_percentile: 0.01
     louvain_correlation_threshold: 0.3

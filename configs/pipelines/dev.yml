@@ -1,7 +1,7 @@
 pipeline:
   name: "DEV 1M Sandbox"
   timeframe: "1m"
-  historical_days: 2
+  historical_days: 3
   data:
     backfill_policy_config: "configs/data/ohlcv_backfill/default.yml"
   execution:

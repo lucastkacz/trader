@@ -82,9 +82,18 @@ async def test_task_mine_data_uses_typed_pipeline_and_universe_config(monkeypatc
     assert request.symbols == ["BTC/USDT:USDT", "ETH/USDT:USDT"]
     assert request.end_ts - request.start_ts == pipeline_cfg.historical_days * 86_400_000
     assert request.end_ts % get_timeframe_ms(pipeline_cfg.timeframe) == 0
-    prefilter_end_ts = captured["selection_kwargs"]["prefilter_end_ts"]
-    prefilter_timeframe = universe_cfg.filters.prefilter_liquidity.timeframe
-    assert prefilter_end_ts % get_timeframe_ms(prefilter_timeframe) == 0
+    end_ts_by_timeframe = captured["selection_kwargs"]["pre_download_end_ts_by_timeframe"]
+    pre_download = universe_cfg.filters.pre_download
+    for configured_timeframe in {
+        pre_download.daily_liquidity.timeframe,
+        pre_download.intraday_liquidity.timeframe,
+        pre_download.mega_caps.timeframe,
+    }:
+        assert (
+            end_ts_by_timeframe[configured_timeframe]
+            % get_timeframe_ms(configured_timeframe)
+            == 0
+        )
     assert captured["selection_kwargs"]["universe_cfg"] == universe_cfg
     assert captured["policy"].fetch_limit == 1000
 

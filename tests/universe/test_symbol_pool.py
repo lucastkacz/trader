@@ -5,15 +5,24 @@ from src.engine.trader.config import load_universe_config
 from src.universe.symbol_pool import load_filtered_symbol_pool
 
 
-def test_symbol_pool_mega_caps_use_explicit_metric_not_stored_liquidity_metric(tmp_path):
+def test_symbol_pool_keeps_only_complete_validated_post_download_data(tmp_path):
     storage = LocalOHLCVParquetStore(str(tmp_path))
-    _save_quote_volume_frame(storage, "BTC", [100, 100, 100])
-    _save_quote_volume_frame(storage, "ETH", [10, 10, 10_000])
-    _save_quote_volume_frame(storage, "SOL", [50, 50, 50])
-    universe_cfg = _universe_config(
-        stored_metric="median_quote_volume",
-        mega_metric="mean_quote_volume",
+    base_ts = 1_600_000_000_000
+    _save_quote_volume_frame(storage, "VALID", [100, 100, 100], base_ts=base_ts)
+    _save_quote_volume_frame(
+        storage,
+        "GAPPY",
+        [100, 100],
+        timestamps=[base_ts, base_ts + 120_000],
     )
+    _save_quote_volume_frame(
+        storage,
+        "INCOMPLETE",
+        [100, 100, 100],
+        coverage_status="INCOMPLETE",
+        base_ts=base_ts,
+    )
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
 
     pool = load_filtered_symbol_pool(
         storage=storage,
@@ -23,51 +32,24 @@ def test_symbol_pool_mega_caps_use_explicit_metric_not_stored_liquidity_metric(t
     )
 
     assert pool is not None
-    assert set(pool) == {"BTC", "SOL"}
-
-
-def _universe_config(*, stored_metric: str, mega_metric: str):
-    universe_cfg = load_universe_config("configs/universe/dev.yml")
-    filters = universe_cfg.filters
-    stored_liquidity = filters.stored_data_liquidity.model_copy(
-        update={
-            "timeframe": "1m",
-            "lookback_bars": 3,
-            "metric": stored_metric,
-            "min_value": 1,
-            "percentile": None,
-        }
-    )
-    mega_caps = filters.mega_caps.model_copy(
-        update={
-            "timeframe": "1m",
-            "lookback_bars": 3,
-            "metric": mega_metric,
-            "exclude_top_n": 1,
-        }
-    )
-    data_maturity = filters.data_maturity.model_copy(update={"min_bars": 3})
-    return universe_cfg.model_copy(
-        update={
-            "filters": filters.model_copy(
-                update={
-                    "stored_data_liquidity": stored_liquidity,
-                    "mega_caps": mega_caps,
-                    "data_maturity": data_maturity,
-                }
-            )
-        }
-    )
+    assert set(pool) == {"VALID"}
 
 
 def _save_quote_volume_frame(
     storage: LocalOHLCVParquetStore,
     symbol: str,
     quote_volumes: list[float],
+    *,
+    coverage_status: str = "COMPLETE",
+    timestamps: list[int] | None = None,
+    base_ts: int = 1_600_000_000_000,
 ) -> None:
+    timestamps = timestamps or [
+        base_ts + 60_000 * index for index in range(len(quote_volumes))
+    ]
     frame = pd.DataFrame(
         {
-            "timestamp": [60_000 * index for index in range(len(quote_volumes))],
+            "timestamp": timestamps,
             "open": [1.0] * len(quote_volumes),
             "high": [1.0] * len(quote_volumes),
             "low": [1.0] * len(quote_volumes),
@@ -79,6 +61,6 @@ def _save_quote_volume_frame(
         symbol,
         "1m",
         frame,
-        {"coverage_status": "COMPLETE"},
+        {"coverage_status": coverage_status},
         exchange="bybit",
     )

@@ -41,15 +41,20 @@ def test_valid_operator_configs_parse():
     assert load_pipeline_config("configs/pipelines/prod.yml").execution.max_ticks is None
 
     universe_cfg = load_universe_config("configs/universe/dev.yml")
-    assert universe_cfg.filters.ticker_liquidity.min_24h_quote_volume == 5_000_000
-    assert universe_cfg.filters.prefilter_liquidity.timeframe == "1d"
-    assert universe_cfg.filters.prefilter_liquidity.metric == "median_quote_volume"
-    assert universe_cfg.filters.stored_data_liquidity.lookback_bars == 1_440
-    assert universe_cfg.filters.mega_caps.exclude_top_n == 1
-    assert universe_cfg.filters.mega_caps.timeframe == "1m"
-    assert universe_cfg.filters.mega_caps.lookback_bars == 1_440
-    assert universe_cfg.filters.mega_caps.metric == "mean_quote_volume"
-    assert universe_cfg.filters.data_maturity.min_bars == 900
+    pre_download = universe_cfg.filters.pre_download
+    post_download = universe_cfg.filters.post_download
+    assert pre_download.ticker_liquidity.min_24h_quote_volume == 5_000_000
+    assert pre_download.daily_liquidity.timeframe == "1d"
+    assert pre_download.daily_liquidity.metric == "median_quote_volume"
+    assert pre_download.intraday_liquidity.lookback_bars == 1_440
+    assert pre_download.mega_caps.exclude_top_n == 5
+    assert pre_download.mega_caps.timeframe == "1m"
+    assert pre_download.mega_caps.lookback_bars == 1_440
+    assert pre_download.mega_caps.metric == "mean_quote_volume"
+    assert post_download.data_quality.require_coverage_status == "COMPLETE"
+    assert post_download.data_quality.require_quality_status == "VALIDATED"
+    assert post_download.data_quality.max_missing_candles == 0
+    assert post_download.data_quality.max_gap_count == 0
     assert universe_cfg.cointegration.ewma_span_bars == 48
     assert load_strategy_config("configs/strategy/dev.yml").execution.volatility_lookback_bars == 60
     assert load_strategy_config("configs/strategy/uat.yml").name == "UAT Institutional Mean Reversion V1"
@@ -267,30 +272,30 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
         (
             "configs/universe/dev.yml",
             "universe",
-            ("filters", "ticker_liquidity", "min_24h_quote_volume"),
+            ("filters", "pre_download", "ticker_liquidity", "min_24h_quote_volume"),
             load_universe_config,
             "min_24h_quote_volume",
         ),
         (
             "configs/universe/dev.yml",
             "universe",
-            ("filters", "prefilter_liquidity", "metric"),
+            ("filters", "pre_download", "daily_liquidity", "metric"),
             load_universe_config,
             "metric",
         ),
         (
             "configs/universe/dev.yml",
             "universe",
-            ("filters", "stored_data_liquidity", "lookback_bars"),
+            ("filters", "pre_download", "intraday_liquidity", "lookback_bars"),
             load_universe_config,
             "lookback_bars",
         ),
         (
             "configs/universe/dev.yml",
             "universe",
-            ("filters", "data_maturity", "min_bars"),
+            ("filters", "post_download", "data_quality", "require_coverage_status"),
             load_universe_config,
-            "min_bars",
+            "require_coverage_status",
         ),
         (
             "configs/universe/dev.yml",

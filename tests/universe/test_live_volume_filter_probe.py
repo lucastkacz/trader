@@ -34,6 +34,8 @@ from src.exchange.config.venue import (
     load_exchange_venue_config,
 )
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
+from src.universe.filters.data_quality import metadata_passes_quality
+from src.universe.filters.mega_caps import exclude_top_by_quote_volume_metric
 from src.universe.filters.market_tickers import select_symbols_by_quote_volume
 from src.universe.filters.ohlcv_liquidity import select_by_quote_volume_metric
 from src.utils.timeframe_math import get_timeframe_minutes, last_closed_candle_open_ms
@@ -63,15 +65,26 @@ async def test_live_volume_filter_flow_prints_counts_and_stage_timings() -> None
     )
 
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    stored_cfg = universe_cfg.filters.stored_data_liquidity
-    pre_cfg = universe_cfg.filters.prefilter_liquidity
-    end_ts = last_closed_candle_open_ms(stored_cfg.timeframe, now_ms=now_ms)
-    prefilter_end_ts = last_closed_candle_open_ms(pre_cfg.timeframe, now_ms=now_ms)
+    pre_download = universe_cfg.filters.pre_download
+    post_download = universe_cfg.filters.post_download
+    daily_cfg = pre_download.daily_liquidity
+    intraday_cfg = pre_download.intraday_liquidity
+    mega_cfg = pre_download.mega_caps
+    end_ts = last_closed_candle_open_ms(pipeline_cfg.timeframe, now_ms=now_ms)
+    daily_end_ts = last_closed_candle_open_ms(daily_cfg.timeframe, now_ms=now_ms)
+    intraday_end_ts = last_closed_candle_open_ms(
+        intraday_cfg.timeframe,
+        now_ms=now_ms,
+    )
     start_ts = end_ts - pipeline_cfg.historical_days * 86_400_000
     end_dt = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc)
     start_dt = datetime.fromtimestamp(start_ts / 1000, tz=timezone.utc)
-    prefilter_end_dt = datetime.fromtimestamp(
-        prefilter_end_ts / 1000,
+    daily_end_dt = datetime.fromtimestamp(
+        daily_end_ts / 1000,
+        tz=timezone.utc,
+    )
+    intraday_end_dt = datetime.fromtimestamp(
+        intraday_end_ts / 1000,
         tz=timezone.utc,
     )
 
@@ -92,7 +105,8 @@ async def test_live_volume_filter_flow_prints_counts_and_stage_timings() -> None
     _print_kv("market profile", exchange_cfg.market_contract.name)
     _print_kv("research timeframe", pipeline_cfg.timeframe)
     _print_kv("research historical days", pipeline_cfg.historical_days)
-    _print_kv("prefilter frozen end UTC", prefilter_end_dt.isoformat())
+    _print_kv("daily frozen end UTC", daily_end_dt.isoformat())
+    _print_kv("intraday frozen end UTC", intraday_end_dt.isoformat())
     _print_kv("backfill frozen end UTC", end_dt.isoformat())
     _print_filter_config(universe_cfg)
 
@@ -113,7 +127,7 @@ async def test_live_volume_filter_flow_prints_counts_and_stage_timings() -> None
         _print_kv("duration", _seconds(timings["fetch_market_tickers"]))
         _print_sample("ticker symbols", [ticker.symbol for ticker in tickers])
 
-        ticker_cfg = universe_cfg.filters.ticker_liquidity
+        ticker_cfg = pre_download.ticker_liquidity
         t0 = time.perf_counter()
         if ticker_cfg.enabled:
             after_ticker = select_symbols_by_quote_volume(
@@ -134,45 +148,127 @@ async def test_live_volume_filter_flow_prints_counts_and_stage_timings() -> None
         _print_kv("removed", len(tickers) - len(after_ticker))
         _print_kv("duration", _seconds(timings["ticker_liquidity"]))
         _print_sample("after ticker_liquidity", after_ticker)
+        _print_removed_sample(
+            "removed by ticker_liquidity",
+            [ticker.symbol for ticker in tickers],
+            after_ticker,
+        )
 
-        prefilter_start = time.perf_counter()
-        prefilter_frames: dict[str, pd.DataFrame] = {}
-        prefilter_failures: dict[str, str] = {}
-        if pre_cfg.enabled and after_ticker:
-            prefilter_frames, prefilter_failures = await _fetch_prefilter_frames(
+        daily_start = time.perf_counter()
+        daily_frames: dict[str, pd.DataFrame] = {}
+        daily_failures: dict[str, str] = {}
+        if daily_cfg.enabled and after_ticker:
+            daily_frames, daily_failures = await _fetch_prefilter_frames(
                 market_data=market_data,
                 symbols=after_ticker,
-                timeframe=pre_cfg.timeframe,
-                lookback_bars=pre_cfg.lookback_bars,
-                end_ts=prefilter_end_ts,
+                stage_label="daily",
+                timeframe=daily_cfg.timeframe,
+                lookback_bars=daily_cfg.lookback_bars,
+                end_ts=daily_end_ts,
                 pause_seconds=backfill_policy.request_pause_seconds,
             )
-            prefilter_selection = select_by_quote_volume_metric(
-                prefilter_frames,
-                lookback_bars=pre_cfg.lookback_bars,
-                metric=pre_cfg.metric,
-                min_value=pre_cfg.min_value,
-                percentile=pre_cfg.percentile,
+            daily_selection = select_by_quote_volume_metric(
+                daily_frames,
+                lookback_bars=daily_cfg.lookback_bars,
+                metric=daily_cfg.metric,
+                min_value=daily_cfg.min_value,
+                percentile=daily_cfg.percentile,
             )
-            after_prefilter = list(prefilter_selection.pool)
+            after_daily = list(daily_selection.pool)
         else:
-            after_prefilter = list(after_ticker)
-        timings["prefilter_liquidity"] = time.perf_counter() - prefilter_start
-        print("\n[3] Prefilter liquidity")
-        _print_kv("enabled", pre_cfg.enabled)
+            after_daily = list(after_ticker)
+        timings["daily_liquidity"] = time.perf_counter() - daily_start
+        print("\n[3] Daily liquidity")
+        _print_kv("enabled", daily_cfg.enabled)
         _print_kv(
             "rule",
-            f"{pre_cfg.metric} over {pre_cfg.lookback_bars} x {pre_cfg.timeframe}",
+            f"{daily_cfg.metric} over {daily_cfg.lookback_bars} x {daily_cfg.timeframe}",
         )
-        _print_kv("min", f"${pre_cfg.min_value:,.0f}")
+        _print_kv("min", f"${daily_cfg.min_value:,.0f}")
         _print_kv("before", len(after_ticker))
-        _print_kv("frames fetched", len(prefilter_frames))
-        _print_kv("failures/no-data", len(prefilter_failures))
-        _print_kv("after", len(after_prefilter))
-        _print_kv("removed", len(after_ticker) - len(after_prefilter))
-        _print_kv("duration", _seconds(timings["prefilter_liquidity"]))
-        _print_sample("after prefilter_liquidity", after_prefilter)
-        _print_failures("prefilter failures/no-data", prefilter_failures)
+        _print_kv("frames fetched", len(daily_frames))
+        _print_kv("failures/no-data", len(daily_failures))
+        _print_kv("after", len(after_daily))
+        _print_kv("removed", len(after_ticker) - len(after_daily))
+        _print_kv("duration", _seconds(timings["daily_liquidity"]))
+        _print_sample("after daily_liquidity", after_daily)
+        _print_removed_sample("removed by daily_liquidity", after_ticker, after_daily)
+        _print_failures("daily failures/no-data", daily_failures)
+
+        intraday_start = time.perf_counter()
+        intraday_frames: dict[str, pd.DataFrame] = {}
+        intraday_failures: dict[str, str] = {}
+        if intraday_cfg.enabled and after_daily:
+            intraday_frames, intraday_failures = await _fetch_prefilter_frames(
+                market_data=market_data,
+                symbols=after_daily,
+                stage_label="intraday",
+                timeframe=intraday_cfg.timeframe,
+                lookback_bars=intraday_cfg.lookback_bars,
+                end_ts=intraday_end_ts,
+                pause_seconds=backfill_policy.request_pause_seconds,
+            )
+            intraday_selection = select_by_quote_volume_metric(
+                intraday_frames,
+                lookback_bars=intraday_cfg.lookback_bars,
+                metric=intraday_cfg.metric,
+                min_value=intraday_cfg.min_value,
+                percentile=intraday_cfg.percentile,
+            )
+            after_intraday = list(intraday_selection.pool)
+            intraday_frames = intraday_selection.pool
+        else:
+            after_intraday = list(after_daily)
+        timings["intraday_liquidity"] = time.perf_counter() - intraday_start
+        print("\n[4] Intraday liquidity")
+        _print_kv("enabled", intraday_cfg.enabled)
+        _print_kv(
+            "rule",
+            f"{intraday_cfg.metric} over {intraday_cfg.lookback_bars} x {intraday_cfg.timeframe}",
+        )
+        _print_kv("min", f"${intraday_cfg.min_value:,.0f}")
+        _print_kv("before", len(after_daily))
+        _print_kv("frames fetched", len(intraday_frames))
+        _print_kv("failures/no-data", len(intraday_failures))
+        _print_kv("after", len(after_intraday))
+        _print_kv("removed", len(after_daily) - len(after_intraday))
+        _print_kv("duration", _seconds(timings["intraday_liquidity"]))
+        _print_sample("after intraday_liquidity", after_intraday)
+        _print_removed_sample(
+            "removed by intraday_liquidity",
+            after_daily,
+            after_intraday,
+        )
+        _print_failures("intraday failures/no-data", intraday_failures)
+
+        mega_start = time.perf_counter()
+        if mega_cfg.exclude_top_n > 0 and after_intraday:
+            mega_pool = exclude_top_by_quote_volume_metric(
+                {
+                    symbol: intraday_frames[symbol]
+                    for symbol in after_intraday
+                    if symbol in intraday_frames
+                },
+                lookback_bars=mega_cfg.lookback_bars,
+                metric=mega_cfg.metric,
+                exclude_top_n=mega_cfg.exclude_top_n,
+            )
+            after_mega = list(mega_pool)
+        else:
+            after_mega = list(after_intraday)
+        timings["mega_caps"] = time.perf_counter() - mega_start
+        print("\n[5] Mega caps")
+        _print_kv("exclude top n", mega_cfg.exclude_top_n)
+        _print_kv(
+            "rank rule",
+            f"{mega_cfg.metric} over {mega_cfg.lookback_bars} x {mega_cfg.timeframe}",
+        )
+        _print_kv("before", len(after_intraday))
+        _print_kv("after", len(after_mega))
+        _print_kv("removed", len(after_intraday) - len(after_mega))
+        _print_kv("duration", _seconds(timings["mega_caps"]))
+        _print_sample("after mega_caps", after_mega)
+        _print_removed_sample("removed by mega_caps", after_intraday, after_mega)
 
         store = LocalOHLCVParquetStore(str(output_dir))
         service = OHLCVBackfillService(
@@ -183,42 +279,42 @@ async def test_live_volume_filter_flow_prints_counts_and_stage_timings() -> None
 
         backfill_start = time.perf_counter()
         backfill_results = []
-        if after_prefilter:
+        if after_mega:
             request = OHLCVBackfillRequest(
                 exchange_id=venue_cfg.exchange_id,
-                timeframe=stored_cfg.timeframe,
+                timeframe=pipeline_cfg.timeframe,
                 start_ts=start_ts,
                 end_ts=end_ts,
-                symbols=after_prefilter,
+                symbols=after_mega,
                 market=OHLCVMarketMetadata(
                     market_type=exchange_cfg.market_contract.default_type,
                     market_sub_type=exchange_cfg.market_contract.default_sub_type,
                     settle=exchange_cfg.market_contract.default_settle,
                 ),
             )
-            for index, symbol in enumerate(after_prefilter, start=1):
+            for index, symbol in enumerate(after_mega, start=1):
                 backfill_results.append(await service.backfill_symbol(request, symbol))
-                if index % 10 == 0 or index == len(after_prefilter):
+                if index % 10 == 0 or index == len(after_mega):
                     ok = sum(
                         r.status not in {"FAILED", "NO_DATA"}
                         for r in backfill_results
                     )
                     failed = len(backfill_results) - ok
                     print(
-                        f"    backfilled {index}/{len(after_prefilter)} "
+                        f"    backfilled {index}/{len(after_mega)} "
                         f"| ok={ok} | failed/no_data={failed}",
                         flush=True,
                     )
         else:
-            _print_kv("fresh backfill skipped", "no symbols survived prefilter")
+            _print_kv("fresh backfill skipped", "no symbols survived pre-download filters")
         backfill_sync = aggregate_sync_results(
             venue_cfg.exchange_id,
-            stored_cfg.timeframe,
+            pipeline_cfg.timeframe,
             backfill_results,
         )
         timings["fresh_backfill"] = time.perf_counter() - backfill_start
-        print("\n[4] Fresh backfill")
-        _print_kv("timeframe", stored_cfg.timeframe)
+        print("\n[6] Fresh full backfill")
+        _print_kv("timeframe", pipeline_cfg.timeframe)
         _print_kv("window start UTC", start_dt.isoformat())
         _print_kv("window end UTC", end_dt.isoformat())
         _print_kv("requested symbols", backfill_sync.symbol_count)
@@ -234,40 +330,41 @@ async def test_live_volume_filter_flow_prints_counts_and_stage_timings() -> None
         _print_sample("freshly backfilled symbols", backfilled_symbols)
         _print_sync_failures(backfill_sync.results)
 
-        stored_start = time.perf_counter()
-        stored_frames = {}
+        quality_cfg = post_download.data_quality
+        quality_start = time.perf_counter()
+        quality_symbols = []
         for result in backfill_sync.results:
             if result.status in {"FAILED", "NO_DATA"}:
                 continue
-            stored_frames[result.symbol] = store.load_ohlcv(
+            metadata = store.read_ohlcv_metadata(
                 result.symbol,
-                stored_cfg.timeframe,
+                pipeline_cfg.timeframe,
                 venue_cfg.exchange_id,
             )
-        if stored_cfg.enabled and stored_frames:
-            stored_selection = select_by_quote_volume_metric(
-                stored_frames,
-                lookback_bars=stored_cfg.lookback_bars,
-                metric=stored_cfg.metric,
-                min_value=stored_cfg.min_value,
-                percentile=stored_cfg.percentile,
-            )
-            after_stored = list(stored_selection.pool)
-        else:
-            after_stored = list(stored_frames)
-        timings["stored_data_liquidity"] = time.perf_counter() - stored_start
-        print("\n[5] Stored-data liquidity")
-        _print_kv("enabled", stored_cfg.enabled)
-        _print_kv(
-            "rule",
-            f"{stored_cfg.metric} over {stored_cfg.lookback_bars} x {stored_cfg.timeframe}",
+            if metadata_passes_quality(
+                metadata,
+                require_coverage_status=quality_cfg.require_coverage_status,
+                require_quality_status=quality_cfg.require_quality_status,
+                max_missing_candles=quality_cfg.max_missing_candles,
+                max_gap_count=quality_cfg.max_gap_count,
+            ):
+                quality_symbols.append(result.symbol)
+        timings["post_download_data_quality"] = time.perf_counter() - quality_start
+        print("\n[7] Post-download data quality")
+        _print_kv("coverage required", quality_cfg.require_coverage_status)
+        _print_kv("quality required", quality_cfg.require_quality_status)
+        _print_kv("max missing candles", quality_cfg.max_missing_candles)
+        _print_kv("max gap count", quality_cfg.max_gap_count)
+        _print_kv("before", backfill_sync.success_count)
+        _print_kv("after", len(quality_symbols))
+        _print_kv("removed", backfill_sync.success_count - len(quality_symbols))
+        _print_kv("duration", _seconds(timings["post_download_data_quality"]))
+        _print_sample("after data_quality", quality_symbols)
+        _print_removed_sample(
+            "removed by data_quality",
+            backfilled_symbols,
+            quality_symbols,
         )
-        _print_kv("min", f"${stored_cfg.min_value:,.0f}")
-        _print_kv("before", len(stored_frames))
-        _print_kv("after", len(after_stored))
-        _print_kv("removed", len(stored_frames) - len(after_stored))
-        _print_kv("duration", _seconds(timings["stored_data_liquidity"]))
-        _print_sample("after stored_data_liquidity", after_stored)
 
     print("\n=== SUMMARY ===")
     print("\nConfig files used:")
@@ -283,23 +380,28 @@ async def test_live_volume_filter_flow_prints_counts_and_stage_timings() -> None
     _print_kv("fresh output dir", output_dir)
     _print_kv("tickers fetched", len(tickers))
     _print_kv("after ticker_liquidity", len(after_ticker))
-    _print_kv("after prefilter_liquidity", len(after_prefilter))
-    _print_kv("freshly stored symbols", len(stored_frames))
-    _print_kv("after stored_data_liquidity", len(after_stored))
+    _print_kv("after daily_liquidity", len(after_daily))
+    _print_kv("after intraday_liquidity", len(after_intraday))
+    _print_kv("after mega_caps", len(after_mega))
+    _print_kv("freshly stored symbols", backfill_sync.success_count)
+    _print_kv("after post_download data_quality", len(quality_symbols))
     print("\nStage timings:")
     for name, seconds in timings.items():
         _print_kv(name, _seconds(seconds))
 
     assert tickers
     assert after_ticker
-    assert after_prefilter
-    assert after_stored
+    assert after_daily
+    assert after_intraday
+    assert after_mega
+    assert quality_symbols
 
 
 async def _fetch_prefilter_frames(
     *,
     market_data: CcxtMarketDataAdapter,
     symbols: list[str],
+    stage_label: str,
     timeframe: str,
     lookback_bars: int,
     end_ts: int,
@@ -325,7 +427,7 @@ async def _fetch_prefilter_frames(
             failures[symbol] = f"{type(exc).__name__}: {exc}"
         if index % 25 == 0 or index == len(symbols):
             print(
-                f"    prefilter fetched {index}/{len(symbols)} "
+                f"    {stage_label} fetched {index}/{len(symbols)} "
                 f"| frames={len(frames)} | failures={len(failures)}",
                 flush=True,
             )
@@ -368,20 +470,34 @@ def _assert_safe_output_dir(output_dir: Path) -> None:
 
 
 def _print_filter_config(universe_cfg) -> None:
-    ticker = universe_cfg.filters.ticker_liquidity
-    prefilter = universe_cfg.filters.prefilter_liquidity
-    stored = universe_cfg.filters.stored_data_liquidity
+    pre_download = universe_cfg.filters.pre_download
+    post_download = universe_cfg.filters.post_download
+    ticker = pre_download.ticker_liquidity
+    daily = pre_download.daily_liquidity
+    intraday = pre_download.intraday_liquidity
+    mega = pre_download.mega_caps
+    quality = post_download.data_quality
     print("\nFilter config:")
     _print_kv("ticker min 24h quote", f"${ticker.min_24h_quote_volume:,.0f}")
     _print_kv(
-        "prefilter rule",
-        f"{prefilter.metric} >= ${prefilter.min_value:,.0f} "
-        f"over {prefilter.lookback_bars} x {prefilter.timeframe}",
+        "daily rule",
+        f"{daily.metric} >= ${daily.min_value:,.0f} "
+        f"over {daily.lookback_bars} x {daily.timeframe}",
     )
     _print_kv(
-        "stored rule",
-        f"{stored.metric} >= ${stored.min_value:,.0f} "
-        f"over {stored.lookback_bars} x {stored.timeframe}",
+        "intraday rule",
+        f"{intraday.metric} >= ${intraday.min_value:,.0f} "
+        f"over {intraday.lookback_bars} x {intraday.timeframe}",
+    )
+    _print_kv(
+        "mega cap rule",
+        f"exclude top {mega.exclude_top_n} by {mega.metric} "
+        f"over {mega.lookback_bars} x {mega.timeframe}",
+    )
+    _print_kv(
+        "post quality rule",
+        f"{quality.require_coverage_status} + {quality.require_quality_status} "
+        f"missing<={quality.max_missing_candles} gaps<={quality.max_gap_count}",
     )
 
 
@@ -394,6 +510,18 @@ def _print_sample(label: str, symbols: list[str], *, limit: int = 12) -> None:
     sample = symbols[:limit]
     suffix = "" if len(symbols) <= limit else f" ... +{len(symbols) - limit} more"
     _print_kv(f"{label} sample", f"{sample}{suffix}")
+
+
+def _print_removed_sample(
+    label: str,
+    before: list[str],
+    after: list[str],
+    *,
+    limit: int = 12,
+) -> None:
+    surviving = set(after)
+    removed = [symbol for symbol in before if symbol not in surviving]
+    _print_sample(label, removed, limit=limit)
 
 
 def _print_failures(label: str, failures: dict[str, str], *, limit: int = 20) -> None:

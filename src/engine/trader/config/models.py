@@ -202,16 +202,27 @@ class UniverseMegaCapFilterConfig(StrictConfigModel):
     ]
 
 
-class UniverseDataMaturityConfig(StrictConfigModel):
-    min_bars: int = Field(gt=0)
+class UniversePreDownloadFiltersConfig(StrictConfigModel):
+    ticker_liquidity: UniverseTickerLiquidityConfig
+    daily_liquidity: UniverseOHLCVLiquidityConfig
+    intraday_liquidity: UniverseOHLCVLiquidityConfig
+    mega_caps: UniverseMegaCapFilterConfig
+
+
+class UniverseDataQualityConfig(StrictConfigModel):
+    require_coverage_status: str = Field(min_length=1)
+    require_quality_status: str = Field(min_length=1)
+    max_missing_candles: int = Field(ge=0)
+    max_gap_count: int = Field(ge=0)
+
+
+class UniversePostDownloadFiltersConfig(StrictConfigModel):
+    data_quality: UniverseDataQualityConfig
 
 
 class UniverseFiltersConfig(StrictConfigModel):
-    ticker_liquidity: UniverseTickerLiquidityConfig
-    prefilter_liquidity: UniverseOHLCVLiquidityConfig
-    stored_data_liquidity: UniverseOHLCVLiquidityConfig
-    mega_caps: UniverseMegaCapFilterConfig
-    data_maturity: UniverseDataMaturityConfig
+    pre_download: UniversePreDownloadFiltersConfig
+    post_download: UniversePostDownloadFiltersConfig
 
 
 class UniverseClusteringConfig(StrictConfigModel):

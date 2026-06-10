@@ -3,7 +3,6 @@ import pytest
 
 from src.engine.trader.config import load_universe_config
 from src.exchange.data.market_data import MarketTicker
-from src.universe.filters.ohlcv_liquidity import select_by_quote_volume_metric
 from src.universe.selection import select_symbols_for_backfill
 
 
@@ -13,8 +12,9 @@ class ControlledVolumeMarketData:
     async def fetch_market_tickers(self) -> list[MarketTicker]:
         return [
             MarketTicker(symbol="FINAL/USDT:USDT", quote_volume=50_000_000),
-            MarketTicker(symbol="STORED_LOW/USDT:USDT", quote_volume=50_000_000),
-            MarketTicker(symbol="PREFILTER_LOW/USDT:USDT", quote_volume=50_000_000),
+            MarketTicker(symbol="MEGA/USDT:USDT", quote_volume=50_000_000),
+            MarketTicker(symbol="INTRADAY_LOW/USDT:USDT", quote_volume=50_000_000),
+            MarketTicker(symbol="DAILY_LOW/USDT:USDT", quote_volume=50_000_000),
             MarketTicker(symbol="TICKER_LOW/USDT:USDT", quote_volume=4_999_999),
         ]
 
@@ -27,15 +27,10 @@ class ControlledVolumeMarketData:
         since: int | None = None,
         end_ts: int | None = None,
     ) -> pd.DataFrame:
-        assert timeframe == "1d"
-        daily_quote_volume = {
-            "FINAL/USDT:USDT": 10_000_000,
-            "STORED_LOW/USDT:USDT": 10_000_000,
-            "PREFILTER_LOW/USDT:USDT": 1_000_000,
-        }[symbol]
+        quote_volume = _quote_volume_for(symbol, timeframe)
         return _quote_volume_frame(
             bars=limit,
-            quote_volume_per_bar=daily_quote_volume,
+            quote_volume_per_bar=quote_volume,
         )
 
 
@@ -45,44 +40,61 @@ async def _no_sleep(_seconds: float) -> None:
 
 @pytest.mark.asyncio
 async def test_volume_filter_flow_reduces_candidates_at_each_liquidity_stage():
-    """Ticker, prefilter, and stored-data liquidity each remove known symbols."""
-    universe_cfg = load_universe_config("configs/universe/dev.yml")
+    """Ticker, daily, intraday, and mega-cap filters each remove known symbols."""
+    universe_cfg = _test_universe_config()
 
     pre_backfill = await select_symbols_for_backfill(
         market_data=ControlledVolumeMarketData(),
         universe_cfg=universe_cfg,
-        prefilter_end_ts=1_800_000_000_000,
+        pre_download_end_ts_by_timeframe={
+            "1d": 1_800_000_000_000,
+            "1m": 1_800_000_000_000,
+        },
         prefilter_pause_seconds=0,
         sleep=_no_sleep,
     )
 
-    assert pre_backfill.ticker_count == 4
-    assert pre_backfill.after_ticker_liquidity_count == 3
-    assert pre_backfill.after_prefilter_liquidity_count == 2
-    assert pre_backfill.symbols == ["FINAL/USDT:USDT", "STORED_LOW/USDT:USDT"]
+    assert pre_backfill.ticker_count == 5
+    assert pre_backfill.after_ticker_liquidity_count == 4
+    assert pre_backfill.after_daily_liquidity_count == 3
+    assert pre_backfill.after_intraday_liquidity_count == 2
+    assert pre_backfill.after_mega_caps_count == 1
+    assert pre_backfill.symbols == ["FINAL/USDT:USDT"]
 
-    stored_cfg = universe_cfg.filters.stored_data_liquidity
-    stored_frames = {
-        "FINAL/USDT:USDT": _quote_volume_frame(
-            bars=stored_cfg.lookback_bars,
-            quote_volume_per_bar=10_000,
-        ),
-        "STORED_LOW/USDT:USDT": _quote_volume_frame(
-            bars=stored_cfg.lookback_bars,
-            quote_volume_per_bar=1_000,
-        ),
-    }
 
-    stored_selection = select_by_quote_volume_metric(
-        stored_frames,
-        lookback_bars=stored_cfg.lookback_bars,
-        metric=stored_cfg.metric,
-        min_value=stored_cfg.min_value,
-        percentile=stored_cfg.percentile,
+def _quote_volume_for(symbol: str, timeframe: str) -> float:
+    if timeframe == "1d":
+        return {
+            "FINAL/USDT:USDT": 10_000_000,
+            "MEGA/USDT:USDT": 10_000_000,
+            "INTRADAY_LOW/USDT:USDT": 10_000_000,
+            "DAILY_LOW/USDT:USDT": 1_000_000,
+        }[symbol]
+    return {
+        "FINAL/USDT:USDT": 10_000,
+        "MEGA/USDT:USDT": 50_000,
+        "INTRADAY_LOW/USDT:USDT": 1_000,
+    }[symbol]
+
+
+def _test_universe_config():
+    universe_cfg = load_universe_config("configs/universe/dev.yml")
+    pre_download = universe_cfg.filters.pre_download
+    return universe_cfg.model_copy(
+        update={
+            "filters": universe_cfg.filters.model_copy(
+                update={
+                    "pre_download": pre_download.model_copy(
+                        update={
+                            "mega_caps": pre_download.mega_caps.model_copy(
+                                update={"exclude_top_n": 1}
+                            )
+                        }
+                    )
+                }
+            )
+        }
     )
-
-    assert list(stored_selection.pool) == ["FINAL/USDT:USDT"]
-    assert stored_selection.dollar_volumes == {"FINAL/USDT:USDT": 10_000.0}
 
 
 def _quote_volume_frame(*, bars: int, quote_volume_per_bar: float) -> pd.DataFrame:

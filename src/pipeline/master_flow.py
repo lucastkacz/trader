@@ -53,10 +53,16 @@ async def task_mine_data(
     ).to_fetch_policy()
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     end_ts = last_closed_candle_open_ms(pipeline_cfg.timeframe, now_ms=now_ms)
-    prefilter_end_ts = last_closed_candle_open_ms(
-        universe_cfg.filters.prefilter_liquidity.timeframe,
-        now_ms=now_ms,
-    )
+    pre_download = universe_cfg.filters.pre_download
+    pre_download_timeframes = {
+        pre_download.daily_liquidity.timeframe,
+        pre_download.intraday_liquidity.timeframe,
+        pre_download.mega_caps.timeframe,
+    }
+    pre_download_end_ts_by_timeframe = {
+        timeframe: last_closed_candle_open_ms(timeframe, now_ms=now_ms)
+        for timeframe in pre_download_timeframes
+    }
     start_ts = end_ts - pipeline_cfg.historical_days * 86_400_000
 
     async with CcxtMarketDataAdapter(
@@ -73,7 +79,7 @@ async def task_mine_data(
         selection = await select_symbols_for_backfill(
             market_data=market_data,
             universe_cfg=universe_cfg,
-            prefilter_end_ts=prefilter_end_ts,
+            pre_download_end_ts_by_timeframe=pre_download_end_ts_by_timeframe,
             prefilter_pause_seconds=backfill_policy.request_pause_seconds,
         )
         if not selection.symbols:
