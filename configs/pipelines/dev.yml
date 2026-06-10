@@ -4,6 +4,7 @@ pipeline:
   historical_days: 3
   data:
     backfill_policy_config: "configs/data/ohlcv_backfill/default.yml"
+    lifecycle_policy_config: "configs/data/lifecycle/default.yml"
   execution:
     market_data_base_dir: "data/parquet"
     artifact_base_dir: "data/universes"

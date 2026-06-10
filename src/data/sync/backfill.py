@@ -16,6 +16,7 @@ from src.data.ohlcv import (
 from src.data.sync.helpers import (
     aggregate_sync_results,
     coverage_status,
+    first_ts_or_none,
     int_or_none,
     metadata_covers_window,
     symbol_result,
@@ -64,6 +65,37 @@ class OHLCVBackfillService:
         """Backfill a single symbol for the requested historical window."""
         metadata = self.store.read_metadata(symbol, request.timeframe, request.exchange_id)
         if metadata_covers_window(metadata, request.start_ts, request.end_ts):
+            if request.retention_policy is not None:
+                existing = normalize_ohlcv_frame(
+                    self.store.load_ohlcv(
+                        symbol,
+                        request.timeframe,
+                        request.exchange_id,
+                    )
+                )
+                retained = apply_ohlcv_retention(
+                    existing,
+                    request.retention_policy,
+                    now_ms=request.end_ts,
+                )
+                if len(retained) != len(existing):
+                    status = self._save_frame(
+                        request=request,
+                        symbol=symbol,
+                        frame=retained,
+                        coverage_start_ms=first_ts_or_none(retained),
+                    )
+                    return symbol_result(
+                        symbol,
+                        "SKIPPED_COMPLETE",
+                        fetched_bars=0,
+                        saved=retained,
+                        notes=(
+                            "metadata_covers_requested_window",
+                            "retention_pruned",
+                            f"coverage_status={status}",
+                        ),
+                    )
             return OHLCVSymbolSyncResult(
                 symbol=symbol,
                 status="SKIPPED_COMPLETE",
@@ -103,28 +135,16 @@ class OHLCVBackfillService:
                 notes=("exchange_returned_no_rows",),
             )
 
-        retained = apply_ohlcv_retention(fetched, request.retention_policy)
-        status = coverage_status(retained, request.end_ts)
-        metadata_model = OHLCVMetadata.from_frame(
-            symbol=symbol,
-            exchange=request.exchange_id,
-            timeframe=request.timeframe,
-            source=request.exchange_id,
-            frame=retained,
-            coverage_status=status,
-            coverage_start_ms=request.start_ts,
-            coverage_end_ms=request.end_ts,
-            last_closed_candle_ms=request.end_ts,
-            market_type=request.market.market_type,
-            market_sub_type=request.market.market_sub_type,
-            settle=request.market.settle,
+        retained = apply_ohlcv_retention(
+            fetched,
+            request.retention_policy,
+            now_ms=request.end_ts,
         )
-        self.store.save_ohlcv(
-            symbol,
-            request.timeframe,
-            retained,
-            metadata_model,
-            exchange=request.exchange_id,
+        status = self._save_frame(
+            request=request,
+            symbol=symbol,
+            frame=retained,
+            coverage_start_ms=request.start_ts,
         )
         return symbol_result(symbol, status, fetched_bars=len(fetched), saved=retained)
 
@@ -158,6 +178,38 @@ class OHLCVBackfillService:
         if not frames:
             return empty_ohlcv_frame()
         return merge_ohlcv_frames(empty_ohlcv_frame(), pd.concat(frames))
+
+    def _save_frame(
+        self,
+        *,
+        request: OHLCVBackfillRequest,
+        symbol: str,
+        frame: pd.DataFrame,
+        coverage_start_ms: int | None,
+    ) -> str:
+        status = coverage_status(frame, request.end_ts)
+        metadata_model = OHLCVMetadata.from_frame(
+            symbol=symbol,
+            exchange=request.exchange_id,
+            timeframe=request.timeframe,
+            source=request.exchange_id,
+            frame=frame,
+            coverage_status=status,
+            coverage_start_ms=coverage_start_ms,
+            coverage_end_ms=request.end_ts,
+            last_closed_candle_ms=request.end_ts,
+            market_type=request.market.market_type,
+            market_sub_type=request.market.market_sub_type,
+            settle=request.market.settle,
+        )
+        self.store.save_ohlcv(
+            symbol,
+            request.timeframe,
+            frame,
+            metadata_model,
+            exchange=request.exchange_id,
+        )
+        return status
 
     async def _fetch_with_retries(
         self,

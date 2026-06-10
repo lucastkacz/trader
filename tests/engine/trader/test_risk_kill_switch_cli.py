@@ -148,6 +148,7 @@ pipeline:
   historical_days: 1
   data:
     backfill_policy_config: "configs/data/ohlcv_backfill/default.yml"
+    lifecycle_policy_config: "configs/data/lifecycle/default.yml"
   execution:
     market_data_base_dir: "{tmp_path / "market_data"}"
     artifact_base_dir: "{tmp_path / "universes"}"

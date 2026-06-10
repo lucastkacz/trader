@@ -6,6 +6,7 @@ from prefect import flow, task, get_run_logger
 from src.core.config import settings
 from src.exchange.config.venue import CcxtExchangeConfig, ExchangeVenueConfig
 from src.exchange.data.ccxt_adapter import CcxtMarketDataAdapter
+from src.data.lifecycle import load_data_lifecycle_config
 from src.data.sync.config import load_ohlcv_backfill_config
 from src.data.storage.local_parquet import LocalOHLCVParquetStore
 from src.data.sync import (
@@ -51,6 +52,19 @@ async def task_mine_data(
     backfill_policy = load_ohlcv_backfill_config(
         pipeline_cfg.data.backfill_policy_config
     ).to_fetch_policy()
+    lifecycle_policy = load_data_lifecycle_config(
+        pipeline_cfg.data.lifecycle_policy_config
+    )
+    retention_policy = lifecycle_policy.retention_policy_after_backfill()
+    if (
+        retention_policy is not None
+        and retention_policy.max_age_days is not None
+        and retention_policy.max_age_days < pipeline_cfg.historical_days
+    ):
+        raise ValueError(
+            "Data lifecycle retention.keep_days must be greater than or equal "
+            "to pipeline.historical_days"
+        )
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     end_ts = last_closed_candle_open_ms(pipeline_cfg.timeframe, now_ms=now_ms)
     pre_download = universe_cfg.filters.pre_download
@@ -91,6 +105,7 @@ async def task_mine_data(
                 start_ts=start_ts,
                 end_ts=end_ts,
                 symbols=selection.symbols,
+                retention_policy=retention_policy,
                 market=OHLCVMarketMetadata(
                     market_type=exchange_config.market_contract.default_type,
                     market_sub_type=exchange_config.market_contract.default_sub_type,

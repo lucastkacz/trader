@@ -1,0 +1,11 @@
+data_lifecycle:
+  enabled: true
+  retention:
+    keep_days: 5
+    prune_after_backfill: true
+  freshness:
+    max_lag_minutes: 5
+    on_stale: "refresh"
+  cleanup:
+    mode: "dry_run"
+    delete_empty_symbol_dirs: true

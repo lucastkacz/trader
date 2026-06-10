@@ -28,6 +28,7 @@ def test_valid_operator_configs_parse():
     dev_pipeline = load_pipeline_config("configs/pipelines/dev.yml")
     assert dev_pipeline.execution.max_ticks is None
     assert dev_pipeline.data.backfill_policy_config == "configs/data/ohlcv_backfill/default.yml"
+    assert dev_pipeline.data.lifecycle_policy_config == "configs/data/lifecycle/default.yml"
     assert dev_pipeline.execution.market_data_base_dir == "data/parquet"
     assert dev_pipeline.execution.artifact_base_dir == "data/universes"
     assert dev_pipeline.execution.market_data_fetch.request_timeout_seconds == 15.0
@@ -184,6 +185,13 @@ def test_pipeline_max_ticks_must_be_present_but_may_be_null(tmp_path):
             ("data", "backfill_policy_config"),
             load_pipeline_config,
             "backfill_policy_config",
+        ),
+        (
+            "configs/pipelines/dev.yml",
+            "pipeline",
+            ("data", "lifecycle_policy_config"),
+            load_pipeline_config,
+            "lifecycle_policy_config",
         ),
         (
             "configs/pipelines/dev.yml",

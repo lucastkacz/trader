@@ -140,6 +140,7 @@ class PairQueueConfig(StrictConfigModel):
 
 class PipelineDataConfig(StrictConfigModel):
     backfill_policy_config: str = Field(min_length=1)
+    lifecycle_policy_config: str = Field(min_length=1)
 
 
 class PipelineExecutionConfig(StrictConfigModel):

@@ -82,6 +82,8 @@ async def test_task_mine_data_uses_typed_pipeline_and_universe_config(monkeypatc
     assert request.symbols == ["BTC/USDT:USDT", "ETH/USDT:USDT"]
     assert request.end_ts - request.start_ts == pipeline_cfg.historical_days * 86_400_000
     assert request.end_ts % get_timeframe_ms(pipeline_cfg.timeframe) == 0
+    assert request.retention_policy is not None
+    assert request.retention_policy.max_age_days == 5
     end_ts_by_timeframe = captured["selection_kwargs"]["pre_download_end_ts_by_timeframe"]
     pre_download = universe_cfg.filters.pre_download
     for configured_timeframe in {
@@ -96,6 +98,21 @@ async def test_task_mine_data_uses_typed_pipeline_and_universe_config(monkeypatc
         )
     assert captured["selection_kwargs"]["universe_cfg"] == universe_cfg
     assert captured["policy"].fetch_limit == 1000
+
+
+@pytest.mark.asyncio
+async def test_task_mine_data_rejects_retention_shorter_than_pipeline_window():
+    pipeline_cfg = load_pipeline_config("configs/pipelines/dev.yml").model_copy(
+        update={"historical_days": 10}
+    )
+
+    with pytest.raises(ValueError, match="retention.keep_days"):
+        await master_flow.task_mine_data.fn(
+            pipeline_cfg,
+            _venue_cfg(),
+            _exchange_config(),
+            load_universe_config("configs/universe/dev.yml"),
+        )
 
 
 def test_task_discover_alpha_passes_typed_research_config(monkeypatch):

@@ -204,6 +204,63 @@ async def test_ohlcv_refresh_service_fetches_missing_tail_and_applies_retention(
 
 
 @pytest.mark.asyncio
+async def test_ohlcv_backfill_prunes_existing_complete_file_without_refetch(tmp_path):
+    _announce(
+        "Starts from a local file that already covers the requested window and "
+        "confirms backfill can apply retention without hitting market data."
+    )
+    rows = {
+        "BTC/USDT:USDT": [
+            [1600000000000, 10.0, 11.0, 9.0, 10.5, 100.0],
+            [1600086400000, 11.0, 12.0, 10.0, 11.5, 110.0],
+            [1600172800000, 12.0, 13.0, 11.0, 12.5, 120.0],
+        ],
+    }
+    store = LocalOHLCVParquetStore(str(tmp_path))
+    store.save_ohlcv(
+        "BTC/USDT:USDT",
+        "1d",
+        pd.DataFrame(
+            rows["BTC/USDT:USDT"],
+            columns=["timestamp", "open", "high", "low", "close", "volume"],
+        ),
+        {
+            "coverage_status": "COMPLETE",
+            "coverage_start_ms": str(1600000000000),
+            "coverage_end_ms": str(1600172800000),
+            "last_closed_candle_ms": str(1600172800000),
+            "source": "bybit",
+        },
+        exchange="bybit",
+    )
+    service = OHLCVBackfillService(
+        market_data=FakeMarketDataAdapter(rows),
+        store=store,
+        policy=_policy(),
+        sleep=_no_sleep,
+    )
+
+    result = await service.run(
+        OHLCVBackfillRequest(
+            exchange_id="bybit",
+            timeframe="1d",
+            start_ts=1600086400000,
+            end_ts=1600172800000,
+            symbols=["BTC/USDT:USDT"],
+            retention_policy=OHLCVRetentionPolicy(max_age_days=1),
+            market=_market(),
+        )
+    )
+
+    loaded = store.load_ohlcv("BTC/USDT:USDT", "1d", "bybit")
+    symbol_result = result.results[0]
+    assert symbol_result.status == "SKIPPED_COMPLETE"
+    assert symbol_result.fetched_bars == 0
+    assert "retention_pruned" in symbol_result.notes
+    assert loaded["timestamp"].tolist() == [1600086400000, 1600172800000]
+
+
+@pytest.mark.asyncio
 async def test_ohlcv_refresh_service_records_symbol_failure_and_continues(tmp_path):
     _announce(
         "Refreshes two symbols while one fake symbol fails, then confirms the good "

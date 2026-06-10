@@ -72,12 +72,48 @@ class OHLCVRefreshService:
                 missing_lookback_bars=request.missing_lookback_bars,
             )
             if since_ts > request.end_ts:
+                saved = existing
+                notes = ("local_data_already_covers_requested_end",)
+                if request.retention_policy is not None:
+                    retained = apply_ohlcv_retention(
+                        existing,
+                        request.retention_policy,
+                        now_ms=request.end_ts,
+                    )
+                    if len(retained) != len(existing):
+                        status = coverage_status(retained, request.end_ts)
+                        metadata_model = OHLCVMetadata.from_frame(
+                            symbol=symbol,
+                            exchange=request.exchange_id,
+                            timeframe=request.timeframe,
+                            source=request.exchange_id,
+                            frame=retained,
+                            coverage_status=status,
+                            coverage_start_ms=first_ts_or_none(retained),
+                            coverage_end_ms=request.end_ts,
+                            last_closed_candle_ms=request.end_ts,
+                            market_type=request.market.market_type,
+                            market_sub_type=request.market.market_sub_type,
+                            settle=request.market.settle,
+                        )
+                        self.store.save_ohlcv(
+                            symbol,
+                            request.timeframe,
+                            retained,
+                            metadata_model,
+                            exchange=request.exchange_id,
+                        )
+                        saved = retained
+                        notes = (
+                            "local_data_already_covers_requested_end",
+                            "retention_pruned",
+                        )
                 return symbol_result(
                     symbol,
                     "UP_TO_DATE",
                     fetched_bars=0,
-                    saved=existing,
-                    notes=("local_data_already_covers_requested_end",),
+                    saved=saved,
+                    notes=notes,
                 )
 
             fetched = await self.backfiller.fetch_window(
@@ -96,7 +132,11 @@ class OHLCVRefreshService:
                 )
 
             merged = merge_ohlcv_frames(existing, fetched)
-            retained = apply_ohlcv_retention(merged, request.retention_policy)
+            retained = apply_ohlcv_retention(
+                merged,
+                request.retention_policy,
+                now_ms=request.end_ts,
+            )
             status = coverage_status(retained, request.end_ts)
             metadata_model = OHLCVMetadata.from_frame(
                 symbol=symbol,
