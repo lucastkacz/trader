@@ -59,8 +59,15 @@ offline verification, and live-trading safety matter more than fast changes.
 - Live exchange mutation belongs only behind explicit execution modules and
   explicit execution modes.
 - Pair recalculation must not force-close or rebalance open positions.
+- Natural exit is a required invariant, not an assumed capability. Runtime tests
+  must prove that open positions remain evaluable across pause, artifact
+  replacement, and restart before documentation may claim that guarantee.
 
 ## Production Readiness Gate
+
+**Current status: not met.** The active objective is a local paper trader; see
+`docs/current-roadmap.md`. The presence of a `live` adapter or production-named
+config does not constitute production approval.
 
 Do not treat the system as ready for real capital until all of these are true:
 

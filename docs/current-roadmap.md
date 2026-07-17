@@ -1,447 +1,186 @@
 # Current Roadmap
 
-This file tracks only active or near-term work. It is intentionally short.
+**Actualizado:** 2026-07-17
 
-## Now: Simulator Phase 1 Foundation
+**Objetivo activo:** llegar a un paper trader local, determinista y creíble,
+sin habilitar capital real.
 
-Goal:
+**Diagnóstico y evidencia:**
+[`PROJECT_REENTRY_AUDIT.md`](PROJECT_REENTRY_AUDIT.md)
 
-```text
-consume stable trader signal policy through deterministic offline replay
-without creating a second trading engine
-```
+Este archivo contiene sólo trabajo activo y próximo. El changelog vive en Git.
 
-Latest stabilization slice completed on 2026-05-29:
-
-- Interrupted async trader runs now persist `observer_run.status =
-  INTERRUPTED` instead of leaving future cancelled/SIGTERM-style bounded runs as
-  `RUNNING`.
-- Observer run markers now seed `open_position_ids` from actual SQLite open
-  positions when a run starts and when it records interruption/failure.
-- Execution re-checks the dynamic pair queue against current SQLite open
-  positions before each tick transition, so multiple same-tick entry signals
-  cannot oversubscribe capital slots.
-- Execution-path tests now cover global max open positions, max positions per
-  pair, max positions per asset, explicit block reasons, and natural-exit
-  preservation.
-- A first pre-trade risk gate now sizes new runtime entries to
-  `risk.max_cluster_exposure`, blocks entries that would exceed
-  `risk.max_portfolio_exposure`, and blocks entries whose projected gross
-  exposure would exceed `risk.max_leverage`.
-- Pre-trade risk blocks happen before opening a spread, emit explicit operator
-  reasons such as `portfolio_exposure_above_max` and
-  `max_leverage_exceeded`, and do not record leg targets or exchange/client
-  order ids for blocked entries.
-- Flip replacement entries are checked while excluding the position being
-  replaced from projected exposure; if the replacement is blocked, the
-  signal-driven close still happens and the replacement entry is skipped.
-- Verification after the slice: `.venv/bin/python -m pytest -q` reported
-  `276 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
-- The existing local DB still contains the stale pre-fix marker from the
-  extended drill: `observer_run.status = RUNNING`, `open_position_ids = []`,
-  while SQLite has 2 open state-only positions. This historical local state was
-  not manually rewritten.
-
-Precision/min-size slice completed on 2026-05-29:
-
-- Runtime pre-trade risk policy now includes explicit typed checks for
-  `min_order_quantity`, `min_order_notional`, and `order_quantity_step`.
-- New entries and flip replacement entries are blocked before opening when a
-  sized leg target is below the minimum quantity, below the minimum notional, or
-  not aligned to the configured quantity step.
-- Precision/min-size blocks emit operator-visible reasons:
-  `order_quantity_below_min`, `order_notional_below_min`, and
-  `order_precision_invalid`.
-- Blocked new entries do not create spread positions, leg targets, or
-  exchange/client order ids. Blocked flip replacements still preserve the
-  signal-driven close and skip the replacement entry.
-- Verification after this slice:
-  `.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py -q`
-  reported `39 passed`; `.venv/bin/python -m pytest -q` reported
-  `283 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
-
-Liquidity slice completed on 2026-05-29:
-
-- Runtime risk gates now live under `runtime/risk/`, split into typed models,
-  liquidity evidence, and the pre-trade entry evaluator. This gives exposure,
-  precision, liquidity, and future kill-switch entry policy one package home
-  instead of growing the runtime root.
-- Runtime pre-trade risk policy now includes explicit typed liquidity checks:
-  `liquidity_lookback_bars` and `min_recent_quote_volume`.
-- Tick execution builds a recent quote-volume snapshot from fetched OHLCV
-  candles using `close * volume` for both proposed entry legs.
-- New entries and flip replacement entries are blocked before opening when
-  either leg has missing liquidity evidence or recent average quote volume below
-  policy.
-- Liquidity blocks emit operator-visible reasons:
-  `liquidity_snapshot_missing` and `liquidity_below_min`.
-- Blocked liquidity entries do not create spread positions, replacement opens,
-  exchange/client order ids, or new-entry leg targets. Blocked flip
-  replacements still preserve the signal-driven close.
-- Focused verification after this slice:
-  `.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/config/test_loader.py tests/engine/trader/runtime/test_signal_transition.py -q`
-  reported `46 passed`; runtime/config/risk verification reported
-  `178 passed`; `.venv/bin/python -m pytest -q` reported
-  `287 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
-
-Kill-switch entry-gate slice completed on 2026-05-29:
-
-- Runtime risk state now has a typed durable kill-switch helper over SQLite
-  `runtime_state` instead of ad hoc runtime dictionaries at call sites.
-- The pre-trade risk path now reads the durable kill-switch state before opening
-  new entries or flip replacement entries.
-- When active, the switch blocks additional exposure with operator-visible
-  reason `risk_kill_switch_active`.
-- The gate preserves natural exits: existing positions still receive normal
-  `FLAT` signal handling and are not force-closed or rebalanced.
-- Malformed kill-switch runtime payloads are treated as inactive rather than
-  crashing the trader.
-- Focused verification after this slice:
-  `.venv/bin/python -m pytest tests/engine/trader/runtime/test_tick_queue.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_signal_transition.py -q`
-  reported `25 passed`; runtime/config/risk verification reported
-  `185 passed`; `.venv/bin/python -m pytest -q` reported
-  `294 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
-
-Operator kill-switch control slice completed on 2026-05-30:
-
-- Added an operator CLI for the durable runtime risk kill switch:
-  `src.engine.trader.cli.risk_kill_switch`.
-- The CLI supports `inspect`, `activate --reason ...`, and `clear` using
-  typed pipeline config or an explicit SQLite `--db-path`.
-- `main.py risk-kill-switch` now exposes the same control path through the
-  top-level operational CLI.
-- The control path uses typed runtime risk helpers instead of raw
-  `runtime_state` dictionaries at call sites.
-- Activating the switch remains state-only and blocks future entries through
-  the existing `risk_kill_switch_active` pre-trade reason. It does not submit,
-  cancel, modify, rebalance, force-close, hot-reload, promote artifacts, or
-  increase capital exposure.
-- Focused verification after this slice:
-  `.venv/bin/python -m pytest tests/engine/trader/test_risk_kill_switch_cli.py tests/engine/trader/runtime/risk/test_kill_switch.py tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_blocks_new_entry_without_opening_position tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_blocks_flip_replacement_but_preserves_close tests/engine/trader/runtime/test_tick_queue.py::test_risk_kill_switch_does_not_prevent_existing_position_natural_exit tests/test_run_profile_command.py -q`
-  reported `16 passed`; runtime/config/risk verification reported
-  `194 passed`; `.venv/bin/python -m pytest -q` reported
-  `300 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
-- Read-only local inspect after the slice:
-  `.venv/bin/python -m src.engine.trader.cli.risk_kill_switch --pipeline configs/pipelines/dev.yml --json inspect`
-  returned `active: false` for `data/dev/trades_1m.db`.
-
-Operator run-state/status polish completed on 2026-05-30:
-
-- Read-only `/run_status` monitoring now classifies persisted `RUNNING` markers
-  as `STALE_RUN_MARKER` when the latest tick is stale, no first tick arrives
-  within the configured stale window, or the marker start time is malformed.
-- A stale marker no longer implies that an observer process is active.
-- Run-status snapshots surface actual SQLite open-position IDs instead of
-  trusting a historical marker payload. The old local marker was not rewritten.
-
-Readonly runtime market-data hardening completed on 2026-05-30:
-
-- Pipeline config now declares explicit typed `execution.market_data_fetch`
-  policy for request timeout, bounded attempts, and retry backoff.
-- Runtime OHLCV reads retry with exponential backoff and raise an auditable
-  readonly fetch error after the configured attempt limit.
-- Trader tick evaluation reuses shared-symbol candles within one tick when the
-  cached request window is sufficient, reducing duplicate provider calls.
-- The same readonly fetch policy applies to explicit local-state stop commands.
-  It does not add exchange mutation or force-close behavior from pair changes.
-- Verification after the slice: `.venv/bin/python -m pytest -q` reported
-  `315 passed, 3 deselected`; `.venv/bin/ruff check src tests` passed.
-
-Read-only reconciliation visibility completed on 2026-05-30:
-
-- Pipeline config now declares explicit typed `execution.reconciliation`
-  policy for snapshot timeout and stale in-flight order age.
-- Reconciliation snapshots surface `LOCAL_PARTIAL_FILL`, `STALE_LOCAL_ORDER`,
-  and `SNAPSHOT_PROVIDER_FAILURE` as auditable `NO_ACTION` deltas.
-- Snapshot-provider reads are timeout-bounded. Reconciliation remains read-only:
-  it does not submit, cancel, modify, repair, or close exchange positions.
-- Reports separate latest reconciliation deltas from historical delta totals
-  and show latest delta-type counts.
-- Offline verification after the slice: `.venv/bin/python -m pytest -q`
-  reported `322 passed, 3 deselected`; `.venv/bin/ruff check src tests`
-  passed.
-
-Local command/reconciliation drill completed on 2026-05-30:
-
-- The dev DB dummy positions were intentionally manipulated after operator
-  approval. `/pause`, `/resume`, `/stop <PAIR>`, and `/stop_all` all completed
-  through the command module interface.
-- The two remaining dummy open state-only positions were locally closed. The
-  dev DB now contains 4 closed positions and 0 open positions.
-- Fake read-only reconciliation snapshots recorded one
-  `EXCHANGE_ONLY_POSITION`, one `SNAPSHOT_PROVIDER_FAILURE`, then a final
-  `MATCHED` run.
-- The latest report correctly showed `0` latest reconciliation deltas while
-  preserving `2` historical deltas.
-- Exchange/client order-id invariant remained `0`.
-
-Pair-validity queue calibration review completed on 2026-05-31:
-
-- A readonly refresh advanced all 5 promoted symbols through
-  `2026-05-31T08:06:00+00:00` with `REFRESHED` status and no notes.
-- The fresh report exposed only 3 promoted dev pairs and one current 240-bar
-  window per pair. That is useful diagnostic evidence, but not enough to set
-  defensible correlation, p-value, hedge-ratio drift, half-life drift, or
-  promotion-age entry thresholds.
-- Dev, UAT, and prod queue thresholds remain explicitly `null`.
-- Queue snapshots now carry structured validity-threshold evidence for each
-  decision: measurement, configured threshold, comparison operator, enabled
-  state, and triggered state. Human reports render comparisons that block an
-  entry.
-
-Readonly reconciliation snapshot-provider boundary completed on 2026-05-31:
-
-- Typed pipeline config now selects `execution.reconciliation.snapshot_provider`
-  explicitly as `ccxt_readonly` or `none`.
-- The CCXT readonly adapter fetches account positions only, normalizes open
-  snapshots, filters zero positions, and closes its exchange client after each
-  request.
-- Runtime boot reconciliation constructs the configured adapter from the typed
-  exchange and selected credential tier. The injected protocol remains
-  available for offline tests.
-- A direct readonly dev probe reported `0` exchange open positions.
-- A bounded one-tick state-only drill persisted `MATCHED`, `0` latest deltas,
-  `0` open local positions, and `0` exchange/client order IDs, then stopped
-  naturally with no remaining trader or Prefect process.
-- Reconciliation remains diagnostic-only: every delta still uses `NO_ACTION`.
-
-Final local stabilization-gate review completed on 2026-05-31:
-
-- Simulator Phase 1 may consume the stable public runtime seams for typed
-  config, readonly market-data fetching, promoted-pair loading, dynamic queue
-  decisions, natural exits, pre-trade risk decisions, operator controls,
-  state persistence, and readonly reconciliation snapshots.
-- Entry gates remain future-entry-only. Queue blocks, capital slots,
-  pre-trade risk rejections, and the kill switch must not force-close or
-  rebalance existing positions.
-- The local trader contract is stable enough to scope offline simulator work,
-  but this is not real-capital production approval. The separate production
-  readiness gate in `docs/engineering-rules.md` still applies.
-- Dev-only pair-validity threshold activation remains deferred until a larger
-  observation window and more promoted-pair samples exist.
-
-Simulator Phase 1 signal-replay foundation completed on 2026-05-31:
-
-- Added typed offline replay inputs, an inclusive deterministic replay clock,
-  and an as-of historical candle provider seam under `src/simulation/replay.py`.
-- The in-memory historical adapter returns candles strictly through each replay
-  timestamp, and orchestration rejects provider output containing future data.
-- Replay calls shared trader `evaluate_signal` and `determine_action` policy;
-  it does not copy signal rules, queue ranking, sizing, or risk checks.
-- Auditable replay output records scope, window, pair labels, completed ticks,
-  per-tick observations, action counts, and final signal sides.
-- Direct `TradeStateManager` reuse remains deferred because its lifecycle and
-  operation timestamps still read the wall clock. The next simulator slice
-  should introduce a deterministic state seam before queue, pre-trade risk,
-  natural-exit lifecycle, or simulated persistence are wired.
-- Focused verification:
-  `.venv/bin/python -m pytest tests/simulation -q` reported `10 passed`;
-  `.venv/bin/ruff check src/simulation/replay.py tests/simulation/test_replay.py`
-  passed.
-
-Fresh-start drill completed:
-
-- The cold local lifecycle was run on 2026-05-28:
-  research -> promote -> refresh pair data -> report -> bounded state-only
-  execution -> SQLite verification.
-- `data/` was rebuilt through supported CLI flows, not manual data edits.
-- Research mined 150/150 dev symbols, discovered 14 candidate pairs, and the
-  stress filter produced 3 promoted pairs.
-- Promoted artifact:
-  `data/universes/1m/surviving_pairs.json`, `pair_count = 3`,
-  `generated_at = 2026-05-28T15:19:13.041806+00:00`.
-- Promoted pairs:
-  `ALT/USDT|1000BONK/USDT`, `ASTER/USDT|ADA/USDT`,
-  `ASTER/USDT|AVAX/USDT`.
-- Refresh used readonly Bybit market-data access for 5 promoted symbols and
-  saved 1455 local bars per symbol through
-  `2026-05-28T15:19:00+00:00`.
-- Reports showed all 3 pairs with operator review reasons
-  `market_data_older_than_artifact_generation` and
-  `market_data_older_than_promotion`.
-- Bounded state-only execution completed 5/5 ticks and auto-stopped with
-  `observer_run.status = COMPLETED_MAX_TICKS`.
-- SQLite verification showed zero open positions, zero leg fills, zero order
-  events, zero user commands, zero reconciliation deltas, and zero non-null
-  exchange/client order ids.
-- Post-execution queue decisions ranked all 3 pairs using live opportunity
-  evidence but blocked every new entry with
-  `pair_validity_operator_review_required`.
-- A longer state-only observation drill then refreshed promoted-pair data,
-  cleared pair-validity operator review reasons, and let the trader run for
-  several hours with readonly market-data access.
-- The longer drill recorded 4 state-only entries and 2 natural signal exits:
-  realized PnL `0.9432%`, latest unrealized PnL `-0.0716%`, latest total
-  equity `0.8715%`, and 2 open state-only positions after manual SIGTERM.
-- SQLite verification after the longer drill still showed 0 non-null
-  exchange/client order ids, 0 reconciliation deltas, and all leg targets as
-  `TARGET_RECORDED` with `filled_qty = 0`.
-- The longer drill exposed rate-limit/network stalls in readonly Bybit fetches
-  and stale shutdown status: `runtime_state.observer_run` remained `RUNNING`
-  after SIGTERM even though the trader closed its database connection cleanly.
-- A follow-up stabilization drill on 2026-05-30 exposed and fixed premature
-  readonly refresh pagination plus missing wall-clock freshness gating for
-  persisted local OHLCV.
-- The corrected refresh advanced all 5 promoted symbols from
-  `2026-05-30T01:20:00+00:00` through the expected closed candle
-  `2026-05-30T23:22:00+00:00`.
-- A bounded 5-tick state-only observer then completed naturally with
-  `observer_run.status = COMPLETED_MAX_TICKS`, 0 open positions, and 0
-  non-null exchange/client order ids.
-
-Already available locally:
-
-- Report CLI computes read-only pair validity diagnostics from the promoted
-  artifact, refreshed local parquet data, and persisted runtime state.
-- Refresh CLI fetches/appends recent OHLCV only for symbols in the promoted
-  artifact, using readonly credentials and local parquet writes. Pagination
-  continues through the requested closed-candle boundary and reports
-  incomplete windows explicitly.
-- Diagnostics include artifact/data age in bars and time, hedge-ratio drift,
-  correlation drift, cointegration drift, half-life drift, execution behavior,
-  and explicit review reasons such as stale market data or an open position
-  beyond configured half-life multiples.
-- Runtime internals now group eligible-pair artifact lifecycle, monitoring, and
-  pair-validity modules under dedicated subpackages.
-- Trader CLI entrypoints live under `src/engine/trader/cli/`, and callers use
-  canonical imports for state, signals, runtime trader, reporting, and CLI
-  modules.
-- `runtime/pair_queue/` can build a ranked decision snapshot from promoted
-  pairs, pair-validity snapshots, opportunity evidence, open-position exposure,
-  and typed runtime policy. It does not place orders or mutate state.
-- The report path can surface dry-run dynamic queue decisions when
-  pair-validity diagnostics are requested, including score components,
-  entry-allowed flags, block reasons, review reasons, and current rank.
-- Execution can build dynamic queue decisions from current tick opportunity
-  evidence and pair-validity snapshots, then filter/rank future entries when
-  pipeline config sets `execution.pair_queue.mode: future_entries`.
-- Blocked queue decisions prevent new entries and do not prevent existing
-  positions from receiving natural-exit signal evaluation.
-- Capital-slot policy is explicit in `execution.pair_queue.allocation`; the
-  execution path now enforces global max open positions, max positions per pair,
-  and max positions per asset against the latest SQLite open-position state for
-  each tick transition.
-- Runtime pre-trade risk policy is explicit in `configs/risk/alpha_v1.yml` and
-  typed as `RiskConfig`: max per-position cluster exposure, max portfolio
-  exposure, max leverage, minimum order quantity, minimum order notional, order
-  quantity step, liquidity lookback bars, and minimum recent quote volume.
-- Runtime kill-switch entry state is explicit in SQLite `runtime_state` through
-  typed runtime risk helpers. It blocks future exposure only and does not imply
-  automatic liquidation.
-- Operator CLI controls can inspect, activate, and clear the durable runtime
-  kill switch through either `main.py risk-kill-switch` or
-  `python -m src.engine.trader.cli.risk_kill_switch`.
-- Pipeline config now declares explicit `execution.pair_queue` policy for
-  queue behavior, scoring weights, validity thresholds, and
-  allocation caps. `null` means intentionally unlimited for caps and optional
-  thresholds.
-- Pipeline config now declares explicit `execution.pair_validity` diagnostics
-  policy used by execution-time queue consumption, including a maximum
-  wall-clock age in timeframe bars for persisted local OHLCV.
-- Fresh research candidate artifacts now carry baseline fields needed for
-  validity diagnostics: research window start/end/bars, baseline correlation,
-  canonical spread mean/std, and z-score distribution stats. Stress filtering
-  refreshes these fields from the aligned source window used by surviving
-  pairs.
-- The execution CLI supports bounded local state-only drills through
-  process-local `--max-ticks` and `--heartbeat-seconds` overrides. These
-  overrides do not modify YAML and preserve the typed pipeline config boundary.
-- Offline verification before the drill was green:
-  `267 passed, 3 deselected`.
-- Lint before the drill was green: `ruff check src tests`.
-
-Current local assumption:
-
-- Dev remains on readonly credentials and state-only execution.
-- Pair queue mode remains `future_entries`.
-- The current local DB contains 4 closed dummy state-only positions and 0 open
-  positions after the local command/reconciliation drill.
-- The historical pre-fix stale marker was replaced naturally by the successful
-  bounded drill: `observer_run.status = COMPLETED_MAX_TICKS`,
-  `completed_ticks = 1`, and `open_position_ids = []`.
-- Queue-driven entry blocking is visible in reports and must remain limited to
-  future entries.
-- Existing positions must continue natural-exit evaluation.
-
-Required next behavior:
-
-- Keep each gate explicit in typed config or runtime policy, not hidden
-  constants.
-- Emit operator-visible block reasons for every pre-trade rejection.
-- Preserve natural exit: risk and slot limits may block future entries, but
-  must not force-close or rebalance existing positions.
-- Keep reconciliation diagnostic-only after wiring the typed readonly snapshot
-  provider. The explicit `none` mode must retain
-  `SKIPPED_NO_SNAPSHOT_PROVIDER` as an honest health warning.
-- Keep pair-validity threshold tuning separate from capital sizing.
-- Review the remaining stabilization gates before simulator Phase 1.
-
-Do not implement:
-
-- automatic rebalancing
-- forced closes from pair-set changes
-- automatic scheduled refresh before the quantified policy is designed and
-  tested
-- hot reload
-- exchange mutation from research
-- automatic promotion
-- hidden entry blocking without operator-visible diagnostics and tests
-- queue-driven forced closes or rebalancing
-- increased real-capital exposure
-
-## Standing Gate: No Capital Increase
-
-Do not increase real-capital exposure while the active work is local trader
-stabilization. Production readiness is a separate gate defined in
-`docs/engineering-rules.md`.
-
-## Next: Simulator Phase 1 Stateful Policy Planning
+## North star
 
 ```text
-deterministic replay clock
--> narrow replay-state interface
--> shared queue and pre-trade policy decisions
--> simulated natural-exit lifecycle
--> keep real-capital promotion out of scope
+cold start reproducible
+-> paper local con fills y costos
+-> research walk-forward/OOS
+-> demo exchange con recovery
+-> gate separado para capital real
 ```
 
-Extend the signal-replay foundation only after isolating timestamped state
-transitions behind a deterministic clock seam. Preserve explicit
-reconciliation, pair queue, natural-exit, pre-trade-risk, operator-control, and
-readonly market-data behavior. Do not start real-capital promotion or
-production-readiness claims.
+## Estado actual
 
-## Later: Queue Threshold Activation
+### Preservar
 
-Enable dev-only correlation, p-value, hedge-ratio drift, half-life drift, or
-promotion-age gates only after a larger observation window and more
-promoted-pair samples exist. Keep UAT and prod explicit `null` until evidence
-supports separate environment calibration.
+- Research separado de exchange mutation; todos los pipelines usan
+  `state_only`.
+- Configuración tipada, candidate/promoted con promoción manual.
+- SQLite transaccional, motivos de bloqueo y reconciliación readonly visibles.
+- Replay determinista comparte la política de señal.
+- Baseline offline verificado durante la auditoría del 2026-07-17; los números y
+  comandos exactos quedan en `PROJECT_REENTRY_AUDIT.md` como evidencia fechada.
 
-## Later: Scheduled Candidate Regeneration
+### No confundir con paper
+
+- `state_only` no simula fills, partials, fees, funding ni slippage.
+- Su PnL es teórico bruto, no execution PnL.
+- Reconciliación detecta deltas pero no bloquea ejecución.
+- Stop/kill switch son local-state o entry-only; no hacen flatten de exchange.
+- Los artifacts/data de los drills anteriores ya no están en el workspace.
+
+## NOW — Milestone 1: cold start local confiable
+
+Objetivo:
 
 ```text
-configured cadence triggers read-only market-data refresh
--> research run writes candidate artifact plus validity diagnostics
--> operator reviews audit evidence
--> operator promotes when acceptable
--> trader restarts and loads promoted artifact on boot
+workspace vacío
+-> market data válido
+-> universe manifest
+-> candidate STRESS_EVALUATED
+-> promoción manual
+-> bounded state_only
+-> restart seguro
+-> reporte auditable
 ```
 
-Scheduled mode may run research on a configured cadence, but promotion remains
-operator-controlled unless a separate audited policy is designed and tested.
+### 1A. Identidad y lifecycle de datos
 
-Scheduled mode must still preserve natural exit for existing positions.
+- [ ] Leer el símbolo CCXT canónico desde metadata; cubrir
+  `BTC/USDT:USDT` y quotes USDT/USDC.
+- [ ] Persistir el manifest exacto de símbolos aceptados en cada research run.
+- [ ] Hacer que discovery consuma sólo ese manifest, no Parquet históricos.
+- [ ] Implementar reuse + gap/tail refresh idempotente.
+- [ ] Excluir vela abierta y validar continuidad, cobertura y freshness.
+- [ ] Escribir data/metadata mediante temp + atomic replace.
+- [ ] Resolver lifecycle por ambiente: UAT/prod piden 365 días y el default
+  retiene 5.
 
-## Later: Hot Reload
+Salida: el símbolo hace round-trip exacto, un archivo viejo no reingresa y una
+segunda corrida descarga sólo gaps/tail.
 
-Hot reload is higher risk and requires explicit safe reload points in the runtime
-loop. It must never interrupt:
+### 1B. Semántica segura de runtime
 
-- entry execution
-- exit execution
-- flip handling
-- command processing
-- reconciliation writes
+- [ ] Crear `NO_DATA/UNAVAILABLE`, distinto de la señal económica `FLAT`.
+- [ ] Ante data inválida: no abrir/cerrar, preservar posición y emitir reason.
+- [ ] Validar última vela cerrada, gaps, cantidad y freshness en runtime.
+- [ ] Hacer que `pause` bloquee entries, no MTM/exits.
+- [ ] En flip bloqueado: permitir close y omitir replacement entry.
+- [ ] Implementar `stop_loss_z_score` en la policy compartida o retirarlo.
+- [ ] Hacer fail-closed el kill switch corrupto y validar el DB target.
 
-Do not implement hot reload until the runtime loop exposes safe boundaries.
+Salida: una falla de data nunca parece una reversión y las posiciones abiertas
+conservan salida natural bajo pause.
+
+### 1C. Artifacts y restart
+
+- [ ] Modelar `DISCOVERED -> STRESS_EVALUATED -> OPERATOR_PROMOTED`.
+- [ ] Rechazar promotion sin stress/provenance completo.
+- [ ] Validar finitud, rangos, símbolos, baseline y hashes del artifact.
+- [ ] Hacer promoción + audit recuperables como una transición lógica.
+- [ ] Persistir el contrato inmutable de entry: orientación, beta, lookback,
+  thresholds, sizing convention y hashes de artifact/config.
+- [ ] En boot, unir promoted actual para entries con open-position contracts
+  para exits.
+
+Salida: retirar o recalibrar un par nunca deja huérfana ni reinterpreta una
+posición abierta.
+
+### 1D. Baseline reproducible
+
+- [ ] Declarar Python soportado —mínimo 3.11; preferir 3.11/3.12— y alinear CI.
+- [ ] Eliminar referencias a `ci_1m.yml`/`ci_4h.yml` inexistentes.
+- [ ] Separar dependencias runtime/dev y agregar lock o constraints.
+- [ ] Corregir health: DB vacía no es fresh y drawdown no termina en `|| true`.
+- [ ] Añadir CI offline research → promote → bounded execute con fixtures.
+- [ ] Reemplazar el bloqueo actual del runbook por un único cold-start drill
+  probado de punta a punta.
+
+### Definition of done
+
+- Tres cold starts completan sin edición manual de data/artifacts.
+- No se usan credenciales live ni se crean exchange/client order IDs.
+- El segundo run reutiliza datos y trae sólo lo faltante.
+- Candidate/promoted contienen provenance verificable.
+- Restart preserva el contrato y natural exit de posiciones abiertas.
+- Tests, lint, config validation y e2e pasan en CI y local.
+
+## NEXT — Milestone 2: paper local stateful
+
+- [ ] Clock y event ordering explícitos: decisión después del candle close; fill
+  en el siguiente evento ejecutable.
+- [ ] Order/fill lifecycle simulado: pending, partial, filled, rejected,
+  canceled y unknown/timeout.
+- [ ] Failure de segunda pierna y compensación.
+- [ ] Una sola convención hedge/exposure; weights congelados o rebalanceo con
+  turnover explícito.
+- [ ] Fees, slippage y funding por tiempo/settlement.
+- [ ] PnL/equity derivados de fills.
+- [ ] Queue, risk, pause, kill switch, restart y natural exit compartidos con el
+  runtime online.
+
+Gate de salida: la misma fixture produce los mismos intents, fills, costos,
+posiciones y equity, incluso interrumpiendo y reiniciando en cualquier evento.
+
+## THEN — Milestone 3: baseline cuantitativo
+
+- [ ] Elegir un spread/orientación canónico y testear ese mismo residual.
+- [ ] Engle-Granger con trend/autolag/maxlag y evidencia explícitos.
+- [ ] Control FDR por corrida; fijar `random_state` de Louvain.
+- [ ] Beta, weights y features causales por fold.
+- [ ] Alinear `[1, -beta]` con notionals, quantities y PnL.
+- [ ] Formation → validation → OOS final, con parámetros congelados.
+- [ ] Reportar trades, turnover, costos, search count y estabilidad temporal.
+- [ ] Corregir funding por tiempo y usar histórico por símbolo cuando exista.
+
+Gate de salida: el spread testeado, señalizado, simulado y contabilizado es el
+mismo; ningún dato OOS selecciona parámetros.
+
+Después pueden evaluarse EWMA, KPSS/PP, robust regression y DOLS/FM-OLS. GARCH
+queda fuera hasta existir una hipótesis y benchmark concretos.
+
+## LATER — Demo y capital real
+
+Demo/testnet requiere antes:
+
+- sizing equity → quote notional → contracts/qty;
+- límites y precisión reales del mercado;
+- idempotent submission/recovery, partial-leg compensation y reduce-only;
+- reconciliación agregada, periódica y fail-closed;
+- single-writer lease y migraciones versionadas;
+- drills de restart, timeout, reject, partial, stale data y cancel/flatten.
+
+Demo valida API/recovery; no demuestra alpha.
+
+## Standing gate: sin aumento de capital
+
+No cambiar `order_execution.mode` a `live`, cargar credenciales live ni aumentar
+exposición durante estos milestones. Capital real requiere además el gate de
+`docs/engineering-rules.md`, PnL por fills, límites de pérdida, secrets por
+ambiente, alertas, backup/restore y aprobación manual con capital mínimo.
+
+## Fuera de alcance por ahora
+
+- Refactor general o dividir archivos sólo por líneas.
+- Auto-promoción, hot reload o rebalanceo automático.
+- Forced close por cambios del pair set.
+- Scheduled research antes del lifecycle idempotente.
+- Dashboard web, nuevo login, microservicios o nueva base.
+- FM-OLS, DOLS, GARCH o baterías de tests antes del baseline causal/OOS.
+
+## Regla de entrada al roadmap
+
+Una tarea entra en `NOW` sólo si elimina un riesgo del milestone, desbloquea un
+flujo completo, hace reproducible un resultado, repara una divergencia
+demostrada o aporta evidencia para cruzar el siguiente gate. El resto espera.

@@ -1,73 +1,91 @@
 # Documentation Index
 
-This directory is the canonical documentation surface for humans and AI agents.
-If a rule or design is not represented here, treat it as non-canonical unless the
-current code clearly proves otherwise.
+The documents in this directory are the canonical description of engineering
+rules, system behavior, active work, and supported local operations. When a
+document conflicts with executable code, the code is evidence of current
+behavior and the documentation must be corrected.
+
+## Current Product Status
+
+The active target is a deterministic local paper trader. The current
+`state_only` runtime is useful for signals, local state, queue, risk-gate, and
+operator-control drills, but it is not a paper broker and is not approved for
+real capital.
+
+The reproducible cold-start path is still under construction. See
+`docs/current-roadmap.md` before treating any research-to-execution procedure as
+supported.
+
+## Document Roles
+
+| Document | Role | Authority |
+|---|---|---|
+| `docs/engineering-rules.md` | Non-negotiable engineering and safety rules | Normative |
+| `docs/system-design.md` | Current behavior, target invariants, and known gaps | Canonical design |
+| `docs/current-roadmap.md` | Active and near-term work only | Canonical plan |
+| `docs/local-operator-runbook.md` | Verified local `state_only` commands and limitations | Operational, scope-limited |
+| `TRADING_SYSTEM_FLOW.md` | Visual re-entry map of current and target flows | Supporting explanation |
+| `PROJECT_REENTRY_AUDIT.md` | Dated evidence and diagnosis from 2026-07-17 | Historical snapshot |
+
+The two re-entry documents live beside the canonical docs for easier discovery.
+The audit is not a continuously updated source of truth; the roadmap and system
+design take precedence as implementation changes.
 
 ## Read By Task
 
 For any code change:
 
 - `docs/engineering-rules.md`
-- `docs/system-design.md` if the change touches system behavior
-- `docs/current-roadmap.md` if the change relates to current production work
+- `docs/system-design.md` when system behavior or architecture changes
+- `docs/current-roadmap.md` when the change advances active work
 
-Before real-capital operation:
+For understanding how the system fits together:
 
-- `docs/engineering-rules.md`, section "Production Readiness Gate"
-- `docs/system-design.md`, especially execution, state, risk, and operator controls
-
-For architecture reviews:
-
-- `.agents/CONTEXT.md`
-- `.agents/skills/improve-quant-architecture/SKILL.md`
-- `.agents/skills/improve-quant-architecture/references/LANGUAGE.md`
-- Pay special attention to operational seams: paths, storage, exchanges,
-  clocks, credentials, and runtime policies should not be hardcoded inside
-  domain modules.
-
-For code quality audits:
-
-- `.agents/CONTEXT.md`
-- `docs/engineering-rules.md`
-- `.agents/skills/quant-code-quality-auditor/SKILL.md`
-
-For roadmap updates:
-
-- `docs/current-roadmap.md`
-- `docs/engineering-rules.md`
+- `TRADING_SYSTEM_FLOW.md`
 - `docs/system-design.md`
-- `.agents/skills/quant-roadmap-maintainer/SKILL.md`
+- `PROJECT_REENTRY_AUDIT.md` for the dated deep-dive evidence
 
-For pair recalculation or eligible pair artifacts:
+For local `state_only` operation:
 
+- `docs/local-operator-runbook.md`
+- `docs/current-roadmap.md`, because a full cold start is not yet certified
+
+For pair recalculation, artifacts, validity, or the dynamic pair queue:
+
+- `.agents/CONTEXT.md`
 - `docs/system-design.md`
-- `docs/current-roadmap.md`
-
-For pair validity, data refresh cadence, or drift diagnostics:
-
-- `.agents/CONTEXT.md`
-- `docs/system-design.md`, section "Pair Validity And Refresh Cycle"
-- `docs/current-roadmap.md`
-- `docs/local-operator-runbook.md`, section "Refresh Pair Data And Generate
-  Validity Reports" for the local CLI flow
-
-For dynamic promoted-pair queue, entry eligibility, or capital-slot ranking:
-
-- `.agents/CONTEXT.md`
-- `docs/system-design.md`, section "Dynamic Promoted-Pair Queue"
 - `docs/current-roadmap.md`
 - `docs/engineering-rules.md`, especially natural-exit and live-mutation rules
 
-For local state-only operator drills:
+For architecture or code-quality reviews:
 
-- `docs/local-operator-runbook.md`
+- `.agents/CONTEXT.md`
+- `docs/engineering-rules.md`
+- the relevant skill under `.agents/skills/`
+
+Operational seams deserve special attention: paths, stores, exchanges, clocks,
+credentials, notification channels, and runtime policy should enter through
+typed config, explicit parameters, or adapters.
+
+Before any demo/testnet or real-capital work:
+
+- `docs/engineering-rules.md`, section "Production Readiness Gate"
+- `docs/current-roadmap.md`, sections "LATER" and "Standing gate"
+- `docs/system-design.md`, especially execution, state, risk, and operator
+  controls
+
+None of these documents currently grants approval to enable `live` mode or use
+real capital.
 
 ## Documentation Policy
 
-- Keep canonical docs short and current.
-- Describe the current system and the next intended changes.
-- Do not preserve obsolete implementation history in canonical docs.
-- Prefer changing these docs over adding long new planning files.
-- Add a new document only when the existing three files become genuinely hard to
-  navigate.
+- Distinguish `CURRENT`, `TARGET`, and `KNOWN GAP` statements.
+- Keep canonical documents short enough to reread after each behavior change.
+- Do not preserve obsolete implementation history in canonical documents; Git
+  and dated audits hold history.
+- Do not describe a planned invariant as if the runtime already enforces it.
+- Commands belong in the runbook only after their paths and CLI arguments are
+  verified.
+- Prefer updating these documents over adding another overlapping plan.
+- Add a new canonical document only when it owns a genuinely different reader
+  task.

@@ -1,278 +1,232 @@
 # System Design
 
-The platform is an exchange-agnostic statistical arbitrage system. One codebase
-supports development, UAT, production, and backtesting through explicit config
-and typed secrets.
+This repository is building an exchange-agnostic statistical-arbitrage
+platform. It has research, replay, state-only execution, reporting, and an
+explicit live-order adapter, but it does not yet provide a credible paper broker
+or a production-ready trading system.
+
+## Status Language
+
+- **CURRENT** describes behavior present in the code now.
+- **TARGET** describes an invariant or product stage still being built.
+- **KNOWN GAP** identifies a place where current behavior does not yet satisfy
+  the target.
+
+An environment name such as dev, UAT, or prod is a configuration profile. It is
+not proof that the corresponding operational stage is safe or complete.
 
 ## System Flow
 
 ```text
+CURRENT research
 historical market data
 -> universe filtering
--> returns matrix construction
--> clustering
--> cointegration discovery
+-> returns matrix
+-> clustering and cointegration discovery
 -> pair stress filtering
--> eligible pair artifact
--> trader execution
--> state, reporting, and operator controls
+-> candidate artifact
+-> manual promotion
+-> promoted artifact
+
+CURRENT execution
+promoted artifact
+-> state_only trader
+-> SQLite state, reports, and operator commands
+
+TARGET progression
+reproducible cold start
+-> stateful paper execution with simulated fills and costs
+-> demo/testnet recovery drills
+-> small-capital canary
+-> production only after every readiness gate passes
 ```
+
+Research, pair recalculation, reporting, artifact inspection, and pair-validity
+work must never mutate exchange orders or positions.
 
 ## Offline Simulation
 
-Simulator Phase 1 is an offline consumer of shared trader policy. The first
-foundation intentionally stops at deterministic signal replay:
+**CURRENT:** `src/simulation/replay.py` provides deterministic signal replay. It
+uses typed inputs, a replay clock, shared signal evaluation, transition
+classification, and auditable observations.
 
-```text
-historical candle provider
--> deterministic replay clock
--> shared trader signal evaluation
--> shared signal-transition classification
--> auditable replay observations
-```
+This is not paper trading. It does not yet model a stateful order/fill lifecycle,
+partial fills, rejection, fees, funding, slippage, or crash recovery.
 
-The historical candle seam returns bounded symbol candles strictly through the
-current replay timestamp so offline runs cannot silently inspect future data.
-Replay inputs and outputs are typed. The first result records the replay scope,
-window, pair labels, completed ticks, per-tick signal observations, action
-counts, and final signal sides.
+**KNOWN GAP:** the candle provider includes rows whose timestamp is less than or
+equal to the replay timestamp. Because stored timestamps may represent candle
+open rather than candle close, this alone does not prove that every feature is
+available without look-ahead. Candle-close semantics must become explicit and
+tested.
 
-The foundation does not yet reuse `TradeStateManager`: its lifecycle and
-operation timestamps still read the wall clock directly. Stateful simulation
-should first add a deterministic clock seam and a narrower replay-state
-interface, then reuse shared dynamic queue and pre-trade risk decisions. Do not
-copy queue ranking, sizing, risk checks, natural-exit rules, or runtime state
-lifecycle into a separate simulator engine.
+**TARGET:** add an explicit clock/event-order seam and a narrow replay-state
+interface, then reuse shared queue, sizing, risk, position, and natural-exit
+policy. Do not build a second independent trader inside the simulator.
 
 ## Research Flow
 
-The research flow is offline or operator-run. It may read local data, fetch
-historical data through the data layer, compute candidate pairs, run filters and
-pair stress filters, and write eligible pair artifacts.
+**CURRENT:** the operator-run research flow may fetch readonly historical data,
+persist local OHLCV, build returns, discover clusters and cointegrated pairs,
+run stress filters, and write candidate artifacts.
 
-Research code must not mutate live exchange state.
-Research modules are production workflow modules, not tests. They should expose
-small interfaces and receive storage, paths, exchanges, clocks, and runtime
-policy through config, explicit parameters, or adapters.
+Research modules receive operational values through typed config, explicit
+parameters, or adapters. Storage layout, exchange, timeframe, credentials, and
+clocks do not belong as hidden assumptions in domain calculations.
+
+**KNOWN GAPS:** the cold-start chain is not yet reproducible. Symbol identity can
+be lost across CCXT and Parquet, discovery can consume stale files outside the
+selected universe, lifecycle refresh is incomplete, and artifact provenance
+does not yet distinguish every required research stage. These gaps are the
+active work in `docs/current-roadmap.md`.
 
 ## Execution Flow
 
-The execution flow loads typed config and validated artifacts, evaluates only
-eligible pairs, manages runtime state, processes operator commands, reconciles
+**CURRENT:** execution loads typed pipeline, venue, market-profile, strategy,
+and risk config. It validates and loads a promoted artifact on boot, opens
+runtime state only after eligible pairs exist, performs readonly boot
+reconciliation, processes operator commands, evaluates ticks, writes local
 state, emits reports, and sends notifications.
 
-Execution code may read market data. Live order mutation must be isolated behind
-explicit execution modules and controlled by explicit execution mode.
+Runtime OHLCV reads use typed timeout, attempt, and backoff policy. Candles for
+a shared symbol may be reused within the same tick. These reads do not mutate
+the exchange.
 
-Runtime OHLCV reads use explicit typed `execution.market_data_fetch` policy for
-request timeout, bounded attempts, and retry backoff. Tick execution reuses a
-symbol's fetched candles within the same tick when the cached request window is
-sufficient. These controls reduce readonly provider pressure and bound stalls;
-they do not submit, cancel, modify, or close exchange orders.
+Two configuration modes exist:
 
-The intended progression is:
+- `state_only`: no order adapter is constructed. Signals and transitions mutate
+  local SQLite state and record leg targets, but there are no simulated fills or
+  exchange orders. PnL is theoretical and is not execution PnL.
+- `live`: constructs an exchange order adapter only with explicit live mode and
+  credential tier. The adapter exists, but the lifecycle around sizing, fills,
+  recovery, reconciliation, and emergency controls is incomplete.
 
-```text
-state-only execution
--> paper/UAT execution
--> very-small-capital canary
--> production capital only after readiness gates pass
-```
+Dev, UAT, and prod pipeline profiles are currently configured as `state_only`.
+No document in this repository approves switching them to `live`.
 
-No code path should silently jump from research or paper behavior into live order
-mutation.
+## Eligible Pair Artifacts
 
-## Eligible Pair Artifact
-
-The eligible pair artifact is the research-to-execution handoff:
+The artifact paths in the default local layout are:
 
 ```text
-candidate default: data/universes/{timeframe}/candidate_surviving_pairs.json
-promoted default:  data/universes/{timeframe}/surviving_pairs.json
+candidate: data/universes/{timeframe}/candidate_surviving_pairs.json
+promoted:  data/universes/{timeframe}/surviving_pairs.json
 ```
 
-Research writes candidate artifacts. Operator promotion validates schema,
-metadata, generation freshness, timeframe, exchange, pair count, and pair
-contents before atomically replacing the promoted artifact. Promotion records an
-audit event with candidate metadata, content hash, promotion time, timeframe,
-exchange, from/to paths, pipeline name, operator when supplied, and the active
-pair-refresh policy. Execution loads only the promoted artifact on boot.
+These are operational defaults, not domain-layer constants. Alternate stores or
+layouts should enter through typed config or a storage adapter.
 
-These paths describe the default local layout, not a domain-layer constant.
-Artifact stores and paths should be supplied through typed config, explicit
-parameters, or a local storage adapter so the execution and research flows can
-survive alternate environments.
+**CURRENT:** research writes a JSON candidate envelope. Manual promotion
+validates schema, metadata, freshness, timeframe, exchange, pair count, and pair
+contents. Execution loads only the promoted artifact and rejects missing,
+malformed, mismatched, or legacy list-only envelopes.
 
-The artifact is a JSON envelope with `metadata` and `pairs`. Metadata includes
-schema version, artifact type, generation time, timeframe, exchange, and pair
-count. Execution validates the envelope on boot and rejects missing, malformed,
-mismatched, or legacy list-only artifacts.
+Promotion uses atomic filesystem replacement for the artifact itself. If an
+audit path is configured, the audit record is appended after replacement.
 
-Fresh pair rows include research baseline fields for later validity diagnostics:
-research window start/end/bars, baseline log-price correlation, canonical spread
-mean/std, and z-score distribution stats for the selected lookback. These fields
-are evidence for operator review and queue scoring; they do not imply automatic
-promotion, rebalancing, or forced closes.
+**KNOWN GAP:** artifact replacement and audit append are not one recoverable
+transaction. Candidate stages and the immutable research/execution contract do
+not yet carry all required provenance and hashes.
 
-## Pair Recalculation Policy
-
-Pair recalculation means producing a new eligible pair artifact for future
-entries.
-
-Pair recalculation is not rebalancing. A pair falling out of a new artifact must
-not automatically close an existing open position. Existing positions use natural
-exit unless an explicit operator command, auditor action, risk kill switch, or
-manual emergency process says otherwise.
-
-Initial supported mode is manual:
+**TARGET:** model and validate the transition:
 
 ```text
-operator runs research
--> candidate artifact is written
--> operator promotes the candidate artifact
--> operator restarts trader
--> trader loads promoted artifact on boot
--> new entries use new pair set
--> existing positions close naturally
+DISCOVERED -> STRESS_EVALUATED -> OPERATOR_PROMOTED
 ```
 
-Scheduled refresh and hot reload are future work.
+Promotion and its audit evidence must be recoverable as one logical operation.
 
-## Pair Validity And Refresh Cycle
+## Pair Recalculation And Open Positions
 
-Promoted pairs are perishable execution inputs. Their useful life should be
-expressed with quantified diagnostics, not vague labels. Artifact age by itself
-is only a clock; pair validity asks whether recent data and observed execution
-behavior still resemble the research assumptions that made the pair eligible.
+Pair recalculation produces a new candidate for future entries. It is not
+rebalancing and must never hide a forced close.
 
-The platform should treat these as separate concerns:
+**CURRENT:** promotion is manual and execution reads the promoted artifact only
+at boot; there is no hot reload. Queue decisions filter and rank future entries
+for the pairs loaded by the process.
 
-- **Artifact/data age**: wall-clock time and bars elapsed since the research
-  input window ended, since the candidate artifact was generated, and since the
-  artifact was promoted. Persisted local OHLCV freshness is also bounded
-  against the current wall clock through typed pair-validity policy.
-- **Statistical drift**: changes in hedge ratio, spread mean/std, correlation,
-  cointegration p-value, half-life, and z-score distribution when measured on a
-  recent rolling window versus the research window.
-- **Execution behavior drift**: differences between observed state-only or live
-  behavior and research expectations, including entry frequency, natural-exit
-  timing, realized PnL, friction drag, and positions exceeding expected
-  half-life multiples.
+**KNOWN GAP:** on restart, the runner loads the current promoted pairs before it
+opens SQLite state, and ticks iterate only those loaded pairs. If an open
+position's pair was removed from the artifact, the runtime cannot currently
+guarantee that the position remains evaluable for natural exit. It also does not
+persist the complete entry-time statistical contract.
 
-Refresh cycles may fetch or append market data and recompute diagnostics or a
-new candidate artifact on an operator-chosen cadence. The cadence, data window,
-exchange, timeframe, storage, and runtime policy must enter through typed
-config, explicit parameters, or adapters.
+**TARGET:** future entries use the current promoted artifact, while every open
+position retains its immutable entry contract and stays in the evaluation set
+until it exits or an explicit, audited emergency action handles it.
 
-The current safe implementation is read-only report visibility:
+## Pair Validity And Refresh
 
-```text
-promoted artifact
--> explicit readonly OHLCV refresh for promoted symbols
--> local parquet update
--> report pair-validity diagnostics
--> operator review
-```
+Promoted pairs are perishable inputs. Validity should be expressed with
+measurements rather than a single label:
 
-The refresh command uses readonly credentials, fetches only market data for
-symbols in the promoted artifact, and writes local parquet. It does not write a
-new promoted artifact, automate promotion, hot-reload execution, submit orders,
-or force-close positions. Pagination continues until the requested closed-candle
-boundary, and incomplete refresh windows are surfaced explicitly.
+- artifact age and persisted-data freshness;
+- drift in hedge ratio, spread distribution, correlation, cointegration, and
+  half-life;
+- observed holding time and state-only or fill-based execution behavior.
 
-Later Telegram visibility may surface the same diagnostics. Later entry gating
-may block new entries for pairs whose quantified diagnostics exceed configured
-limits. Existing positions must continue under natural exit unless an explicit
-operator command, auditor action, or tested risk kill switch says otherwise.
+**CURRENT:** an explicit readonly command refreshes OHLCV for promoted symbols
+and writes local Parquet. Reports can calculate pair-validity diagnostics. An
+incomplete refresh is surfaced instead of silently presented as complete.
+
+The command does not promote artifacts, hot-reload execution, place orders,
+rebalance, or force-close positions.
+
+**TARGET:** use the same quantified evidence for operator review and optional
+future-entry gates. Existing positions remain governed by their entry contract;
+validity failure alone does not authorize a forced close.
 
 ## Dynamic Promoted-Pair Queue
 
-The promoted artifact defines the approved execution universe, not a permanent
-execution order. A dynamic promoted-pair queue should be recomputed from facts:
+The promoted artifact defines the approved universe. The dynamic queue ranks
+current opportunities for future entries using promoted pairs, validity
+diagnostics, recent signal evidence, runtime state, and allocation policy.
 
-```text
-promoted artifact
-+ pair-validity diagnostics
-+ live opportunity evidence
-+ runtime state
-+ capital-slot policy
--> ranked pair decisions for future entries
-```
+**CURRENT:** reports expose decisions, scores, block reasons, ranks, and typed
+validity-threshold evidence. Execution supports `report_only` and
+`future_entries`; the latter can filter and rank new entries. A configured
+`null` threshold means intentionally disabled, not an implicit default.
 
-Each decision should explain its score components, current rank, whether a new
-entry is allowed, and the exact block or review reasons. The queue is an
-auditable decision snapshot, not a hidden mutable scheduler.
+The queue does not place orders by itself and must not force-close positions.
 
-Queue decisions also carry structured validity-threshold evidence: the
-measurement, configured threshold, comparison operator, whether the threshold
-is enabled, and whether it triggered. Disabled `null` thresholds remain visible
-as intentional policy so later calibration can use report evidence without
-silently activating entry gates.
-
-The current safe implementation surfaces ranking through reports when
-pair-validity diagnostics are requested and can consume the same queue decisions
-inside execution when `execution.pair_queue.mode` is `future_entries`. Execution
-uses queue decisions only to filter and rank future entries. Existing positions
-still receive normal signal evaluation for natural exit.
-
-Queue policy is explicit pipeline config under `execution.pair_queue`. Current
-supported modes are `report_only` and `future_entries`. `null` values in
-allocation caps or optional validity thresholds mean "not enforced" and should
-remain typed as intentional configuration, not hidden defaults.
-
-Queue decisions affect future entries only. A pair falling in rank, failing
-validity, or disappearing from a later promoted artifact must not force-close an
-existing position. Existing positions continue natural exit unless an explicit
-operator command, auditor action, or tested risk kill switch says otherwise.
+**LIMIT OF THE CURRENT GUARANTEE:** pairs that remain loaded and are evaluated
+during a non-paused tick receive their normal signal transition. This is not a
+global natural-exit guarantee: pause skips the full tick, and artifact changes
+across restart can omit an open pair.
 
 ## Runtime Package Shape
 
-Exchange-facing modules are grouped by external venue capability:
+Exchange-facing code is grouped by external capability:
 
-- `src/exchange/config/`: typed venue and market-profile config loaded from
-  YAML, including CCXT construction policy.
-- `src/exchange/data/`: read-only market data adapters for external venues,
-  such as CCXT market discovery and OHLCV fetches.
-- `src/exchange/execution/`: external order/account mutation adapters. These
-  modules may talk to the exchange, but only explicit trader execution modes may
-  call mutating operations.
+- `src/exchange/config/`: typed venue and market-profile configuration;
+- `src/exchange/data/`: readonly market discovery and OHLCV adapters;
+- `src/exchange/execution/`: order and account mutation adapters.
 
-Internal data modules remain separate from exchange integration:
+Internal data code remains separate:
 
-- `src/data/ohlcv/`: normalized candle contracts, validation, metadata, merge,
-  and retention.
-- `src/data/storage/`: local persisted datasets such as Parquet.
-- `src/data/sync/`: backfill and refresh orchestration over explicit market-data
-  and storage protocols.
+- `src/data/ohlcv/`: candle contracts, validation, metadata, merge, retention;
+- `src/data/storage/`: persisted local datasets such as Parquet;
+- `src/data/sync/`: backfill and refresh orchestration over explicit seams.
 
-Runtime modules are grouped by trading concept:
+Trader runtime code is grouped by trading concept:
 
-- `runtime/artifacts/`: eligible-pair artifact contracts, validation,
-  lifecycle paths, promotion, and promotion audit records.
-- `runtime/monitoring/`: read-only health and run-status snapshots for operator
-  visibility.
-- `runtime/pair_validity/`: read-only pair-validity reports, market-data
-  refresh helpers, drift statistics, runtime-state summaries, and typed models.
-- `runtime/pair_queue/`: ranking and entry-eligibility decisions for promoted
-  pairs, using explicit runtime policy and current state as inputs.
-- `runtime/`: execution loop modules that still directly drive trading behavior,
-  such as tick evaluation, signal transitions, and trader runner orchestration.
-- `cli/`: operator command entrypoints for reporting, promoted-pair data
-  refresh, and candidate artifact promotion.
+- `runtime/artifacts/`: artifact contracts, validation, lifecycle, promotion;
+- `runtime/monitoring/`: readonly health and run-status snapshots;
+- `runtime/pair_validity/`: validity reports and refresh helpers;
+- `runtime/pair_queue/`: ranking and entry-eligibility decisions;
+- `runtime/`: tick policy and trader orchestration;
+- `cli/`: operator entrypoints.
 
-Root-level trader modules are canonical only when they own behavior. Callers
-should import concepts directly from `state.manager`, `signals`,
-`runtime.trader_runner`, `reporting`, and `cli` so each module has one obvious
-home.
+A module is canonical when it owns behavior and provides locality, not merely
+because it re-exports another interface.
 
 ## Configuration
 
 Config is split by concern:
 
 ```text
-configs/pipelines/   runtime environment, venue selection, DB/data/artifact paths, cadence, execution mode
-configs/exchange/    venue market profiles and CCXT construction policy
-configs/data/        market-data sync policies such as OHLCV backfill pacing
+configs/pipelines/   runtime paths, cadence, execution mode and policies
+configs/exchange/    venue and market-profile construction
+configs/data/        market-data lifecycle and sync policy
 configs/universe/    asset eligibility and filtering
 configs/strategy/    signal thresholds and lookbacks
 configs/backtest/    simulation grid and friction assumptions
@@ -280,39 +234,49 @@ configs/risk/        capital and exposure limits
 configs/telegram/    Telegram environment metadata
 ```
 
-Raw YAML dictionaries are parsed once near entrypoints. Runtime modules receive
-typed config objects or explicit values.
+Raw YAML is parsed at the config boundary. Runtime and research modules receive
+typed objects or explicit values. A production-named config file is not evidence
+that production readiness gates have passed.
 
-Runtime and research modules should not reach for hardcoded local paths. Market
-data stores, artifact locations, exchanges, timeframes, and clocks enter through
-typed config or adapters at explicit operational seams.
+## State, Reconciliation, And Reporting
 
-## State And Reporting
+**CURRENT:** SQLite state records local positions, leg targets and lifecycle
+events, equity snapshots, commands, reconciliation results, and signal
+observations. Reporting reads state and artifacts without mutating the exchange.
 
-Runtime state includes positions, order lifecycle events, leg targets, equity
-snapshots, user commands, reconciliation results, and signal observations.
+Boot reconciliation can obtain a bounded readonly account-position snapshot or
+run with an explicit `none` provider. It records deltas such as local-only or
+exchange-only positions, quantity/side/symbol mismatch, partial local fills,
+stale local orders, and snapshot failure. Current reconciliation actions are
+diagnostic `NO_ACTION` records; they do not repair state or block execution.
 
-Read-only reconciliation uses explicit typed `execution.reconciliation` policy
-for the account snapshot provider, account-snapshot timeout, and stale in-flight
-local order age. The `ccxt_readonly` provider adapter calls only account-position
-reads and closes its exchange client after each snapshot. The explicit `none`
-mode preserves an honest `SKIPPED_NO_SNAPSHOT_PROVIDER` warning when needed.
-Reconciliation records auditable deltas for local-only or exchange-only
-positions, quantity/side/symbol mismatches, partial local fills, stale local
-orders, and snapshot-provider failures. Diagnostics use `NO_ACTION`; they do
-not submit, cancel, modify, repair, or close exchange positions.
-
-State writes must be auditable. Reporting should read state and artifacts to
-produce summaries; reporting should not mutate exchange state.
-
-Auditable state must make it possible to reconstruct what the system believed,
-what it attempted, what the exchange accepted, and what the operator saw.
+**KNOWN GAP:** current local state is not an authoritative fill ledger. It cannot
+yet reconstruct every exchange-accepted fill, fee, funding charge, partial-leg
+outcome, or ambiguous submission. That audit trail is required before live use.
 
 ## Operator Controls
 
-Telegram and CLI controls are operator interfaces. They may request actions such
-as pause, resume, stop, or stop all. The command path should make state mutation
-and exchange mutation explicit and testable.
+**CURRENT:** CLI and Telegram can enqueue local commands. In `state_only`,
+`/stop` and `/stop_all` change local runtime state only. The durable risk kill
+switch blocks future entries and replacement entries; it does not cancel orders,
+flatten exchange positions, or repair state.
 
-Emergency actions must not be hidden inside unrelated workflows such as pair
-recalculation.
+Pause currently returns before the full tick, so it also stops mark-to-market
+and exit evaluation. A malformed kill-switch payload and an incorrect DB target
+are known safety gaps. Boot reconciliation reports discrepancies but does not
+fail closed.
+
+**TARGET:** pause blocks entries while preserving state maintenance and exits;
+risk controls fail closed; every command identifies its local-state and exchange
+effects; demo/live emergency actions are explicit, tested, idempotent, and
+audited.
+
+## Safety Boundary
+
+Until the roadmap and `docs/engineering-rules.md` readiness gate are complete:
+
+- keep pipeline execution in `state_only`;
+- use readonly credentials only;
+- treat local PnL as diagnostic, not strategy or execution evidence;
+- treat cold-start, restart, natural-exit, and recovery behavior as incomplete;
+- do not infer production readiness from green unit tests or existing adapters.

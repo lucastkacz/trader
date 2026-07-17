@@ -1,1025 +1,176 @@
-# Trader Project Improvement Plan
-
-## Purpose
-
-This document consolidates the main architectural, research, and product-development improvements identified during review of the current pair trading system.
-
-The project is not broken and should not be rewritten from scratch. The current system already has valuable foundations: runtime state, risk gates, dry/live observer runs, tests, typed risk policies, kill-switch logic, pair rebalancing, operator notifications, and a growing understanding of the domain.
-
-The goal of this plan is to turn the current evolving project into a more maintainable, explainable, and extensible trading system.
-
----
-
-# 1. Current Project Status
-
-## General Assessment
-
-The project has grown from a prototype into a serious trading system. The original architecture could not have anticipated all the later requirements, because many of the real domain concepts only became clear during development.
-
-This is normal.
-
-The project is currently in a healthy but important transition point:
-
-* The core idea is working.
-* Dry/live observer runs against live market data have produced positive results.
-* The system is mostly deterministic and explainable.
-* Runtime safety work has been prioritized.
-* The risk module is relatively clean.
-* Complexity is starting to concentrate in orchestration.
-* The next phase should focus on consolidation before adding too many new features.
-
-The project should not be restarted. It should be refactored incrementally.
-
----
-
-# 2. Main Architectural Principle Going Forward
-
-The main architectural direction should be:
-
-> Separate decision planning from side effects.
-
-The system should distinguish between:
-
-1. What the bot wants to do.
-2. Whether the action is allowed.
-3. What state changes are required.
-4. What orders would be submitted or simulated.
-5. What operator messages should be emitted.
-
-The current code already moves in this direction in the risk module, but the runtime transition layer should be improved next.
-
----
-
-# 3. File Tree Strategy
-
-Do not perform a full file-tree rewrite.
-
-The current tree is salvageable. The better approach is to preserve the broad structure and add clearer domain packages over time.
-
-Suggested long-term structure:
-
-```text
-src/engine/trader/
-    config/
-    data/
-    research/
-    universe/
-    pairs/
-    signals/
-    runtime/
-    runtime/risk/
-    runtime/transition/
-    execution/
-    state/
-    reporting/
-    funding/
-    portfolio/
-    simulator/
-    operator/
-```
-
-Avoid generic dumping-ground folders such as:
-
-```text
-core/
-utils/
-helpers/
-services/
-```
-
-Prefer domain names:
-
-```text
-risk/
-funding/
-pairs/
-portfolio/
-execution/
-state/
-reporting/
-simulator/
-operator/
-```
-
-Each folder should answer a clear trading/system question.
-
----
-
-# 4. Highest Priority Refactor: Signal Transition
-
-## Problem
-
-The current signal transition layer is the most likely place for future complexity to become unmanageable.
-
-It currently mixes several responsibilities:
-
-* signal interpretation
-* entry / exit / flip decision routing
-* pre-trade risk evaluation
-* state mutation
-* order execution calls
-* Telegram/operator notifications
-* blocked-entry handling
-
-This is manageable now, but it will become harder once shadow execution, simulator logic, partial fills, order lifecycle, reconciliation, and live execution are added.
-
-## Proposed Refactor
-
-Create a new package:
-
-```text
-src/engine/trader/runtime/transition/
-    models.py
-    planner.py
-    executor.py
-    notifications.py
-```
-
-### `models.py`
-
-Owns transition models:
-
-```text
-TransitionAction
-TransitionPlan
-OperatorEvent
-IntendedOrder
-TransitionBlockReason
-```
-
-Example actions:
-
-```text
-ENTRY
-EXIT
-HOLD
-FLIP
-BLOCK
-```
-
-### `planner.py`
-
-Pure or mostly pure decision logic.
-
-Input:
-
-```text
-current state snapshot
-signal result
-risk decision
-pair metadata
-runtime mode
-```
-
-Output:
-
-```text
-TransitionPlan
-```
-
-The planner should not send Telegram messages, mutate SQLite state, or submit orders.
-
-### `executor.py`
-
-Applies the plan.
-
-Responsibilities:
-
-```text
-mutate state
-call execution adapter
-record events
-dispatch notifications
-```
-
-### `notifications.py`
-
-Renders operator-facing messages.
-
-Responsibilities:
-
-```text
-entry message
-exit message
-flip message
-risk-blocked message
-queue-blocked message
-future funding warning message
-```
-
-## Target Shape
-
-Instead of one runtime function doing everything:
-
-```python
-await route_signal_transition(...)
-```
-
-Prefer:
-
-```python
-plan = planner.plan(...)
-await executor.execute(plan)
-```
-
-This gives a clean boundary:
-
-```text
-decision planning → side effects
-```
-
----
-
-# 5. Keep the Risk Package Direction
-
-The current `runtime/risk/` direction is good and should mostly be preserved.
-
-Existing concepts such as:
-
-```text
-PreTradeRiskPolicy
-PreTradeRiskDecision
-PreTradeLiquiditySnapshot
-RiskKillSwitchState
-```
-
-are clean and useful.
-
-The risk package should continue to answer:
-
-> Should this proposed entry be allowed right now?
-
-Future additions may include:
-
-```text
-runtime/risk/funding.py
-runtime/risk/pair_health.py
-runtime/risk/exposure.py
-```
-
-However, avoid letting `pre_trade.py` become too large. If more gates are added, split them into smaller focused evaluators.
-
-Possible future structure:
-
-```text
-runtime/risk/
-    models.py
-    pre_trade.py
-    liquidity.py
-    kill_switch.py
-    funding.py
-    pair_health.py
-    exposure.py
-```
-
----
-
-# 6. Add a Funding Domain
-
-## Problem
-
-The current system does not fetch or account for funding data. For perpetual futures pair trading, this is a real weakness.
-
-PnL is not only:
-
-```text
-spread convergence PnL
-```
-
-It is:
-
-```text
-spread convergence PnL
-- fees
-- slippage
-- funding paid/received
-```
-
-Funding can turn an apparently good pair into a bad trade.
-
-## Proposed Package
-
-Create:
-
-```text
-src/engine/trader/funding/
-    models.py
-    fetcher.py
-    estimator.py
-```
-
-### `models.py`
-
-Possible models:
-
-```text
-FundingSnapshot
-FundingCostEstimate
-FundingPolicy
-```
-
-### `fetcher.py`
-
-Responsibilities:
-
-```text
-fetch current funding rate
-fetch next funding timestamp
-normalize exchange-specific funding data
-```
-
-### `estimator.py`
-
-Responsibilities:
-
-```text
-estimate funding impact for long/short legs
-estimate net pair funding carry
-mark funding as positive, neutral, or toxic
-```
-
-## Integration Path
-
-Do this incrementally:
-
-1. Fetch current funding rates.
-2. Store/report funding snapshots.
-3. Add funding freshness checks.
-4. Add funding to diagnostics.
-5. Add funding-adjusted shadow PnL.
-6. Add funding-aware risk gate.
-7. Add funding into pair quality scoring.
-8. Later add historical funding for simulator/backtests.
-
-Do not immediately overbuild historical funding support. Start with visibility.
-
----
-
-# 7. Improve Pair Discovery and Pair Quality Scoring
-
-## Problem
-
-The system currently relies heavily on clustering and pair rebalancing. This is valid, but the real research edge is not only the clustering algorithm.
-
-The research layer includes:
-
-```text
-asset relationship definition
-graph construction
-cluster stability
-pair selection
-spread definition
-entry/exit thresholds
-rebalance frequency
-pair validity decay
-execution assumptions
-risk allocation
-```
-
-## Proposed Package
-
-Depending on current naming, create or consolidate under:
-
-```text
-src/engine/trader/pairs/
-    clustering.py
-    validation.py
-    scoring.py
-    queue.py
-    lifecycle.py
-```
-
-Or, if separating asset universe from pair logic:
-
-```text
-src/engine/trader/universe/
-    clustering.py
-    graph.py
-    rebalance.py
-    asset_filter.py
-
-src/engine/trader/pairs/
-    discovery.py
-    scoring.py
-    validation.py
-    lifecycle.py
-    queue.py
-```
-
-For now, the simpler `pairs/` package is probably enough.
-
-## Pair Quality Score
-
-Add a pair quality score that ranks candidate pairs instead of simply treating them as valid/invalid.
-
-Example:
-
-```text
-pair_quality_score =
-    spread_mean_reversion_score
-  + cointegration_score
-  + liquidity_score
-  + cluster_stability_score
-  + funding_score
-  - instability_penalty
-  - churn_penalty
-```
-
-The goal is not more pairs. The goal is better pairs.
-
----
-
-# 8. Pair Lifecycle States
-
-The existing rebalancing + queue system is a good quick fix for degradation. It periodically refreshes the active pair universe and swaps out weaker candidates.
-
-However, it is not the same as event-driven degradation detection.
-
-Add lightweight pair lifecycle states:
-
-```text
-DISCOVERED
-VALIDATING
-ACTIVE
-WATCH
-DEGRADED
-COOLDOWN
-RETIRED
-```
-
-## Meaning
-
-### `DISCOVERED`
-
-Pair found during clustering or universe refresh.
-
-### `VALIDATING`
-
-Pair passes initial filters but needs observation.
-
-### `ACTIVE`
-
-Pair is eligible for trading.
-
-### `WATCH`
-
-Pair is still tradable, but showing early warning signs.
-
-### `DEGRADED`
-
-Pair should not receive new entries.
-
-### `COOLDOWN`
-
-Pair recently failed, stopped out, or degraded and should not immediately re-enter.
-
-### `RETIRED`
-
-Pair is no longer structurally valid.
-
-## Integration With Queue
-
-The queue can use lifecycle states:
-
-```text
-ACTIVE    → eligible for entries
-WATCH     → eligible but lower priority / no increased exposure
-DEGRADED  → block new entries
-COOLDOWN  → exclude temporarily
-RETIRED   → remove from candidate pool
-```
-
-This extends the existing rebalancing system rather than replacing it.
-
----
-
-# 9. Lightweight Pair Health Monitoring
-
-Do not build a complex degradation system yet.
-
-Start with simple deterministic health checks:
-
-```text
-rolling correlation drops below threshold
-spread z-score remains extreme for too long
-spread variance explodes
-liquidity falls below threshold
-funding cost becomes toxic
-max holding period exceeded
-recent mean reversion fails
-```
-
-Output:
-
-```text
-OK
-WATCH
-DEGRADED
-```
-
-This can feed the queue and risk layer.
-
----
-
-# 10. Shadow Execution Ledger
-
-Before real capital and before the full simulator, add a live shadow ledger.
-
-This is different from the full simulator. It runs during live read-only/dry mode and records what would have happened.
-
-For every signal:
-
-```text
-timestamp
-pair
-signal
-intended long leg
-intended short leg
-intended entry price
-estimated fees
-estimated slippage
-estimated funding
-synthetic fill assumption
-shadow open time
-shadow close time
-shadow PnL
-blocked/not blocked risk gates
-reason for entry
-reason for exit
-```
-
-Track three versions of PnL:
-
-```text
-naive signal PnL
-realistic shadow PnL
-ultra-pessimistic shadow PnL
-```
-
-This is the bridge between live observer mode and real execution.
-
-Suggested package/files:
-
-```text
-src/engine/trader/execution/shadow.py
-src/engine/trader/reporting/shadow_ledger.py
-```
-
----
-
-# 11. Portfolio Construction
-
-Eventually, valid trades should not all receive equal weight.
-
-Add a portfolio layer later:
-
-```text
-src/engine/trader/portfolio/
-    allocation.py
-    exposure.py
-    constraints.py
-```
-
-This layer should answer:
-
-```text
-How much capital should this pair receive?
-Are we overexposed to one asset?
-Are we overexposed to one cluster?
-Are we accidentally taking the same beta trade many times?
-Should recent pair failures reduce size?
-```
-
-Possible rules:
-
-```text
-max exposure per asset
-max exposure per cluster
-max correlated exposure
-capital allocation by pair quality
-drawdown-adjusted sizing
-volatility-targeted sizing
-cooldown-based sizing reduction
-```
-
----
-
-# 12. Regime Filters
-
-Add simple deterministic regime filters before adding more strategies.
-
-Possible regimes:
-
-```text
-BTC volatility regime
-market-wide correlation regime
-liquidity stress regime
-funding stress regime
-dispersion regime
-trend regime
-```
-
-Example actions:
-
-```text
-high volatility → reduce new entries
-correlations collapsing → force earlier cluster refresh
-funding stress → penalize toxic carry trades
-liquidity stress → block or reduce size
-```
-
-These filters should not be black boxes. They should produce explicit reasons.
-
----
-
-# 13. Spread Modeling Improvements
-
-Future research should improve how spreads are modeled.
-
-Possible upgrades:
-
-```text
-rolling hedge ratio
-OLS hedge ratio
-Kalman filter hedge ratio
-volatility-adjusted hedge ratio
-robust z-score
-pair-specific entry thresholds
-pair-specific exit thresholds
-half-life-aware max holding period
-```
-
-Avoid assuming every pair should use the same parameters.
-
-Long-term goal:
-
-```text
-Pair A:
-    entry z = 1.8
-    exit z = 0.3
-    max hold = 24h
-
-Pair B:
-    entry z = 2.4
-    exit z = 0.7
-    max hold = 72h
-```
-
----
-
-# 14. Clustering Improvements
-
-Louvain is acceptable, but Leiden is likely a better modern default for graph community detection.
-
-However, the bigger research question is not only:
-
-```text
-Louvain vs Leiden
-```
-
-It is:
-
-```text
-What graph are we building?
-What relationship metric defines an edge?
-How stable are the clusters?
-Do clusters produce tradable pairs?
-```
-
-Test clustering methods by trading usefulness:
-
-```text
-cluster stability
-candidate pair quality
-cointegration pass rate
-spread half-life
-liquidity
-pair survival
-shadow PnL after friction
-```
-
-Candidate algorithms:
-
-```text
-Leiden
-Louvain
-hierarchical clustering
-spectral clustering
-HDBSCAN
-```
-
-Given the system is based mostly on 4h candles and periodic rebalancing, speed is not the main constraint. Prioritize cluster quality and stability.
-
----
-
-# 15. Research Surface Document
-
-Create:
-
-```text
-docs/RESEARCH_SURFACE.md
-```
-
-For each research assumption, document:
-
-```text
-Assumption:
-Current value:
-Why I chose it:
-How to test it:
-Failure mode:
-Production confidence:
-```
-
-Examples:
-
-```text
-Assumption:
-Use 4h candles for relationship modeling.
-
-Current value:
-4h OHLCV.
-
-Why:
-Less noise than 1m and compatible with slower pair rebalancing.
-
-How to test:
-Compare pair survival and shadow PnL across 1h, 4h, and 1d.
-
-Failure mode:
-Relationships adapt too slowly during regime changes.
-
-Production confidence:
-Medium.
-```
-
-Research points to document:
-
-```text
-asset relationship metric
-graph construction
-clustering algorithm
-rebalance frequency
-pair validity decay
-spread model
-entry thresholds
-exit thresholds
-liquidity thresholds
-funding thresholds
-capital allocation
-execution assumptions
-```
-
----
-
-# 16. Documentation Needed
-
-Add or improve the following docs:
-
-```text
-docs/SYSTEM_MAP.md
-docs/DECISION_LIFECYCLE.md
-docs/RESEARCH_SURFACE.md
-docs/PRODUCTION_READINESS.md
-docs/FEATURE_INVENTORY.md
-```
-
-## `SYSTEM_MAP.md`
-
-Should answer:
-
-```text
-What exists?
-Why does it exist?
-How does data flow through the system?
-What modules own which responsibilities?
-```
-
-## `DECISION_LIFECYCLE.md`
-
-Should describe one full signal lifecycle:
-
-```text
-1. Market data fetched.
-2. Pair validity checked.
-3. Signal generated.
-4. Current state loaded.
-5. Risk policy loaded.
-6. Pre-trade gates evaluated.
-7. Entry blocked or allowed.
-8. State transition planned.
-9. Orders simulated/submitted.
-10. Operator event emitted.
-11. Position monitored.
-12. Exit signal occurs.
-13. Position closed.
-14. PnL/reporting recorded.
-```
-
-## `FEATURE_INVENTORY.md`
-
-Table:
-
-```text
-Feature
-Status
-Main files
-Tests
-Risk level
-Keep / Refactor / Delete
-```
-
-## `PRODUCTION_READINESS.md`
-
-Checklist before real capital:
-
-```text
-full test suite passes
-dry/live observer stable
-shadow ledger profitable after pessimistic friction
-funding accounted for
-kill-switch tested
-fresh-start tested
-corrupted-state behavior tested
-exchange-down behavior tested
-order-size precision tested
-state replay possible
-operator actions logged
-secrets/config validated
-paper execution stable
-tiny-capital phase plan defined
-```
-
----
-
-# 17. Simulator
-
-The simulator is a major project and should be treated separately.
-
-When built, it should include:
-
-```text
-fees
-slippage
-funding
-latency
-partial fills
-failed orders
-maker/taker assumptions
-order TTL
-spread movement during execution
-pessimistic high/low execution masking
-blackout/restart recovery
-```
-
-Suggested package:
-
-```text
-src/engine/trader/simulator/
-    models.py
-    fills.py
-    fees.py
-    funding.py
-    slippage.py
-    replay.py
-    engine.py
-```
-
-The simulator should reuse core strategy and risk logic where possible.
-
-Avoid duplicating the trading rules in a second implementation.
-
----
-
-# 18. Suggested Implementation Order
-
-## Phase 1 — Consolidation
-
-```text
-1. Freeze major new features briefly.
-2. Add SYSTEM_MAP.md.
-3. Add DECISION_LIFECYCLE.md.
-4. Add RESEARCH_SURFACE.md.
-5. Add FEATURE_INVENTORY.md.
-```
-
-## Phase 2 — Transition Refactor
-
-```text
-1. Create runtime/transition/.
-2. Add TransitionPlan models.
-3. Extract planner logic from signal_transition.py.
-4. Extract notification rendering.
-5. Keep executor side-effecting.
-6. Add tests around planner behavior.
-```
-
-## Phase 3 — Pair System Cleanup
-
-```text
-1. Create/clean pairs/ package.
-2. Consolidate clustering, validation, queue, and rebalance logic.
-3. Add pair lifecycle states.
-4. Add basic pair health scoring.
-```
-
-## Phase 4 — Funding Visibility
-
-```text
-1. Fetch current funding.
-2. Store/report funding snapshots.
-3. Add funding diagnostics.
-4. Add funding freshness checks.
-```
-
-## Phase 5 — Shadow Ledger
-
-```text
-1. Record synthetic entries/exits during dry/live observer runs.
-2. Estimate fees/slippage/funding.
-3. Track naive, realistic, and pessimistic shadow PnL.
-```
-
-## Phase 6 — Pair Quality Scoring
-
-```text
-1. Add pair quality score.
-2. Rank queue candidates by quality.
-3. Penalize unstable, illiquid, toxic-funding, high-churn pairs.
-```
-
-## Phase 7 — Portfolio Layer
-
-```text
-1. Add per-asset exposure controls.
-2. Add per-cluster exposure controls.
-3. Add quality-based sizing.
-4. Add cooldown-aware sizing.
-```
-
-## Phase 8 — Simulator
-
-```text
-1. Build pessimistic simulator.
-2. Reuse strategy/risk logic.
-3. Model execution friction.
-4. Compare simulator vs shadow ledger.
-```
-
-## Phase 9 — Paper Execution
-
-```text
-1. Add paper execution adapter.
-2. Track order lifecycle.
-3. Validate reconciliation.
-4. Compare intended vs simulated fills.
-```
-
-## Phase 10 — Tiny Live Capital
-
-Only after:
-
-```text
-shadow PnL survives pessimistic friction
-funding is included
-state is replayable
-kill-switch works
-paper execution is stable
-operator visibility is solid
-```
-
----
-
-# 19. What Not To Do
-
-Do not rewrite the project from scratch.
-
-Do not refactor the entire tree at once.
-
-Do not add ML just because the system feels too deterministic.
-
-Do not add new strategies before the current pair system is more robust.
-
-Do not hide new logic inside generic utility files.
-
-Do not let Telegram/operator code become the control-plane core.
-
-Do not let simulator logic duplicate production strategy logic.
-
----
-
-# 20. Final Guiding Principle
-
-The project should evolve from:
-
-```text
-find pairs and trade signals
-```
-
-into:
-
-```text
-discover, score, monitor, allocate, simulate, execute, degrade, retire, and learn from pairs
-```
-
-The project is salvageable and already has a strong foundation. The next major step is not a rewrite. It is an architecture consolidation pass that makes future work easier and safer.
+| Etapa                      | Objetivo                         | Métodos                              |
+| -------------------------- | -------------------------------- | ------------------------------------ |
+| 1. Estimar relación        | Encontrar β                      | OLS, FM-OLS, DOLS, M-Estimators, WLS |
+| 2. Testear estacionariedad | Ver si el spread es estacionario | ADF, Phillips-Perron, KPSS           |
+| 3. Construir señal         | Medir desvío del equilibrio      | Z-Score, Bollinger, OU Process       |
+| 4. Ajustar riesgo          | Adaptar umbrales y sizing        | GARCH, EWMA, Vol Forecast            |
+
+| Categoría       | Método             | Qué hace                            | Mi opinión            |
+| --------------- | ------------------ | ----------------------------------- | --------------------- |
+| Regresión       | OLS                | Estima β clásico                    | Bueno para empezar    |
+| Regresión       | FM-OLS             | Corrige sesgos de cointegración     | Muy bueno             |
+| Regresión       | DOLS               | Añade términos dinámicos            | Muy bueno             |
+| Regresión       | M-Estimators       | Robusto a outliers                  | Ideal para cripto     |
+| Regresión       | WLS                | Pondera observaciones               | Útil en algunos casos |
+| Estacionariedad | ADF(0)             | Sin rezagos                         | Rápido pero frágil    |
+| Estacionariedad | ADF(1)             | 1 lag                               | Muy razonable         |
+| Estacionariedad | ADF(2)             | 2 lags                              | Muy razonable         |
+| Estacionariedad | ADF(3)             | 3 lags                              | Muy razonable         |
+| Estacionariedad | ADF AutoLag        | Elige lag automáticamente (AIC/BIC) | Lo más común          |
+| Estacionariedad | Phillips-Perron    | Similar a ADF pero más robusto      | Excelente complemento |
+| Estacionariedad | KPSS               | Hipótesis inversa                   | Excelente complemento |
+| Señal           | Z-Score            | Distancia al equilibrio             | Estándar              |
+| Señal           | Bollinger          | Versión visual del Z-score          | Similar               |
+| Señal           | Ornstein-Uhlenbeck | Modela reversión a la media         | Muy interesante       |
+| Riesgo          | GARCH              | Volatilidad dinámica                | Muy útil              |
+| Riesgo          | EWMA               | Volatilidad exponencial             | Más simple            |
+
+
+
+Sí, se entiende. Y ahora lo bajaste mucho mejor.
+
+Vamos lento. Tu historia es esta:
+
+Día 0
+
+voy a Bybit
+-> obtengo muchas cryptos
+-> aplico filtros de universe
+-> sobreviven N símbolos
+-> descargo OHLCV solo para esos símbolos
+-> corro discovery / cointegration / stress
+-> termino con candidatos o pares promovidos
+Perfecto.
+
+Día 1 y Día 2
+
+el bot opera con lo que ya decidió
+-> aparecen señales
+-> abre/cierra posiciones según runtime/risk
+Hasta ahí, no necesitás recalcular todo el universo todo el tiempo.
+
+Día 3
+
+Acá aparece la pregunta importante:
+
+¿el universo que descubrí hace 72h sigue siendo válido?
+¿los pares siguen cointegrados?
+¿la liquidez sigue parecida?
+¿los símbolos siguen pasando filtros?
+¿hay nuevas cryptos mejores?
+Y tu respuesta es correcta: probablemente haya que volver a correr el ciclo.
+
+Pero el nombre preciso no sería solo data_lifecycle.
+
+Yo lo separaría así:
+
+Research refresh cycle
+  usa:
+    universe selection
+    data lifecycle
+    pair discovery
+    stress filter
+    artifact promotion
+El data_lifecycle es una pieza dentro de ese ciclo.
+
+La idea óptima que decís es esta:
+
+cuando recalculo, no bajo todo desde cero
+Sino:
+
+1. vuelvo a pedir el universo actual a Bybit
+2. aplico filtros
+3. comparo símbolos nuevos vs símbolos que ya tengo localmente
+
+si el símbolo ya existe:
+    refresco solo la cola faltante
+
+si el símbolo es nuevo:
+    hago backfill completo para la ventana necesaria
+
+si el símbolo ya no sirve:
+    lo marco como no requerido
+    eventualmente borro su data vieja
+
+después:
+    corro discovery/cointegration/stress con la data actualizada
+Esa es la idea correcta.
+
+La cosa clave: hay cuatro relojes distintos. No conviene mezclarlos.
+
+1. refresh cadence
+   cada cuánto corro el ciclo
+   ejemplo: cada 12h, cada 3 días
+
+2. research lookback
+   cuánta historia necesito para calcular cointegration/filtros
+   ejemplo: últimos 3 días, 30 días, 90 días
+
+3. freshness
+   cuánto atraso tolero en la data local
+   ejemplo: no más de 5 velas de 1m
+
+4. retention
+   cuánto guardo en disco antes de podar/borrar
+   ejemplo: conservar 5 días de OHLCV
+Tu retention no debería significar “cada cuánto recalculo”. Debería significar:
+
+cuánto historial local conservo
+El “cada cuánto recalculo” debería vivir en otra policy, algo tipo:
+
+research_lifecycle:
+  refresh_cadence:
+    timeframe: "1d"
+    periods: 3
+O:
+
+research_lifecycle:
+  refresh_cadence:
+    timeframe: "12h"
+    periods: 1
+Mientras que data_lifecycle diría:
+
+data_lifecycle:
+  retention:
+    window:
+      timeframe: "1d"
+      periods: 5
+Eso significa: “aunque el ciclo corra cada 12h o cada 3 días, yo guardo como máximo 5 días de datos crudos”.
+
+Entonces la película completa sería:
+
+Día 0:
+  universe selection
+  backfill nuevos símbolos
+  research
+  promoted pairs
+
+Día 1:
+  runtime usa promoted pairs
+  refresh reciente si hace falta para señales
+
+Día 2:
+  runtime sigue
+
+Día 3:
+  research lifecycle dice: toca recalcular
+  universe selection vuelve a correr
+  data lifecycle arma plan:
+    reutilizar símbolos existentes
+    refrescar colas
+    backfill símbolos nuevos
+    marcar símbolos sobrantes
+    podar data vieja
+  research vuelve a correr
+  se genera nuevo candidate/promoted artifact
+La frase más importante sería:
+
+Data lifecycle no decide qué tradear.
+Data lifecycle decide cómo mantener eficiente la data que research/universe necesita.
+Quien decide “qué símbolos necesito ahora” es universe.
+
+Quien decide “qué bajo, qué refresco, qué podo, qué borro” es data_lifecycle.
+
+Quien decide “qué pares son tradeables” es research / pair discovery / stress.
+
+Entonces sí: tu idea viene por el lado correcto. Pero el módulo grande debería llamarse más como research lifecycle o universe refresh cycle. data_lifecycle es el ayudante que hace eficiente la descarga y almacenamiento.

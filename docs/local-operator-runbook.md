@@ -1,57 +1,129 @@
-# Local Operator Runbook
+# Local State-Only Operator Runbook
 
-This runbook is for local development drills only. Keep
-`configs/exchange/venues/dev.yml` on `credential_tier: "readonly"` and
-`configs/pipelines/dev.yml` on `order_execution.mode: "state_only"` unless you
-are deliberately changing a tested execution mode.
+**Scope:** bounded local drills with an existing valid promoted artifact and
+market data.
 
-Do not use this runbook as real-capital production approval. The production
-readiness gate in `docs/engineering-rules.md` still applies.
+**Last command/schema review:** 2026-07-17.
 
-## 0. Fresh-Start Rule
-
-If `data/` has been deleted, treat the next run as a cold local rebuild. Do not
-resume assumptions from an old handoff, old database, or old promoted artifact.
-The supported rebuild order is:
+This runbook does not certify a cold start, paper trading, demo/testnet, live
+execution, or real-capital readiness. Keep:
 
 ```text
-research
--> promote candidate artifact
--> refresh promoted-pair market data
--> generate report
--> bounded state-only execution
--> verify local state
+configs/exchange/venues/dev.yml      credential_tier: readonly
+configs/pipelines/dev.yml            order_execution.mode: state_only
 ```
 
-Do not create files in `data/` by hand except for archiving/restoring known local
-operator artifacts. Let the CLI flows recreate the runtime database, parquet
-store, promoted artifact, and reports.
+`state_only` evaluates signals and mutates local SQLite state. It does not
+simulate fills, fees, funding, slippage, rejections, partial orders, or exchange
+recovery. Its PnL is theoretical.
 
-## 1. Confirm The Local Observer Is Not Running
+## Current Cold-Start Status
 
-Check launchd:
+A rebuild from an empty `data/` directory is **not yet a supported operator
+procedure**. The intended flow is:
+
+```text
+readonly market data
+-> universe manifest
+-> research and stress evaluation
+-> manual promotion
+-> readonly refresh and report
+-> bounded state_only execution
+-> restart verification
+```
+
+Symbol round-trip, universe handoff, artifact provenance, restart ownership, and
+natural exit still have open work in `docs/current-roadmap.md`. Until its
+Milestone 1 definition of done passes, do not use one successful manual research
+run as evidence that the cold-start contract works.
+
+The supported drill below starts only when the promoted artifact already exists
+and its data provenance is understood.
+
+## 1. Preflight
+
+Run from the repository root with the project virtual environment available.
+
+Confirm the required versioned inputs and current runtime artifact exist:
 
 ```bash
-launchctl print gui/$(id -u)/com.quant.dev-state-only-observer
+test -f configs/pipelines/dev.yml
+test -f configs/exchange/venues/dev.yml
+test -f configs/exchange/market_profiles/linear_usdt_swap.yml
+test -f configs/strategy/dev.yml
+test -f configs/risk/alpha_v1.yml
+test -s data/universes/1m/surviving_pairs.json
 ```
 
-If the service is not loaded, launchd prints an error. That is fine for a clean
-local start.
+Any failure is a stop condition. In particular, do not invent or hand-edit a
+promoted artifact to get past boot validation.
 
-Check for matching processes:
+Confirm config safety:
 
 ```bash
-ps aux | rg -i 'quant|dev-state-only|run_dev_state|main.py|execute|executor|caffeinate'
+rg -n 'credential_tier|order_execution|mode:' \
+  configs/exchange/venues/dev.yml \
+  configs/pipelines/dev.yml
 ```
 
-Stop before continuing if an unexpected trader, observer, or `caffeinate`
-process is active.
+Stop if the effective values are not `readonly` and `state_only`.
 
-## 2. Start A Bounded Dev State-Only Observer
+Check for an existing process:
 
-Use the execution entrypoint with CLI-only bounds. Keep the dev pipeline on
-read-only credentials, state-only execution, and queue-driven future-entry
-selection:
+```bash
+ps aux | rg -i 'main.py execute|src.interfaces.telegram.daemon|caffeinate'
+```
+
+An unexpected trader or Telegram daemon is a stop-and-investigate event. This
+repository does not version a `launchd` plist, so no background service is
+assumed or supported by this runbook.
+
+## 2. Optional Readonly Refresh And Report
+
+Refresh local OHLCV for the symbols in the promoted artifact:
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
+  --pipeline configs/pipelines/dev.yml \
+  --venue configs/exchange/venues/dev.yml \
+  --market-profile configs/exchange/market_profiles/linear_usdt_swap.yml \
+  --overlap-bars 5 \
+  --missing-lookback-bars 1500 \
+  --fetch-limit 1000
+```
+
+This command is readonly with respect to the exchange. It writes local Parquet,
+but does not promote artifacts, hot-reload execution, submit orders, or close
+positions. Treat `INCOMPLETE`, stale data, symbol mismatch, or fetch exhaustion
+as a stop condition.
+
+Generate a human-readable report:
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.report_generator \
+  --pipeline configs/pipelines/dev.yml \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --max-latest-data-age-bars 5 \
+  --open-position-review-half-life-multiple 3
+```
+
+Generate automation-safe JSON when needed:
+
+```bash
+.venv/bin/python -m src.engine.trader.cli.report_generator \
+  --pipeline configs/pipelines/dev.yml \
+  --pair-validity-window-bars 240 \
+  --pair-validity-min-bars 60 \
+  --max-latest-data-age-bars 5 \
+  --open-position-review-half-life-multiple 3 \
+  --json
+```
+
+Pair validity and queue decisions are evidence for future entries. They do not
+authorize promotion, rebalancing, or forced closes.
+
+## 3. Start A Bounded Foreground Drill
 
 ```bash
 .venv/bin/python main.py execute \
@@ -64,103 +136,91 @@ selection:
   --heartbeat-seconds 60
 ```
 
-`--max-ticks` and `--heartbeat-seconds` override only the in-memory runtime
-config for this process. They do not modify YAML. Use larger values for longer
-manual lifecycle drills.
+The two bounds override only the in-memory config for this process. They do not
+edit YAML. Keep the process in the foreground so lifecycle and failures remain
+visible.
 
-With `execution.pair_queue.mode: future_entries`, execution builds dynamic queue
-decisions before each tick transition. Queue decisions may block new entries,
-but they must not force-close, rebalance, promote artifacts, hot-reload
-execution, or bypass natural-exit evaluation for existing positions.
+Boot may still stop because the promoted artifact is absent, stale, invalid, for
+the wrong exchange/timeframe, or contains no Tier 1 pairs. Do not weaken the
+validator to continue a drill.
 
-Runtime OHLCV reads use the typed `execution.market_data_fetch` policy from the
-pipeline config. The policy applies a per-request timeout and bounded retry
-backoff, and tick execution reuses shared-symbol candles within one tick when
-the cached request window is sufficient. Exhausted reads remain read-only and
-are logged as explicit pair fetch failures.
+To stop a foreground run, interrupt the terminal process. A bounded run should
+also stop after `--max-ticks` and record its run status.
 
-If this is a cold local rebuild, do not start the observer before running the
-research, promotion, refresh, and report steps below. Execution needs a promoted
-artifact to load on boot.
+## 4. Inspect Local Runtime State
 
-## 3. Stop The Observer
+The configured dev database is `data/dev/trades_1m.db`. Check it exists before
+using the following queries:
 
-For foreground runs, interrupt the terminal process and then repeat the process
-check in section 1. A run with `--max-ticks` should auto-stop cleanly after the
-configured number of ticks.
+```bash
+test -s data/dev/trades_1m.db
+```
 
-## 4. Inspect SQLite Runtime State
-
-Open positions:
+Positions:
 
 ```bash
 sqlite3 data/dev/trades_1m.db \
   'select id, pair_label, side, status, opened_at, closed_at from spread_positions order by id;'
 ```
 
-Leg lifecycle status:
+Leg lifecycle:
 
 ```bash
 sqlite3 data/dev/trades_1m.db \
   'select leg_role, status, count(*) from leg_fills group by leg_role, status order by leg_role, status;'
 ```
 
-Operator commands:
+Commands:
 
 ```bash
 sqlite3 data/dev/trades_1m.db \
   'select id, command, target_pair, status, timestamp, claimed_at, completed_at, error from user_commands order by id;'
 ```
 
-Reconciliation runs:
+Reconciliation runs and deltas:
 
 ```bash
 sqlite3 data/dev/trades_1m.db \
   'select id, status, started_at, finished_at from reconciliation_runs order by id;'
-```
 
-Reconciliation deltas:
-
-```bash
 sqlite3 data/dev/trades_1m.db \
   'select run_id, delta_type, symbol, spread_id, action_taken from reconciliation_deltas order by id;'
 ```
 
-Boot reconciliation is read-only. The typed pipeline
-`execution.reconciliation` policy selects the snapshot provider, bounds
-snapshot reads, and declares when an in-flight local order is stale.
-`snapshot_provider: "ccxt_readonly"` reads account positions through CCXT and
-closes the client after the snapshot. `snapshot_provider: "none"` preserves an
-explicit `SKIPPED_NO_SNAPSHOT_PROVIDER` warning. Deltas such as
-`LOCAL_PARTIAL_FILL`, `STALE_LOCAL_ORDER`, and `SNAPSHOT_PROVIDER_FAILURE` are
-diagnostics with `NO_ACTION`; they do not repair or mutate exchange state.
+Boot reconciliation is diagnostic and readonly. Its current `NO_ACTION` results
+do not repair state or block execution.
 
-## 5. Control The Runtime Risk Kill Switch
+## 5. Verify State-Only Evidence
 
-Use the durable risk kill switch when the operator wants to block future
-entries while preserving normal natural-exit handling for existing positions.
-This is a local SQLite runtime-state control. It does not submit, cancel,
-modify, rebalance, force-close, hot-reload, promote artifacts, or mutate
-exchange state.
-
-Inspect current state:
+This query should return zero:
 
 ```bash
-.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
+sqlite3 data/dev/trades_1m.db \
+  'select count(*) from leg_fills where exchange_order_id is not null or client_order_id is not null;'
+```
+
+A non-zero value is a stop-and-investigate event. A zero proves only that the
+local rows have no recorded exchange/client order IDs; it is not a universal
+proof that no external mutation happened outside this process.
+
+Also review the logs for unexpected credential tier, execution mode, fetch
+failure, reconciliation delta, or validation warning.
+
+## 6. Risk Kill Switch
+
+The durable kill switch blocks future entries and flip replacement entries in
+the selected SQLite database. It does not pause the process, cancel orders,
+flatten positions, repair state, or mutate the exchange.
+
+Inspect:
+
+```bash
+.venv/bin/python main.py risk-kill-switch \
   --pipeline configs/pipelines/dev.yml \
   inspect
 ```
 
-Automation-safe JSON inspect:
-
-```bash
-.venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
-  --pipeline configs/pipelines/dev.yml \
-  --json \
-  inspect
-```
-
-Activate the switch with an operator-visible reason:
+Activate with a visible reason:
 
 ```bash
 .venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
@@ -169,7 +229,7 @@ Activate the switch with an operator-visible reason:
   --reason "operator review"
 ```
 
-Clear the switch:
+Clear:
 
 ```bash
 .venv/bin/python -m src.engine.trader.cli.risk_kill_switch \
@@ -177,126 +237,23 @@ Clear the switch:
   clear
 ```
 
-The same control is available through the top-level CLI:
+Known limitations: a malformed persisted payload is not yet guaranteed to fail
+closed, and a mistyped DB target can create or inspect the wrong database. Check
+the pipeline path and inspect the resulting state after every change.
 
-```bash
-.venv/bin/python main.py risk-kill-switch \
-  --pipeline configs/pipelines/dev.yml \
-  inspect
-```
+Do not claim that activating the switch guarantees natural exits. Pause,
+missing data, and artifact/restart gaps can still prevent exit evaluation.
 
-When active, new entries and flip replacement entries are blocked with
-`risk_kill_switch_active`. Existing open state-only positions should continue
-under natural exit unless a separate explicit operator command is issued.
+## 7. Telegram Foreground Drill
 
-## 6. Refresh Pair Data And Generate Validity Reports
-
-Refresh local parquet data for symbols in the promoted pair artifact before
-using pair-validity diagnostics. This is a readonly market-data operation and
-does not promote artifacts, hot-reload execution, submit orders, or close
-positions. Treat any `INCOMPLETE` refresh result as a stop-and-investigate
-event before starting an observer.
-
-```bash
-.venv/bin/python -m src.engine.trader.cli.refresh_pair_data \
-  --pipeline configs/pipelines/dev.yml \
-  --venue configs/exchange/venues/dev.yml \
-  --market-profile configs/exchange/market_profiles/linear_usdt_swap.yml \
-  --overlap-bars 5 \
-  --missing-lookback-bars 1500 \
-  --fetch-limit 1000
-```
-
-Human-readable report:
-
-```bash
-.venv/bin/python -m src.engine.trader.cli.report_generator \
-  --pipeline configs/pipelines/dev.yml \
-  --pair-validity-window-bars 240 \
-  --pair-validity-min-bars 60 \
-  --max-latest-data-age-bars 5 \
-  --open-position-review-half-life-multiple 3
-```
-
-When `--pipeline` is supplied, pair-validity settings default to the typed
-`execution.pair_validity` policy. The flags above are explicit operator
-overrides for review or calibration.
-
-When pair-validity diagnostics are enabled, the report also includes the dynamic
-pair queue. This queue ranks promoted pairs for future entries using the
-promoted artifact, validity diagnostics, latest persisted tick signals, and
-current open-position exposure. Report generation is read-only. In execution,
-the same configured queue policy may block new entries only; it must not place
-orders by itself, hot-reload execution, promote artifacts, force-close, or
-rebalance positions.
-
-The JSON queue decisions include structured `validity_threshold_evidence` for
-each optional threshold. Use it during calibration to inspect the measurement,
-configured threshold, comparison operator, and whether the threshold is enabled
-or triggered. A `null` configured threshold is intentional and remains disabled.
-
-Automation-safe JSON report:
-
-```bash
-.venv/bin/python -m src.engine.trader.cli.report_generator \
-  --pipeline configs/pipelines/dev.yml \
-  --pair-validity-window-bars 240 \
-  --pair-validity-min-bars 60 \
-  --max-latest-data-age-bars 5 \
-  --open-position-review-half-life-multiple 3 \
-  --json
-```
-
-For a cold local rebuild, run research and promotion before this section:
-
-```bash
-.venv/bin/python main.py run \
-  --config configs/runs/dev_1m_research.yml
-
-.venv/bin/python main.py promote-pairs \
-  --pipeline configs/pipelines/dev.yml \
-  --venue configs/exchange/venues/dev.yml \
-  --operator local-fresh-start
-```
-
-After promotion, run the refresh and report commands above before starting a
-bounded execution observer.
-
-## 7. Confirm No Exchange Mutation Happened
-
-Any non-zero result here is a stop-and-investigate event:
-
-```bash
-sqlite3 data/dev/trades_1m.db \
-  'select count(*) from leg_fills where exchange_order_id is not null or client_order_id is not null;'
-```
-
-State-only runs should record local leg targets without exchange or client order
-ids.
-
-## 8. Telegram Command Drill
-
-Use the dev Telegram config:
+Run the daemon in a visible terminal:
 
 ```bash
 .venv/bin/python -m src.interfaces.telegram.daemon \
   --config configs/telegram/dev.yml
 ```
 
-To leave the local daemon running under launchd:
-
-```bash
-launchctl bootstrap gui/$(id -u) logs/com.quant.dev-telegram-daemon.plist
-launchctl print gui/$(id -u)/com.quant.dev-telegram-daemon
-```
-
-Stop it with:
-
-```bash
-launchctl bootout gui/$(id -u)/com.quant.dev-telegram-daemon
-```
-
-Send commands from the configured dev chat:
+Available commands include:
 
 ```text
 /status
@@ -308,18 +265,38 @@ Send commands from the configured dev chat:
 /stop_all
 ```
 
-Then inspect `user_commands` in SQLite. In state-only mode these commands mutate
-local runtime state only; they must not submit, cancel, or close exchange orders.
+Inspect `user_commands` afterward. In the current `state_only` flow, stop
+commands mutate local state only. They do not cancel or flatten exchange
+positions. Pause currently skips the entire tick, including mark-to-market and
+exit evaluation.
 
-## 9. Archive Local Data Before Clearing
+No background daemon installation is documented until its lifecycle and plist
+are versioned and tested.
 
-Archive the current dev database and promoted artifact before a fresh drill:
+## 8. Archive Before Replacing Local State
+
+First stop the observer and confirm no matching process remains. Then archive
+only files that actually exist:
 
 ```bash
 mkdir -p data/dev/archive
-cp data/dev/trades_1m.db data/dev/archive/trades_1m.$(date +%Y%m%d_%H%M%S).db
-cp data/universes/1m/surviving_pairs.json data/dev/archive/surviving_pairs.$(date +%Y%m%d_%H%M%S).json
+test -f data/dev/trades_1m.db && \
+  cp data/dev/trades_1m.db data/dev/archive/trades_1m.$(date +%Y%m%d_%H%M%S).db
+test -f data/universes/1m/surviving_pairs.json && \
+  cp data/universes/1m/surviving_pairs.json \
+  data/dev/archive/surviving_pairs.$(date +%Y%m%d_%H%M%S).json
 ```
 
-Only clear or replace local files after archiving and after confirming no
-observer process is running.
+This runbook does not authorize deleting or manually rewriting runtime data.
+
+## Stop Conditions
+
+Stop the drill and investigate when any of these occur:
+
+- effective mode or credential tier differs from `state_only`/`readonly`;
+- promoted artifact is missing, stale, mismatched, or manually fabricated;
+- refresh is incomplete or candles are stale/discontinuous;
+- an unexpected trader/daemon already owns the local state;
+- reconciliation reports a delta or snapshot failure;
+- exchange/client order IDs appear in a state-only drill;
+- the process requires weakening validation to continue.
