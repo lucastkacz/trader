@@ -36,7 +36,6 @@ typed, auditable candidate pair-set artifact.
 | `docs/INTERFACES_MIGRATION.md` | Frozen CLI/Telegram inventory, security corrections, and delivery-adapter sequence | Temporary; delete when Interfaces migration completes |
 | `docs/CORE.md` | Minimal clock, settings, errors, correlation, logging, and foundational rules | Canonical module documentation |
 | `docs/CORE_MIGRATION.md` | Frozen core/utils inventory, ownership corrections, and foundational migration sequence | Temporary; delete when Core migration completes |
-| `ARCHITECTURE_REFACTOR.md` | Rebuild decision, package ownership, and dependency direction | Architecture decision |
 
 ## Read By Task
 
@@ -49,7 +48,6 @@ Before any V2 implementation work:
 
 Before implementing Research V2:
 
-- `ARCHITECTURE_REFACTOR.md`
 - `docs/RESEARCH.md`
 - `docs/RESEARCH_MIGRATION.md`
 - `.agents/AGENTS.md`
@@ -104,7 +102,6 @@ For clocks, settings, errors, logging, or foundational primitives:
 For package ownership or structural changes:
 
 - `.agents/AGENTS.md`
-- `ARCHITECTURE_REFACTOR.md`
 - the canonical module document and temporary migration guide for the affected
   owner
 

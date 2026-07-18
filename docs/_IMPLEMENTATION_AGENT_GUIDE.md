@@ -30,8 +30,8 @@ Use this order when sources disagree:
 1. Lucas's explicit instruction for the current task.
 2. Durable implementation and safety rules in `.agents/AGENTS.md`.
 3. The ordering and completion state in this guide.
-4. Canonical behavior in `ARCHITECTURE_REFACTOR.md` and the relevant module
-   documents.
+4. Canonical behavior, ownership, and dependency direction in the relevant
+   module documents.
 5. `docs/current-roadmap.md` for current status and near-term scope.
 6. The relevant temporary `*_MIGRATION.md` guide for source inventory, open
    decisions, detailed slices, and completion gates.

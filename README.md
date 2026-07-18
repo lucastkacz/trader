@@ -14,7 +14,6 @@ typed and auditable candidate pair-set artifact. See:
 
 - [`.agents/AGENTS.md`](.agents/AGENTS.md)
 - [`docs/_IMPLEMENTATION_AGENT_GUIDE.md`](docs/_IMPLEMENTATION_AGENT_GUIDE.md)
-- [`ARCHITECTURE_REFACTOR.md`](ARCHITECTURE_REFACTOR.md)
 - [`docs/index.md`](docs/index.md)
 - [`docs/RESEARCH.md`](docs/RESEARCH.md)
 - [`docs/PAIRS.md`](docs/PAIRS.md)

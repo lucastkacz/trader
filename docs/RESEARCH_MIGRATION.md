@@ -88,7 +88,7 @@ When sources disagree, use this order:
 1. Lucas's explicit instruction for the current task.
 2. `.agents/AGENTS.md` for durable implementation and safety rules.
 3. `docs/_IMPLEMENTATION_AGENT_GUIDE.md` for route order and completion state.
-4. `ARCHITECTURE_REFACTOR.md` and the relevant canonical module documents.
+4. The relevant canonical module documents for accepted behavior and ownership.
 5. `docs/current-roadmap.md` for current status and near-term scope.
 6. This guide for migration traceability, open decisions, slices, and gates.
 7. Frozen tests as clues about intended V1 behavior.

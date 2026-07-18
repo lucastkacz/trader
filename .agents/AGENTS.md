@@ -10,8 +10,8 @@ Use each document for one purpose:
 
 - `docs/_IMPLEMENTATION_AGENT_GUIDE.md` defines task order and completion state.
 - `docs/current-roadmap.md` describes what matters now and next.
-- `ARCHITECTURE_REFACTOR.md` defines package ownership and dependency direction.
-- Canonical module documents under `docs/` define accepted domain behavior.
+- Canonical module documents under `docs/` define accepted domain behavior,
+  package ownership, and dependency direction.
 - Temporary `*_MIGRATION.md` guides contain V1 inventories, open decisions, and
   slice-specific gates; delete each one when its migration completes.
 - Current code and behavior tests prove what is actually implemented.
