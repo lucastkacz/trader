@@ -158,6 +158,14 @@ cannot collide after persistence.
 Symbol mappings are explicit and reversible. Market Data never reconstructs a
 symbol from a sanitized path.
 
+Canonical identity separates economic attributes from a venue listing/native
+identity. This lets application configuration select Bybit, Binance, KuCoin, or
+another adapter without venue-specific branches in Market Data consumers while
+still preventing two economically or operationally distinct listings from
+colliding. A configured market profile may describe linear USDT perpetuals
+(`swap` in some provider vocabularies); neither that quote asset nor provider
+term is hard-coded into canonical logic.
+
 ## 6. Timeframe and Availability Semantics
 
 A timeframe represents an exact duration or a separately modeled calendar
@@ -208,6 +216,11 @@ unit conversion, column mapping, stable sorting, and deterministic duplicate
 resolution when the source policy explicitly permits it. Invalid rows are not
 silently dropped. Every discarded or replaced row is counted and explained.
 
+By default, an invalid row rejects the affected dataset with exact row evidence;
+availability is not recovered by silently deleting observations. Exact
+semantic duplicates may collapse only under an explicit, recorded duplicate
+policy.
+
 Duplicate resolution preserves the source ordering or revision rule used to
 choose the retained row. Conflicting duplicates without an authoritative rule
 invalidate the affected dataset.
@@ -226,6 +239,11 @@ Funding is stored as its own event series. It is not expanded into arbitrary
 candle rows or converted to an hourly rate without the actual settlement
 semantics. Missing historical funding remains missing evidence and is not
 silently replaced by zero.
+
+For a derivative candidate whose net result requires funding, missing funding
+makes that net evidence unavailable and prevents ordinary candidate acceptance.
+An explicitly declared conservative stress scenario may still be reported, but
+it is labeled as assumed rather than historical funding evidence.
 
 ## 9. Market Facts and Snapshots
 
@@ -289,6 +307,10 @@ Market Data does not interpolate missing OHLCV by default. Any synthetic
 observation requires an explicit transformation policy and remains visibly
 synthetic to consumers.
 
+Research declares the tolerated gap policy for its exact use case. The first
+offline acceptance fixture is gap-free; it does not establish a universal
+real-data tolerance.
+
 ## 12. Historical Synchronization
 
 ### 12.1 Backfill
@@ -330,6 +352,10 @@ contract failures are not retried as transient network failures.
 The storage contract is independent of Parquet, a relational database, object
 storage, or memory. A store preserves canonical identity, observations,
 metadata, and content hashes together.
+
+The in-memory adapter proves this contract first. Parquet is the intended first
+local persistent adapter after that contract is tested; neither backend enters
+the domain model.
 
 Writes validate before publication and become visible atomically. A failed write
 cannot leave a valid-looking partial dataset. Concurrent writers are rejected or

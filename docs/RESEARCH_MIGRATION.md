@@ -8,8 +8,8 @@
 > section 18 passes and all accepted decisions have been transferred to
 > `docs/RESEARCH.md`, delete this document.
 
-**Status:** planning complete enough to begin decision-driven implementation;
-no Research production code has been written.
+**Status:** M0 decisions and the offline acceptance story are frozen; no
+Research production code has been written. The next slice is M1.
 
 **Last reviewed:** 2026-07-18
 
@@ -208,7 +208,7 @@ Do not migrate test count. Migrate high-value invariants and failure examples.
 | `src/universe/clustering/graph_louvain.py` | Spearman graph and Louvain partition | `ADAPT` | Explicit seed, stable ordering, overlap and degeneracy evidence |
 | `src/universe/filters/data_quality.py` | Rejects low-coverage/invalid stored histories | `KEEP-CONCEPT` | Split canonical dataset validity (`market_data`) from Research eligibility thresholds |
 | `src/universe/filters/market_tickers.py` | Active/type/quote/volume ticker screen | `SPLIT` | Raw exchange normalization elsewhere; policy under Research universe |
-| `src/universe/filters/mega_caps.py` | Excludes top-N dominant instruments | `ADAPT` + `OPEN` | Configurable policy; confirm whether this remains desired |
+| `src/universe/filters/mega_caps.py` | Excludes top-N dominant instruments | `ADAPT` | Configurable policy, disabled unless an explicit strategy thesis enables it |
 | `src/universe/filters/ohlcv_liquidity.py` | Daily/intraday historical notional-liquidity checks | `ADAPT` | Retain robust liquidity evidence with clear units and coverage |
 
 ### Universe-test inventory
@@ -651,53 +651,58 @@ These exclusions keep the migration focused on one causal, reproducible
 Research flow. They can be revisited through the relevant module documentation
 after this migration is complete.
 
-## 17. Questions for Lucas
+## 17. Resolved M0 Decisions
 
-These questions are intentionally open. Recommended defaults are hypotheses for
-discussion, not authorization to implement them silently.
+These decisions were accepted on 2026-07-18 and are transferred to
+`RESEARCH.md`. Test-only fixture values are explicitly not product defaults.
 
-### Blocking before M1–M3
+| ID | Resolution |
+|---|---|
+| `RQ-001` | The first semantic profile is a configured linear USDT perpetual swap. Bybit is the initial intended venue, but venue choice remains in composition/config and quantitative code is exchange-agnostic. |
+| `RQ-002` | The acceptance fixture uses `1m` for speed. Real timeframe profiles are independent and define timeframe-aware calendar durations/minimum observations. |
+| `RQ-003` | Evaluate both orientations as separate hypotheses; retain both evidence sets; allow one per unordered pair. If both survive, rank by BH-adjusted p-value, ADF statistic, then canonical ordering. |
+| `RQ-004` | The canonical spread is always `log(X) - alpha - beta*log(Y)` for the fitted model; intercept is required and no deterministic time trend is used initially. |
+| `RQ-005` | First baseline: augmented Engle-Granger; OLS/intercept/no trend; residual ADF; Schwert max lag `floor(12*(n/100)^(1/4))`; AIC autolag; nominal 5%; record all lag/test/version evidence. |
+| `RQ-006` | BH-FDR at 5% over the whole-run family, including every tested pair, orientation, and estimator. |
+| `RQ-007` | Mega-cap exclusion remains configurable and is off unless an explicit strategy thesis enables it. |
+| `RQ-008` | Quote, settlement, contract type, and eligibility are explicit market-profile configuration, never code constants. |
+| `RQ-009` | Real window lengths have no defaults yet. The synthetic acceptance story alone uses 1,500 formation, 500 validation, and 500 final-OOS bars, with derived warm-up. |
+| `RQ-010` | Point-in-time membership is preferred; until available, a current-universe run must report its survivorship/listing-bias warning. |
+| `RQ-011` | Louvain remains a deterministic configurable search reducer with explicit seed/resolution, not evidence of cointegration. |
+| `RQ-012` | Decide after candle close and simulate the fill at next candle open with explicit slippage. |
+| `RQ-013` | Preserve raw holdings `(1, -beta)`, normalize gross notional, and volatility-scale the pair only. |
+| `RQ-014` | Use real historical funding settlement events. Missing funding is not zero; required net evidence becomes unavailable or an explicitly labeled conservative scenario. |
+| `RQ-015` | Gate structure is required, but real numeric thresholds have no defaults and are deferred to M7. Diagnostic runs cannot emit candidates; test configs may use artificial explicit gates. |
+| `RQ-016` | Candidate history is immutable per run and content-addressed, with an optional current-candidate pointer; typed models remain independent of JSON. |
+| `RQ-017` | Manual promotion is a separate later workflow. Research ends at immutable candidate evidence. |
 
-| ID | Question | Why it matters | Recommended starting answer |
-|---|---|---|---|
-| `RQ-001` | What exact first market are we researching: spot, linear USDT perpetuals, or something else? | Symbol identity, funding, eligibility, and holdings differ | One linear perpetual profile if funding data is available; otherwise spot for the first math fixture |
-| `RQ-002` | What first timeframe should the acceptance fixture and first real readonly run use? | Warm-up, half-life units, gaps, costs, and fills depend on it | Pick one existing well-understood timeframe; never infer units from row count |
-| `RQ-003` | Should both regression orientations be evaluated, and by what frozen rule is one selected? | Avoids combining the best p-value with unrelated coefficients | Evaluate both on formation and keep one complete model using a predeclared diagnostic ranking |
-| `RQ-004` | Confirm intercept-inclusive canonical spread? | Estimation, ADF, z-score, backtest, and trading must agree | Yes: `log(X) - alpha - beta*log(Y)` |
-| `RQ-005` | What Engle-Granger/ADF deterministic terms, autolag, maxlag, and nominal alpha should be fixed? | Library defaults are unstable and p=0.15 is permissive | Specify an ordinary baseline after examining sample/timeframe; use 5% as initial nominal level |
-| `RQ-006` | Is the BH-FDR family the whole run or each cluster? | Changes false-discovery control | Whole run is simpler and more conservative |
+### Frozen first acceptance story
 
-### Blocking before M4–M5
+The first vertical uses four synthetic canonical instruments, a gap-free closed
+`1m` dataset, exact manifest, frozen cutoff, 1,500/500/500 chronological bars,
+derived warm-up, seeded discovery, baseline OLS/ADF/FDR, both orientations,
+rolling-z-score/Bollinger-style historical decisions, causal next-open fills,
+synthetic funding settlements, and explicit artificial costs, stress scenarios,
+and gates. It must return one typed synthetic candidate with non-promotable test
+provenance and observable rejections without network, credentials, ambient
+files, existing artifacts, or exchange mutation. Repeated semantic inputs must
+have the same semantic output/hash.
 
-| ID | Question | Why it matters | Recommended starting answer |
-|---|---|---|---|
-| `RQ-007` | Do we still want to exclude the top-N mega-cap instruments? | It changes the hypothesis space and may discard useful hedges | Keep configurable but default off until justified by strategy thesis |
-| `RQ-008` | What quote/settlement assets and market eligibility rules are allowed? | Removes hard-coded USDC/USDT assumptions | One explicit market profile in config |
-| `RQ-009` | What formation/validation/final-OOS lengths should the first run use? | Without these, performance selection remains in-sample | Choose fixed chronological windows sized to timeframe and minimum observations |
-| `RQ-010` | Do we have point-in-time universe membership, or accept a survivorship warning initially? | Historical active-symbol selection biases results | Accept and report the warning for the first local milestone |
-| `RQ-011` | Should Louvain remain the first clustering algorithm? | It reduces search but introduces a seed/resolution policy | Yes as a deterministic search-space reducer, not evidence of cointegration |
-
-### Blocking before M6–M8
-
-| ID | Question | Why it matters | Recommended starting answer |
-|---|---|---|---|
-| `RQ-012` | What is the first simulated fill convention? | Defines whether returns are causal | Decide after candle close; fill next open with declared slippage |
-| `RQ-013` | Do holdings preserve `(1, -beta)` and normalize gross notional? | Keeps economic portfolio aligned with tested spread | Yes for baseline; volatility-scale the pair, not each leg independently |
-| `RQ-014` | Is historical funding available and trustworthy for the chosen market/timeframe? | A constant annual approximation can dominate results incorrectly | Use historical settlements; otherwise report gross plus explicit conservative scenarios |
-| `RQ-015` | What minimum trades, drawdown, OOS, and stress-neighborhood rules create a candidate? | Avoids accepting a lucky positive total PnL | Start conservative but simple; thresholds must be config and visible in reports |
-| `RQ-016` | Should candidate persistence initially be one versioned JSON per run plus a current pointer? | Balances audit history and operator convenience | Yes; typed model remains independent of JSON |
-| `RQ-017` | Is manual promotion a separate later milestone? | Keeps Research unable to approve itself | Yes; Research ends at immutable candidate evidence |
+No exact shell command is recorded yet because the acceptance test does not
+exist. M8 publishes the tested command after the executable flow is present.
 
 ### Non-blocking, intentionally deferred
 
-- Do we later need Johansen/multivariate baskets?
-- Does evidence justify EW-WLS, Kalman, robust, DOLS, or FM-OLS coefficients?
-- Do we need a database-backed dataset/artifact adapter?
-- Should walk-forward replace or supplement a fixed final holdout?
-- Which UI/API/notification channels should display research status?
-- How frequently should remote Research run once scheduling exists?
+- Real formation/validation/OOS durations and candidate gate values per profile.
+- Whether evidence justifies WLS/EW-WLS, robust/M-estimators, DOLS, FM-OLS,
+  Phillips-Perron, KPSS, explicit Bollinger variants, or OU decision policies.
+- Johansen/multivariate baskets, database-backed adapters, walk-forward policy,
+  UI channels, and scheduling.
+- Optional hard time-based exits. The baseline instead reports half-life and
+  observed holding median/p90/max/unresolved positions.
 
-None should delay the first correct offline vertical.
+These deferrals cannot silently fall back to test values or library defaults
+and do not delay M1.
 
 ## 18. Migration Completion Gates
 

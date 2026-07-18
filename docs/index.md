@@ -13,6 +13,10 @@ research flow, trader, CLI, deployment, paper broker, or live-capital path.
 The active target is a deterministic offline Research V2 flow that produces a
 typed, auditable candidate pair-set artifact.
 
+The M0/MD0/PR0 contract decisions and synthetic offline acceptance story are
+documented. No executable V2 behavior exists yet; the next route item is
+`V2-102`, canonical closed-observation behavior.
+
 ## Document Roles
 
 | Document | Role | Authority |

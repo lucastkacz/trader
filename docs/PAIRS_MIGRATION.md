@@ -252,31 +252,44 @@ identity, round-trip, lifecycle, atomicity, and consumer isolation.
 - Remove legacy row aliases, direct JSON reads, and path construction.
 - Delete this migration guide after accepted behavior is in canonical docs.
 
-## 13. Questions for Lucas
+## 13. Resolved PR0 Decisions and Later Questions
 
-- **PRQ-001 (blocking):** Which canonical instrument attributes distinguish pair
-  identity across spot, linear, inverse, and settlement variants?
-- **PRQ-002 (blocking):** May one pair set contain both fitted orientations of
-  the same unordered pair, or exactly one accepted orientation?
-- **PRQ-003 (blocking):** Is the canonical spread contract always
-  $x-\alpha-\beta y$, with intercept required?
-- **PRQ-004 (blocking):** Which evidence fields are mandatory before a candidate
-  can be serialized?
-- **PRQ-005 (blocking):** What defines a promotion scope: strategy, venue market
-  profile, timeframe, environment, or a combination?
-- **PRQ-006:** Should candidate versions be content-addressed, run-addressed, or
-  both?
-- **PRQ-007:** What operator identity is sufficient locally before a login/API
-  identity exists?
-- **PRQ-008:** Is a promotion freshness limit required, and should it be measured
-  from generation time, information cutoff, or both?
-- **PRQ-009:** Can an empty candidate be promoted intentionally to block all new
-  entries?
-- **PRQ-010:** Which compatible schema upgrades may occur automatically on read?
-- **PRQ-011:** How long must superseded and retired pair sets be retained?
-- **PRQ-012:** Does rollback create a new promotion event pointing to an older
-  immutable version, rather than rewriting history? The recommended answer is
-  yes.
+The identity and candidate vocabulary required by the first offline Research
+vertical is resolved:
+
+- **PRQ-001:** Canonical instruments distinguish base, quote, market type,
+  linear/inverse behavior, settlement, relevant contract units/multiplier, and
+  reversible venue listing/native identity.
+- **PRQ-002:** Research evaluates and preserves both orientations as separate
+  hypotheses, but one pair set contains exactly one accepted orientation per
+  unordered pair. Ranking is BH-adjusted p-value, then ADF statistic, then
+  canonical ordering.
+- **PRQ-003:** The fitted spread is `log(X) - alpha - beta*log(Y)`, with the
+  intercept required and stored.
+- **PRQ-004:** Mandatory candidate evidence includes run/code/config/dataset/
+  universe identities, cutoff/windows, exact oriented fitted model and method
+  versions, stationarity/FDR/half-life, historical decision/portfolio/friction
+  policy, validation/OOS/stress outcomes, warnings, limitations, reasons, and
+  content hash.
+- **PRQ-005:** Initial promotion consumer scope is strategy identity, canonical
+  market profile, and timeframe. Venue listings remain instrument/data
+  provenance; deployment environment is a separate application axis.
+- **PRQ-006:** Candidate versions are both run-addressed and content-addressed,
+  with an optional mutable current-candidate pointer.
+
+Promotion remains outside the first Research vertical. These questions are
+therefore intentionally deferred to PR5–PR7 and cannot authorize automatic
+promotion:
+
+- **PRQ-007:** local operator/principal identity policy;
+- **PRQ-008:** promotion freshness limit and whether cutoff/generation both
+  matter;
+- **PRQ-009:** whether an empty pair set can be intentionally promoted;
+- **PRQ-010:** allowable automatic compatible schema upgrades;
+- **PRQ-011:** retention for superseded/retired versions;
+- **PRQ-012:** rollback event semantics. The current safe proposal is a new
+  audited event referencing an older immutable version, never rewritten
+  history.
 
 ## 14. Scope Exclusions During Migration
 

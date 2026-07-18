@@ -33,6 +33,8 @@ Research V2 reproducible
 - El namespace decidido es `stat_arb`, bajo `src/`.
 - `pyproject.toml` reemplaza requirements y configuración de pytest separados.
 - No existe todavía código productivo, CLI, config operativa ni test de V2.
+- Las decisiones M0/MD0/PR0 y la historia de aceptación offline están
+  congeladas en la documentación; el siguiente trabajo es `V2-102`.
 - Los workflows de deploy, health y live probes de V1 fueron retirados de esta
   branch para no operar accidentalmente un sistema inexistente.
 - No hay ninguna ruta aprobada para Observe, Paper, Exchange/Demo o
@@ -55,22 +57,25 @@ Contratos de los módulos que sostienen este vertical:
 
 ### 1A. Decisiones cuantitativas explícitas
 
-- [ ] Elegir una única identidad y orientación de par.
-- [ ] Elegir una definición canónica del spread.
-- [ ] Especificar transformación de precios y convención del hedge ratio.
-- [ ] Definir Engle-Granger: trend, autolag, maxlag y criterio de aceptación.
-- [ ] Definir formation, validation y OOS sin selección con datos futuros.
-- [ ] Definir el tratamiento de múltiples hipótesis por corrida.
-- [ ] Fijar seeds para cualquier algoritmo no determinista.
+- [x] Elegir una única identidad y orientación de par.
+- [x] Elegir una definición canónica del spread.
+- [x] Especificar transformación de precios y convención del hedge ratio.
+- [x] Definir Engle-Granger: trend, autolag, maxlag y criterio de aceptación.
+- [x] Definir formation, validation y OOS sin selección con datos futuros.
+- [x] Definir el tratamiento de múltiples hipótesis por corrida.
+- [x] Fijar seeds para cualquier algoritmo no determinista.
 
 ### 1B. Contratos de datos y research
 
-- [ ] Modelar símbolo canónico, timeframe y vela cerrada.
-- [ ] Modelar dataset validado y universe manifest exacto.
-- [ ] Definir config tipada sin paths, exchange o clocks ocultos.
-- [ ] Definir resultado de cada etapa y errores observables.
-- [ ] Definir `CandidatePairSet` y provenance mínimo obligatorio.
-- [ ] Definir JSON como adapter de persistencia, no como modelo interno.
+- [x] Definir símbolo canónico, timeframe y vela cerrada.
+- [x] Definir dataset validado y universe manifest exacto.
+- [x] Definir config tipada sin paths, exchange o clocks ocultos.
+- [x] Definir resultado de cada etapa y errores observables.
+- [x] Definir `CandidatePairSet` y provenance mínimo obligatorio.
+- [x] Definir JSON como adapter de persistencia, no como modelo interno.
+
+Estos checks indican decisiones contractuales documentadas. Los tipos y su
+comportamiento ejecutable se implementan en `V2-102` a `V2-105`.
 
 ### 1C. Primer vertical determinista
 

@@ -60,7 +60,8 @@ explicit construction.
 The module presents a small capability surface around these concepts:
 
 - **Identity**: canonical unordered identity and explicit orientation.
-- **Specification**: immutable fitted model, signal policy, and sizing inputs.
+- **Specification**: immutable fitted model, historical decision-policy
+  contract, and sizing inputs.
 - **Evidence**: research, temporal, economic, and stress evidence attached to a
   specification.
 - **Pair set**: an exact, ordered collection with shared run provenance.
@@ -158,6 +159,12 @@ Every calibrated value that depends on orientation is stored with that
 orientation. No caller may infer roles from alphabetic ordering or a display
 label. Artifact validation rejects missing, duplicated, or inconsistent roles.
 
+Research may evaluate and preserve evidence for both orientations, but one pair
+set contains at most one accepted fitted orientation for an unordered pair. If
+both survive, Research's frozen ranking is lower BH-adjusted p-value, then more
+negative ADF statistic, then canonical instrument ordering. Pairs validates the
+single-orientation invariant; it does not recompute the ranking.
+
 ## 7. Calibrated Pair Specification
 
 A pair specification is an immutable description of the model approved by
@@ -172,8 +179,9 @@ It includes:
 - intercept $\alpha$ and hedge ratio $\beta$;
 - formation and evaluation boundaries;
 - estimator and deterministic-term conventions;
-- z-score normalization policy and lookback;
-- entry, exit, stop, and holding policies when approved;
+- stationarity method, lag policy, multiplicity family, and semantic versions;
+- historical decision-policy method, normalization, and lookback;
+- historical entry, exit, stop, and holding policies when approved;
 - portfolio-weight or sizing-policy inputs;
 - friction assumptions used for evidence;
 - statistical and economic evidence references;
@@ -203,6 +211,13 @@ friction assumptions, or a half-life without units is incomplete evidence.
 The pair specification includes accepted evidence; the research report may
 contain a richer diagnostic history. Pairs preserves rather than recomputes it.
 
+Candidate evidence is incomplete unless it identifies the research run, code,
+config, dataset, universe, information cutoff, temporal windows, exact fitted
+model and formula, estimator and test versions, coefficients, orientation,
+stationarity and FDR results, half-life units, historical decision/portfolio/
+friction policies, validation and final-OOS outcomes, stress results, warnings,
+limitations, and acceptance reason.
+
 ## 9. Pair-Set Contract
 
 A pair set is an immutable aggregate containing:
@@ -219,6 +234,11 @@ A pair set is an immutable aggregate containing:
 - relevant configuration identity;
 - warnings and limitations;
 - content hash.
+
+Candidate versions are both run-addressed and content-addressed. The run
+identity preserves experimental history; the content hash proves semantic
+identity. A mutable convenience pointer may identify the current candidate, but
+it never replaces either immutable identity.
 
 Ordering is deterministic and semantically defined. A pair count is derived and
 validated against the collection, never accepted as an independent truth.
@@ -266,6 +286,12 @@ The promotion result identifies the previous and new versions. Concurrent or
 stale promotion attempts fail rather than silently overwriting a newer decision.
 
 Automatic research completion does not imply automatic promotion.
+
+The initial consumer-scope vocabulary is strategy identity, canonical market
+profile, and timeframe. Venue listing identity remains inside the instruments
+and dataset provenance; deployment environment is a separate application axis,
+not part of pair meaning. Extending this vocabulary is a semantic-contract
+change. Promotion is outside the first Research vertical.
 
 ## 12. Promotion Audit
 

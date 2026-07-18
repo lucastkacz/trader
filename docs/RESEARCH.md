@@ -81,7 +81,7 @@ responsibilities.
 | Pair discovery | Define orientation, estimate the spread, test cointegration, and control multiple testing |
 | Temporal validation | Separate formation, validation, and final out-of-sample evidence |
 | Stress evaluation | Measure sensitivity to parameters, costs, delays, liquidity, and subperiod changes |
-| Historical simulation | Apply causal signals, executable timing, portfolio weights, friction, and performance accounting |
+| Historical simulation | Replay a declared historical decision policy with causal timing, portfolio weights, friction, and performance accounting |
 | Reporting | Present already-computed evidence without making quantitative decisions |
 
 This separation describes ownership, not a required one-file-per-capability
@@ -197,6 +197,12 @@ Identity and orientation are separate concepts.
 - Every estimate, spread series, report row, and artifact records orientation.
 - Reversing orientation creates a different fitted model but not a new unordered
   search candidate.
+- Research evaluates both orientations as separate hypotheses. Both count in
+  the whole-run multiple-testing family and retain their own evidence.
+- At most one orientation of an unordered pair can enter one candidate pair
+  set. If both survive every gate, Research chooses the lower BH-adjusted
+  p-value, then the more negative ADF statistic, then canonical instrument
+  ordering as an exact deterministic tie-breaker.
 
 The `pairs` module owns the cross-module representation. Research owns the
 policy for choosing or comparing orientations.
@@ -205,15 +211,91 @@ policy for choosing or comparing orientations.
 
 Configuration is typed, immutable after validation, and rejects unknown fields.
 It separates policies for universe construction, data quality, clustering,
-cointegration, multiple testing, temporal validation, signals, portfolio
-construction, friction, stress, and candidate acceptance.
+cointegration, multiple testing, temporal validation, historical decision
+evaluation, portfolio construction, friction, stress, and candidate acceptance.
 
 Config loading from YAML, environment variables, CLI flags, or a database is an
 adapter concern. Quantitative code receives the validated objects.
 
-Every policy that affects output is included in provenance. Defaults must be
-explicit and tested; a library upgrade must not silently change statistical
-behavior.
+Every policy that affects output is included in provenance. Material research
+choices have no hidden code or library defaults; a library upgrade must not
+silently change statistical behavior.
+
+### 6.1 Configuration layers
+
+Application composition uses two distinct configuration layers:
+
+1. A **run configuration** selects the venue market profile, timeframe,
+   immutable dataset request or reference, exact universe manifest, research
+   policy identity, and information cutoff.
+2. A reusable **research policy** declares temporal windows, discovery rules,
+   estimator, stationarity and multiplicity policy, historical simulation,
+   friction, stress scenarios, and candidate-acceptance gates.
+
+The venue selection belongs to application configuration and adapters. Research
+does not contain `bybit`, `binance`, `kucoin`, `USDT`, `swap`, or `1m` branches.
+A configured linear-USDT-perpetual profile may initially resolve through Bybit,
+but the quantitative code sees canonical instruments and market data only.
+
+YAML is one input adapter, not a domain contract. It is parsed once at the
+entrypoint into strict typed values. Domain functions never receive raw
+dictionaries, paths, environment names, or partially validated configuration.
+
+The following is a semantic shape, not a promise of these exact YAML field
+names:
+
+```yaml
+run:
+  venue_profile: bybit
+  market_profile: linear_usdt_perpetual
+  timeframe: 1m
+  dataset: {request_or_immutable_reference: explicit}
+  universe_manifest: {instrument_ids: explicit}
+  research_policy: baseline_v1
+  information_cutoff: explicit_utc_instant
+
+research_policy:
+  temporal_plan:
+    formation: {duration: explicit, minimum_observations: explicit}
+    validation: {duration: explicit, minimum_observations: explicit}
+    final_oos: {duration: explicit, minimum_observations: explicit}
+    warmup: derived
+  universe:
+    eligibility: explicit
+    clustering: {method: louvain, seed: explicit, resolution: explicit}
+  spread_estimator: {method: ols, intercept: true, time_trend: false}
+  stationarity:
+    method: residual_adf
+    max_lag: schwert
+    autolag: aic
+    nominal_alpha: 0.05
+  multiplicity: {method: bh_fdr, family: whole_run, q: 0.05}
+  historical_simulation:
+    decision_policy: {method: rolling_zscore, parameters: explicit}
+    fills: {decision: after_close, price: next_open, slippage: explicit}
+    holding:
+      hard_max_duration: null
+      maximum_half_life: explicit
+      maximum_holding_p90: explicit
+  friction: {fees: explicit, slippage: explicit, funding: explicit}
+  stress: {scenarios: explicit}
+  candidate_acceptance:
+    mode: diagnostic
+    # candidate_evaluation instead requires an explicit policy id and all gates
+```
+
+### 6.2 Diagnostic and candidate-evaluation modes
+
+A diagnostic run may omit candidate-acceptance thresholds. It can produce
+stage evidence, rejected alternatives, and a report, but cannot produce a
+`CandidatePairSet`.
+
+A candidate-evaluation run requires one complete, explicit, versioned
+acceptance policy. Missing or unknown gates fail validation. Real-data gate
+values have deliberately not been approved yet and therefore have no product
+defaults. Test configurations may contain clearly marked artificial values to
+exercise acceptance and rejection; those values do not authorize promotion or
+become recommendations for real research.
 
 ## 7. End-to-End Flow
 
@@ -233,7 +315,7 @@ research request + validated historical dataset
        unordered pair search space
                     |
                     v
-       fitted orientation and canonical spread
+       both fitted orientations and canonical spreads
                     |
                     v
        cointegration + FDR acceptance
@@ -242,7 +324,7 @@ research request + validated historical dataset
        temporal validation and stability checks
                     |
                     v
-       causal backtest and friction model
+       causal historical replay and friction model
                     |
                     v
        stress/scenario robustness gates
@@ -368,16 +450,36 @@ residual stationarity test, half-life, z-score, validation, backtest, reporting,
 and artifact. It is invalid to test residuals from one estimator and trade a
 spread produced by another.
 
+The baseline includes the intercept $\alpha$ and excludes a deterministic time
+trend such as $\gamma t$. "No time trend" never means "no intercept."
+
 If both orientations are evaluated, each receives its own fitted model and
 diagnostics. The orientation policy must not take the best p-value from one
 regression and combine it with coefficients from the other.
 
+OLS is the first implemented estimator, not a permanent assertion that it is
+best. WLS or EW-WLS, robust/M-estimators, DOLS, and FM-OLS are acknowledged
+future alternatives. They are unsupported in the first vertical and their
+configuration names must fail rather than silently fall back to OLS. Each
+additional estimator would create another searched hypothesis and must preserve
+the complete-model invariant above.
+
 ### 10.2 Engle-Granger procedure
 
-Research uses a two-step Engle-Granger procedure:
+The first vertical uses an augmented two-step Engle-Granger procedure:
 
 1. Fit the canonical OLS regression on formation data.
 2. Apply the Augmented Dickey-Fuller test to that exact residual series.
+
+Its frozen statistical baseline is:
+
+- first-stage OLS with an intercept and no deterministic time trend;
+- residual ADF on the exact fitted residual;
+- Schwert maximum lag
+  $\lfloor 12(n/100)^{1/4}\rfloor$;
+- AIC selection among allowed ADF lags;
+- raw nominal significance level $\alpha=0.05$;
+- whole-run Benjamini-Hochberg FDR control at $q=0.05$.
 
 The cointegration configuration fixes and records:
 
@@ -390,18 +492,24 @@ The cointegration configuration fixes and records:
 - behavior for constants, singular matrices, non-finite values, and numerical
   failures.
 
-Library defaults are insufficient as a contract. The report records sample
-size, test statistic, p-value, critical values, selected lag, coefficients, and
-failure reason.
+Library defaults are insufficient as a contract. The report records method and
+semantic version, sample size, maximum and selected lag, test statistic,
+p-value, critical values, coefficients, and failure reason.
+
+Fixed-lag, BIC, and t-stat lag policies and Phillips-Perron or KPSS diagnostics
+are acknowledged future options, not first-vertical behavior. KPSS has the
+opposite null hypothesis from ADF, so adding it as a mandatory gate requires an
+explicit conflict/combination policy. Unsupported methods fail configuration.
 
 ### 10.3 Multiple testing
 
 Searching many pairs and possibly multiple orientations inflates false
 discoveries. A permissive unadjusted p-value is not an acceptance policy.
 
-Within each hypothesis family declared by the multiple-testing configuration,
-Research applies the Benjamini-Hochberg procedure at configured false-discovery
-rate $q$. For ordered p-values $p_{(1)} \le \dots \le p_{(m)}$, it selects the
+The first hypothesis family is the whole run: every tested unordered pair times
+each orientation and estimator. Research applies the Benjamini-Hochberg
+procedure at false-discovery rate $q=0.05$. For ordered p-values
+$p_{(1)} \le \dots \le p_{(m)}$, it selects the
 largest $k$ such that
 
 $$
@@ -410,6 +518,11 @@ $$
 
 and accepts ranks $1$ through $k$ for subsequent validation. Both raw and
 adjusted evidence, family identity, and $m$ are recorded.
+
+The raw 5% level is a test threshold, not a 95% probability that a pair is
+cointegrated. Likewise, FDR 5% controls the expected false-discovery proportion
+under its assumptions; it does not certify any individual pair with 95%
+confidence.
 
 ### 10.4 Half-life
 
@@ -454,14 +567,23 @@ Every evaluable pair uses ordered, non-overlapping windows:
 - **validation:** model and parameter acceptance without refitting on final OOS;
 - **final OOS:** one untouched estimate of the selected procedure.
 
-Boundaries and embargo/warm-up observations are explicit. Rolling indicators
-receive earlier warm-up data when required, but their decisions and reported
-returns belong to the correct evaluation window.
+Boundaries are explicit. Warm-up is derived from the largest declared rolling
+requirement and is not counted as an evaluation or profit period. Each
+evaluation window starts flat so earlier positions cannot leak returns into it.
+The first vertical has no mandatory embargo beyond the closed-candle and
+next-open causal boundary; adding one later is an explicit temporal-policy
+change.
 
-Validation chooses from a small predeclared signal-parameter grid. It never
-chooses solely by maximum PnL and requires minimum trade count, stability, and
-friction-aware evidence. The selected model and parameters are frozen before
-their single final-OOS evaluation.
+Validation chooses from a small predeclared historical-decision-policy grid. It
+never chooses solely by maximum PnL and requires minimum trade count, stability,
+and friction-aware evidence. The selected model and parameters are frozen
+before their single final-OOS evaluation.
+
+Window sizes are not universal candle counts. A 1-minute, 1-hour, and 1-day
+profile observe very different calendar history and numbers of mean-reversion
+cycles. Real profiles therefore declare timeframe-aware durations and minimum
+observations. No production formation, validation, OOS, or warm-up values are
+approved by this baseline.
 
 When configured, walk-forward validation repeats formation/validation cycles
 while preserving a final holdout that remains untouched by selection.
@@ -476,18 +598,31 @@ Validation measures, at minimum:
 - performance before and after declared friction;
 - concentration in a small number of trades or periods.
 
-## 12. Signals and Causal Backtest
+## 12. Historical Decision Policies and Causal Backtest
+
+Research replays decisions only to test whether statistical evidence survives
+a declared trading interpretation and realistic friction. These are historical
+counterfactual decisions, not current actionable signals. Trading later owns
+the current z-score calculation, runtime state, entry eligibility, risk checks,
+and order intents.
+
+The first historical decision policy is a rolling z-score with mean and
+standard-deviation bands, equivalent to a basic Bollinger-style spread rule.
+Explicit Bollinger variants and Ornstein-Uhlenbeck-fitted or optimal decision
+policies are acknowledged future alternatives and are not implemented by the
+first vertical. Any future OU parameters must be fitted on formation data and
+frozen before OOS. Unsupported decision-policy names fail configuration.
 
 ### 12.1 State machine
 
-A single-pair strategy uses explicit states `FLAT`, `LONG_SPREAD`, and
+A single-pair historical replay uses explicit states `FLAT`, `LONG_SPREAD`, and
 `SHORT_SPREAD`.
 
 - enter long spread when $z_t \le -z_{entry}$;
 - enter short spread when $z_t \ge z_{entry}$;
 - exit when the spread crosses the configured exit band;
-- optionally stop when the configured extreme, age, or model-validity condition
-  is reached.
+- optionally stop when an explicitly supported extreme or model-validity
+  condition is reached.
 
 Entry and exit rules are side-aware and test equality at boundaries. Missing or
 invalid observations produce `UNAVAILABLE`, not `FLAT`.
@@ -499,9 +634,11 @@ closed. Its return cannot be earned before the next permitted simulated fill.
 Signal time, decision time, order time, fill time, and mark time are distinct
 concepts even in a vectorized test.
 
-The execution assumptions declare whether fills occur at next open, next close,
-or another observable price, and apply slippage consistently. Intrabar high/low
-cannot trigger a decision that also fills earlier on the same bar.
+The baseline decides after candle close and fills at the next candle open with
+explicitly configured slippage. Other fill conventions require a separately
+versioned policy. Intrabar high/low cannot trigger a decision that also fills
+earlier on the same bar. In live operation, actual execution reports replace
+research assumptions.
 
 ### 12.3 Portfolio weights
 
@@ -547,6 +684,19 @@ Configured but unused fee fields are validation errors.
 PnL metrics include both gross and net results. The simulator never presents a
 theoretical signal return as a realized fill-derived return.
 
+### 12.5 Holding-duration evidence
+
+The baseline does not force an exit solely because a universal maximum age was
+reached. Instead, profiles may constrain the fitted half-life and historical
+holding evidence relative to the intended trading horizon. Research reports
+completed holding median, p90, maximum, and unresolved positions. Half-life is
+an estimate of likely mean-reversion speed, not a promise that a position will
+close within that duration.
+
+A hard time-based exit remains an optional future decision policy. If added, it
+must be explicit in configuration and evaluated as part of the same historical
+policy; it cannot appear as a hidden safety constant.
+
 ## 13. Stress Evaluation
 
 Stress answers whether a result is robust to plausible variations; it is not a
@@ -567,11 +717,18 @@ surface, not only the winner. Candidate-acceptance criteria set the required
 share of viable neighboring scenarios, minimum trade evidence, drawdown bounds,
 and net-performance evidence. Maximum total PnL alone is insufficient.
 
+The structure of these gates is mandatory for candidate evaluation, but their
+real-data numeric values are intentionally deferred to the candidate-acceptance
+slice. Too few trades produces `INSUFFICIENT_EVIDENCE`, not an ordinary
+rejection or a flat signal. Failure of any mandatory gate prevents candidate
+creation and remains visible in provenance and reporting.
+
 Stress does not overwrite discovery evidence. The lifecycle is explicit:
 
 ```text
 DISCOVERED
 -> TEMPORALLY_VALIDATED
+-> ECONOMICALLY_EVALUATED
 -> STRESS_EVALUATED
 -> CANDIDATE
 -> OPERATOR_PROMOTED (outside Research)
@@ -600,7 +757,7 @@ A candidate artifact is immutable and records at least:
 - unordered pair identity and fitted orientation;
 - canonical spread formula, intercept, hedge ratio, and estimator;
 - statistical diagnostics, multiplicity evidence, and sample sizes;
-- chosen signal/portfolio/friction policies;
+- chosen historical-decision/portfolio/friction policies;
 - validation, OOS, and stress evidence;
 - warnings, limitations, and acceptance reason;
 - stable content hash.
@@ -651,7 +808,41 @@ Required controls include:
 Generated timestamps must not change the semantic candidate content hash unless
 the artifact contract explicitly includes them in a separate envelope hash.
 
-## 17. Error and Side-Effect Boundaries
+## 17. First Offline Acceptance Story
+
+The first executable vertical is a deterministic test fixture, not a market
+recommendation or a set of production defaults. It proves that the contracts
+compose end to end:
+
+- configured profile semantics: linear USDT perpetual swap at `1m`;
+- exactly four synthetic canonical instruments in an explicit manifest;
+- 1,500 formation bars, 500 validation bars, and 500 final-OOS bars;
+- derived warm-up, closed valid candles, no gaps, and a frozen information
+  cutoff;
+- OLS/intercept/no-trend, residual ADF with Schwert/AIC, and whole-run BH-FDR;
+- both orientations evaluated independently;
+- one pair and orientation accepted, with every alternative rejected for an
+  observable machine-readable reason;
+- rolling-z-score/Bollinger-style historical decisions, next-open fills, and
+  explicit artificial slippage, cost, stress, and acceptance values;
+- deterministic synthetic funding-settlement events for derivative net
+  evidence;
+- no network, exchange credentials, ambient path scan, prior artifact, or venue
+  mutation.
+
+The fixture's bar counts and gates are deliberately test-only and
+non-promotable. They exercise code paths; they do not answer how much real
+history or what performance threshold a `1m`, `1h`, or `1d` strategy needs.
+Real policy remains explicit per profile and cannot inherit these values.
+
+The expected semantic output is one typed synthetic candidate, marked with test
+provenance and incompatible with promotion, plus complete run and rejection
+evidence. Repeating identical semantic inputs produces the same semantic result
+and content hash, excluding declared operational envelope metadata. The exact
+test command is documented only when that test exists and has been executed
+successfully.
+
+## 18. Error and Side-Effect Boundaries
 
 Expected data and hypothesis outcomes use typed results. Exceptions are reserved
 for violated programmer invariants or infrastructure failures that cannot be
@@ -671,7 +862,7 @@ do not need protocols, factories, or classes merely for architectural symmetry.
 Framework model inheritance is acceptable when it expresses validation rather
 than substitutable business behavior.
 
-## 18. Computational Characteristics
+## 19. Computational Characteristics
 
 Research uses clear vectorized operations and bounded loops. Optimization is
 based on measured bottlenecks and preserves deterministic results.
@@ -680,7 +871,7 @@ Large arrays need intentional alignment and copy behavior. Parallel evaluation
 maintains stable result ordering, explicit resource limits, and deterministic
 seeds.
 
-## 19. Safety Invariants
+## 20. Safety Invariants
 
 - Research is readonly with respect to venues and trading state.
 - Research never requires trading credentials.

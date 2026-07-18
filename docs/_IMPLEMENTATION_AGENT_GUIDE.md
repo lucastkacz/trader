@@ -138,7 +138,7 @@ Read `RESEARCH.md`, `RESEARCH_MIGRATION.md`, `MARKET_DATA.md`,
 `MARKET_DATA_MIGRATION.md`, `PAIRS.md`, `PAIRS_MIGRATION.md`, `CORE.md`, and
 `CORE_MIGRATION.md` for this phase.
 
-- [ ] V2-101 — Resolve Research M0 plus the shared MD0/PR0 decisions and freeze
+- [x] V2-101 — Resolve Research M0 plus the shared MD0/PR0 decisions and freeze
   one executable offline acceptance story without silently accepting defaults.
 - [ ] V2-102 — Implement MD1 canonical closed-observation behavior and its pure
   validation contract with deterministic fixture tests.

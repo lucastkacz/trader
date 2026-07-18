@@ -300,22 +300,26 @@ adapter payload fixtures; offline acceptance never reaches network.
 Remove unused scaffolding, reconcile permanent docs and roadmap, verify package
 dependency direction, and delete this guide after all gates pass.
 
-## 13. Questions for Lucas
+## 13. Resolved MD0 Decisions
 
-| ID | Question | Why it matters | Recommended starting answer |
-|---|---|---|---|
-| `MDQ-001` | Which observation kinds are required for the first Research run? | Prevents building unused streams/order books | Closed OHLCV first; funding only if derivative costs are evaluated |
-| `MDQ-002` | What canonical instrument identity should persist across venues? | Avoids filename and native-symbol ambiguity | Structured base/quote/type/settle plus venue listing identity |
-| `MDQ-003` | Confirm candle timestamps mean interval open? | Determines cutoff and look-ahead behavior | Yes; available only at close |
-| `MDQ-004` | Should invalid source rows reject the page or the complete dataset? | Controls silent loss versus availability | Reject affected dataset by default and report exact rows |
-| `MDQ-005` | How should conflicting duplicate candles be resolved? | Providers can revise recent bars | Explicit source revision rule within refresh overlap; otherwise fail |
-| `MDQ-006` | Is Parquet the first persistent adapter? | Shapes local inspection and atomicity work | Yes, after memory contract; keep backend outside domain |
-| `MDQ-007` | Do we retain raw provider responses? | Improves forensic reproducibility at storage cost | Optional immutable reference for acquisition runs, not embedded in domain data |
-| `MDQ-008` | What gap policy does first Research accept? | Statistical validity depends on continuity | Never synthesize silently; Research declares its tolerance |
-| `MDQ-009` | Is 5-day retention still desired anywhere? | It destroys research history | No universal default; separate research archive from runtime cache |
-| `MDQ-010` | What historical funding source is trustworthy? | Net returns require actual event timing | Defer until venue/profile chosen, then validate settlement semantics |
-| `MDQ-011` | Should refresh repair interior gaps automatically? | Tail-only refresh can claim false completeness | Detect always; repair explicitly with bounded requests |
-| `MDQ-012` | How should concurrent sync runs coordinate? | Prevents lost/corrupt writes | Single writer per dataset identity for local operation |
+These shared decisions are accepted for the Research vertical. Later source
+adapter work must validate venue-specific details without changing the domain
+meaning.
+
+| ID | Resolution |
+|---|---|
+| `MDQ-001` | Closed OHLCV is first. Linear-swap net evidence also uses real funding settlement events when funding is evaluated. |
+| `MDQ-002` | Identity contains base, quote, market type, linear/inverse behavior, settlement, contract units/multiplier when relevant, canonical id, and reversible venue listing/native identity. |
+| `MDQ-003` | Candle timestamp is interval open; the candle becomes available only at close under a frozen information cutoff. |
+| `MDQ-004` | Invalid rows reject the affected dataset by default with exact evidence; they are never silently dropped. |
+| `MDQ-005` | Conflicting duplicates resolve only through an explicit authoritative source-revision rule within refresh overlap; otherwise the dataset fails. Exact duplicate collapse is also recorded policy. |
+| `MDQ-006` | Prove the contract in memory first; Parquet is the first intended local persistent adapter and remains outside the domain. |
+| `MDQ-007` | Raw responses are optional immutable acquisition references, not embedded canonical-domain payloads. |
+| `MDQ-008` | Never synthesize gaps silently. Research declares tolerance; the first acceptance fixture is gap-free. |
+| `MDQ-009` | There is no universal five-day retention. Archive/cache lifecycle is explicit per consumer. |
+| `MDQ-010` | Historical funding must preserve real settlement semantics. Missing funding is not zero and cannot provide ordinary net candidate evidence. The exact Bybit/source adapter is deferred until readonly acquisition. |
+| `MDQ-011` | Detect interior gaps always; repair is a separate explicit bounded operation. |
+| `MDQ-012` | Local synchronization uses one writer per dataset identity; conflicts fail rather than using implicit last-writer-wins. |
 
 ## 14. Scope Exclusions During Migration
 
