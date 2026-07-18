@@ -1,7 +1,0 @@
-telegram:
-  environment: "PROD"
-  bot_name: "@ProdBot"
-  db_path: "data/prod/trades_4h.db"
-  holding_period_bar_minutes: 240
-  promoted_pairs_path: "data/universes/4h/surviving_pairs.json"
-  health_stale_after_minutes: 720

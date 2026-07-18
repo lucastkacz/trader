@@ -1,4 +1,0 @@
-interface:
-  display_name: "Python Sustainability Sniffer"
-  short_description: "Audit Python/OOP sustainability and code smells"
-  default_prompt: "Review this quant Python code for OOP, Pythonic design, maintainability, side effects, and sustainability smells."

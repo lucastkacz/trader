@@ -1,8 +1,0 @@
-run:
-  pipeline: "configs/pipelines/dev.yml"
-  venue: "configs/exchange/venues/dev.yml"
-  market_profile: "configs/exchange/market_profiles/linear_usdt_swap.yml"
-  universe: "configs/universe/dev.yml"
-  backtest: "configs/backtest/stress_test_dev_1m.yml"
-  strategy: "configs/strategy/dev.yml"
-  skip_fetch: false

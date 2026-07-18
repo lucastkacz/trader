@@ -1,186 +1,157 @@
 # Current Roadmap
 
-**Actualizado:** 2026-07-17
+**Actualizado:** 2026-07-18
 
-**Objetivo activo:** llegar a un paper trader local, determinista y creíble,
-sin habilitar capital real.
+**Objetivo activo:** construir Research V2 como un flujo offline, determinista
+y entendible que produzca un candidate pair-set artifact auditable.
 
-**Diagnóstico y evidencia:**
-[`PROJECT_REENTRY_AUDIT.md`](PROJECT_REENTRY_AUDIT.md)
+La secuencia congelada de implementación y el prompt obligatorio para nuevos
+chats viven en
+[`_IMPLEMENTATION_AGENT_GUIDE.md`](_IMPLEMENTATION_AGENT_GUIDE.md). Ese archivo
+solo admite marcar una tarea completamente terminada; este roadmap sigue siendo
+el documento corto y evolutivo del trabajo activo.
 
-Este archivo contiene sólo trabajo activo y próximo. El changelog vive en Git.
+La implementación anterior está congelada en el tag
+`legacy-v1-before-rewrite` y en el worktree
+`/Users/lucastkacz/Documents/quant-v1-reference`. Es referencia histórica, no
+una API que V2 deba preservar.
 
 ## North star
 
 ```text
-cold start reproducible
--> paper local con fills y costos
--> research walk-forward/OOS
+Research V2 reproducible
+-> market data readonly real
+-> promoción manual confiable
+-> paper trader local con fills y costos
 -> demo exchange con recovery
 -> gate separado para capital real
 ```
 
 ## Estado actual
 
-### Preservar
+- La branch `refactor/package-architecture` contiene solamente el setup de V2.
+- El namespace decidido es `stat_arb`, bajo `src/`.
+- `pyproject.toml` reemplaza requirements y configuración de pytest separados.
+- No existe todavía código productivo, CLI, config operativa ni test de V2.
+- Los workflows de deploy, health y live probes de V1 fueron retirados de esta
+  branch para no operar accidentalmente un sistema inexistente.
+- No hay ninguna ruta aprobada para Observe, Paper, Exchange/Demo o
+  Exchange/Production.
 
-- Research separado de exchange mutation; todos los pipelines usan
-  `state_only`.
-- Configuración tipada, candidate/promoted con promoción manual.
-- SQLite transaccional, motivos de bloqueo y reconciliación readonly visibles.
-- Replay determinista comparte la política de señal.
-- Baseline offline verificado durante la auditoría del 2026-07-17; los números y
-  comandos exactos quedan en `PROJECT_REENTRY_AUDIT.md` como evidencia fechada.
+## NOW — Milestone 1: Research V2 offline
 
-### No confundir con paper
+Especificación canónica completa: [`RESEARCH.md`](RESEARCH.md).
 
-- `state_only` no simula fills, partials, fees, funding ni slippage.
-- Su PnL es teórico bruto, no execution PnL.
-- Reconciliación detecta deltas pero no bloquea ejecución.
-- Stop/kill switch son local-state o entry-only; no hacen flatten de exchange.
-- Los artifacts/data de los drills anteriores ya no están en el workspace.
+Guía temporal, inventario de referencia y secuencia de implementación:
+[`RESEARCH_MIGRATION.md`](RESEARCH_MIGRATION.md). Se elimina al completar la
+migración del módulo.
 
-## NOW — Milestone 1: cold start local confiable
+Contratos de los módulos que sostienen este vertical:
+[`PAIRS.md`](PAIRS.md), [`MARKET_DATA.md`](MARKET_DATA.md) y
+[`EXCHANGE.md`](EXCHANGE.md). Sus decisiones temporales permanecen en
+[`PAIRS_MIGRATION.md`](PAIRS_MIGRATION.md),
+[`MARKET_DATA_MIGRATION.md`](MARKET_DATA_MIGRATION.md) y
+[`EXCHANGE_MIGRATION.md`](EXCHANGE_MIGRATION.md).
 
-Objetivo:
+### 1A. Decisiones cuantitativas explícitas
+
+- [ ] Elegir una única identidad y orientación de par.
+- [ ] Elegir una definición canónica del spread.
+- [ ] Especificar transformación de precios y convención del hedge ratio.
+- [ ] Definir Engle-Granger: trend, autolag, maxlag y criterio de aceptación.
+- [ ] Definir formation, validation y OOS sin selección con datos futuros.
+- [ ] Definir el tratamiento de múltiples hipótesis por corrida.
+- [ ] Fijar seeds para cualquier algoritmo no determinista.
+
+### 1B. Contratos de datos y research
+
+- [ ] Modelar símbolo canónico, timeframe y vela cerrada.
+- [ ] Modelar dataset validado y universe manifest exacto.
+- [ ] Definir config tipada sin paths, exchange o clocks ocultos.
+- [ ] Definir resultado de cada etapa y errores observables.
+- [ ] Definir `CandidatePairSet` y provenance mínimo obligatorio.
+- [ ] Definir JSON como adapter de persistencia, no como modelo interno.
+
+### 1C. Primer vertical determinista
 
 ```text
-workspace vacío
--> market data válido
+fixture local
+-> OHLCV validado
 -> universe manifest
--> candidate STRESS_EVALUATED
--> promoción manual
--> bounded state_only
--> restart seguro
--> reporte auditable
+-> discovery y cointegration
+-> validación/stress mínimo
+-> CandidatePairSet tipado
+-> JSON versionado
+-> reporte reproducible
 ```
 
-### 1A. Identidad y lifecycle de datos
+- [ ] Implementar una única ruta pública de research.
+- [ ] Mantener matemática, I/O, orchestration y rendering separados.
+- [ ] Crear tests de comportamiento offline a través de interfaces públicas.
+- [ ] Probar que idénticos inputs producen idéntico resultado semántico.
+- [ ] Probar ausencia de network y exchange mutation.
 
-- [ ] Leer el símbolo CCXT canónico desde metadata; cubrir
-  `BTC/USDT:USDT` y quotes USDT/USDC.
-- [ ] Persistir el manifest exacto de símbolos aceptados en cada research run.
-- [ ] Hacer que discovery consuma sólo ese manifest, no Parquet históricos.
-- [ ] Implementar reuse + gap/tail refresh idempotente.
-- [ ] Excluir vela abierta y validar continuidad, cobertura y freshness.
-- [ ] Escribir data/metadata mediante temp + atomic replace.
-- [ ] Resolver lifecycle por ambiente: UAT/prod piden 365 días y el default
-  retiene 5.
+### Definition of Done
 
-Salida: el símbolo hace round-trip exacto, un archivo viejo no reingresa y una
-segunda corrida descarga sólo gaps/tail.
+- El flujo completo corre desde un workspace sin artifacts previos.
+- No usa red, credenciales ni datos externos durante la prueba de aceptación.
+- Solo consume velas explícitamente cerradas y no tiene look-ahead.
+- El universo usado queda persistido con identidad exacta de símbolos.
+- El spread estimado, testeado, reportado y serializado es el mismo.
+- Formation, validation y OOS tienen límites temporales auditables.
+- El candidate artifact tiene schema version, stage y provenance verificable.
+- Tests, lint y validación de packaging pasan localmente y en CI.
+- Una persona puede seguir el flujo desde una única API pública y el reporte.
 
-### 1B. Semántica segura de runtime
+## NEXT — Market data readonly y promoción
 
-- [ ] Crear `NO_DATA/UNAVAILABLE`, distinto de la señal económica `FLAT`.
-- [ ] Ante data inválida: no abrir/cerrar, preservar posición y emitir reason.
-- [ ] Validar última vela cerrada, gaps, cantidad y freshness en runtime.
-- [ ] Hacer que `pause` bloquee entries, no MTM/exits.
-- [ ] En flip bloqueado: permitir close y omitir replacement entry.
-- [ ] Implementar `stop_loss_z_score` en la policy compartida o retirarlo.
-- [ ] Hacer fail-closed el kill switch corrupto y validar el DB target.
+- Resolver primero las preguntas bloqueantes de `MARKET_DATA_MIGRATION.md` y la
+  fase readonly de `EXCHANGE_MIGRATION.md`.
+- Agregar un adapter readonly de exchange detrás del contrato probado con
+  fixtures.
+- Implementar backfill y gap/tail refresh idempotente.
+- Preservar símbolos canónicos a través de storage.
+- Excluir vela abierta y validar continuidad, cobertura y freshness.
+- Agregar candidate review y promoción manual auditable.
+- Verificar que recalcular pares solo afecta futuras entradas.
 
-Salida: una falla de data nunca parece una reversión y las posiciones abiertas
-conservan salida natural bajo pause.
+## THEN — Evidencia cuantitativa y paper local
 
-### 1C. Artifacts y restart
-
-- [ ] Modelar `DISCOVERED -> STRESS_EVALUATED -> OPERATOR_PROMOTED`.
-- [ ] Rechazar promotion sin stress/provenance completo.
-- [ ] Validar finitud, rangos, símbolos, baseline y hashes del artifact.
-- [ ] Hacer promoción + audit recuperables como una transición lógica.
-- [ ] Persistir el contrato inmutable de entry: orientación, beta, lookback,
-  thresholds, sizing convention y hashes de artifact/config.
-- [ ] En boot, unir promoted actual para entries con open-position contracts
-  para exits.
-
-Salida: retirar o recalibrar un par nunca deja huérfana ni reinterpreta una
-posición abierta.
-
-### 1D. Baseline reproducible
-
-- [ ] Declarar Python soportado —mínimo 3.11; preferir 3.11/3.12— y alinear CI.
-- [ ] Eliminar referencias a `ci_1m.yml`/`ci_4h.yml` inexistentes.
-- [ ] Separar dependencias runtime/dev y agregar lock o constraints.
-- [ ] Corregir health: DB vacía no es fresh y drawdown no termina en `|| true`.
-- [ ] Añadir CI offline research → promote → bounded execute con fixtures.
-- [ ] Reemplazar el bloqueo actual del runbook por un único cold-start drill
-  probado de punta a punta.
-
-### Definition of done
-
-- Tres cold starts completan sin edición manual de data/artifacts.
-- No se usan credenciales live ni se crean exchange/client order IDs.
-- El segundo run reutiliza datos y trae sólo lo faltante.
-- Candidate/promoted contienen provenance verificable.
-- Restart preserva el contrato y natural exit de posiciones abiertas.
-- Tests, lint, config validation y e2e pasan en CI y local.
-
-## NEXT — Milestone 2: paper local stateful
-
-- [ ] Clock y event ordering explícitos: decisión después del candle close; fill
-  en el siguiente evento ejecutable.
-- [ ] Order/fill lifecycle simulado: pending, partial, filled, rejected,
-  canceled y unknown/timeout.
-- [ ] Failure de segunda pierna y compensación.
-- [ ] Una sola convención hedge/exposure; weights congelados o rebalanceo con
-  turnover explícito.
-- [ ] Fees, slippage y funding por tiempo/settlement.
-- [ ] PnL/equity derivados de fills.
-- [ ] Queue, risk, pause, kill switch, restart y natural exit compartidos con el
-  runtime online.
-
-Gate de salida: la misma fixture produce los mismos intents, fills, costos,
-posiciones y equity, incluso interrumpiendo y reiniciando en cualquier evento.
-
-## THEN — Milestone 3: baseline cuantitativo
-
-- [ ] Elegir un spread/orientación canónico y testear ese mismo residual.
-- [ ] Engle-Granger con trend/autolag/maxlag y evidencia explícitos.
-- [ ] Control FDR por corrida; fijar `random_state` de Louvain.
-- [ ] Beta, weights y features causales por fold.
-- [ ] Alinear `[1, -beta]` con notionals, quantities y PnL.
-- [ ] Formation → validation → OOS final, con parámetros congelados.
-- [ ] Reportar trades, turnover, costos, search count y estabilidad temporal.
-- [ ] Corregir funding por tiempo y usar histórico por símbolo cuando exista.
-
-Gate de salida: el spread testeado, señalizado, simulado y contabilizado es el
-mismo; ningún dato OOS selecciona parámetros.
-
-Después pueden evaluarse EWMA, KPSS/PP, robust regression y DOLS/FM-OLS. GARCH
-queda fuera hasta existir una hipótesis y benchmark concretos.
+- Expandir walk-forward/OOS, costos y estabilidad temporal sin cambiar el
+  spread canónico.
+- Diseñar el contrato inmutable que cruzará de research a trading.
+- Recién después crear `trading` y un paper broker stateful con intents, fills,
+  partials, rejects, fees, funding, slippage y restart determinista.
+- Derivar PnL y equity desde fills, no desde precios teóricos de señal.
+- Resolver y ejecutar las etapas de [`TRADING_MIGRATION.md`](TRADING_MIGRATION.md)
+  bajo el contrato de [`TRADING.md`](TRADING.md).
+- Incorporar `operations` e `interfaces` solo desde casos de uso concretos,
+  siguiendo [`OPERATIONS.md`](OPERATIONS.md) e
+  [`INTERFACES.md`](INTERFACES.md), sin adelantar UI o scheduler.
 
 ## LATER — Demo y capital real
 
-Demo/testnet requiere antes:
+Demo/testnet y capital real requieren sizing, límites, precisión, idempotent
+submission/recovery, partial-leg compensation, reconciliación fail-closed,
+kill switch operativo, single-writer, migraciones, alertas y recovery drills.
 
-- sizing equity → quote notional → contracts/qty;
-- límites y precisión reales del mercado;
-- idempotent submission/recovery, partial-leg compensation y reduce-only;
-- reconciliación agregada, periódica y fail-closed;
-- single-writer lease y migraciones versionadas;
-- drills de restart, timeout, reject, partial, stale data y cancel/flatten.
+Demo valida integración y recovery; no demuestra alpha. Capital real requiere
+además completar la fase de capital real de
+`_IMPLEMENTATION_AGENT_GUIDE.md`, los gates de `TRADING_MIGRATION.md` y una
+aprobación manual separada con capital mínimo.
 
-Demo valida API/recovery; no demuestra alpha.
+## Fuera de alcance ahora
 
-## Standing gate: sin aumento de capital
+- Feature parity con V1.
+- Trading runtime, paper broker u order routing.
+- Telegram, HTTP, dashboard o login.
+- PostgreSQL, cloud, microservicios o scheduler.
+- Auto-promoción, hot reload o rebalancing.
+- FM-OLS, DOLS, GARCH o baterías estadísticas antes del baseline causal/OOS.
+- Abstracciones creadas solamente para anticipar posibilidades futuras.
 
-No cambiar `order_execution.mode` a `live`, cargar credenciales live ni aumentar
-exposición durante estos milestones. Capital real requiere además el gate de
-`docs/engineering-rules.md`, PnL por fills, límites de pérdida, secrets por
-ambiente, alertas, backup/restore y aprobación manual con capital mínimo.
+## Regla de entrada
 
-## Fuera de alcance por ahora
-
-- Refactor general o dividir archivos sólo por líneas.
-- Auto-promoción, hot reload o rebalanceo automático.
-- Forced close por cambios del pair set.
-- Scheduled research antes del lifecycle idempotente.
-- Dashboard web, nuevo login, microservicios o nueva base.
-- FM-OLS, DOLS, GARCH o baterías de tests antes del baseline causal/OOS.
-
-## Regla de entrada al roadmap
-
-Una tarea entra en `NOW` sólo si elimina un riesgo del milestone, desbloquea un
-flujo completo, hace reproducible un resultado, repara una divergencia
-demostrada o aporta evidencia para cruzar el siguiente gate. El resto espera.
+Una tarea entra en `NOW` solo si completa el vertical de Research V2, hace
+explícito un supuesto cuantitativo, elimina look-ahead, mejora provenance o
+produce evidencia reproducible. El resto espera.

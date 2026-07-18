@@ -1,7 +1,0 @@
-# Default OHLCV backfill pagination/retry policy.
-# This controls historical ingestion pacing, not runtime live order behavior.
-ohlcv_backfill:
-  fetch_limit: 1000
-  max_retries: 3
-  retry_backoff_seconds: 5.0
-  request_pause_seconds: 0.5
